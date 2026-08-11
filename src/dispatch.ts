@@ -16,6 +16,7 @@ import {
   dispatchRpc,
   isNotification,
   resolveWww,
+  safeAudit,
   unauthorized,
   type McpHandlerOptions,
 } from "./methods.js";
@@ -43,11 +44,19 @@ const parseBody = async (request: Request): Promise<Response | unknown> => {
   }
 };
 
-const guardPost = <TCtx>(
+/** Transport-level denial: no JSON-RPC method has been parsed yet. */
+const auditDenial = <TCtx>(
+  options: McpHandlerOptions<TCtx>,
+  error: string,
+): Promise<void> =>
+  safeAudit(options, { method: "", ok: false, error, durationMs: 0 });
+
+const guardPost = async <TCtx>(
   request: Request,
   options: McpHandlerOptions<TCtx>,
-): Response | null => {
+): Promise<Response | null> => {
   if (rejectQueryToken(new URL(request.url))) {
+    await auditDenial(options, "query_string_token");
     return unauthorized(
       resolveWww(options, request),
       "Token in query string is rejected. Use Authorization Bearer.",
@@ -56,11 +65,12 @@ const guardPost = <TCtx>(
   return null;
 };
 
-const handleGet = <TCtx>(
+const handleGet = async <TCtx>(
   request: Request,
   options: McpHandlerOptions<TCtx>,
-): Response => {
+): Promise<Response> => {
   if (rejectQueryToken(new URL(request.url))) {
+    await auditDenial(options, "query_string_token");
     return jsonResponse(
       {
         error:
@@ -70,6 +80,7 @@ const handleGet = <TCtx>(
     );
   }
   if (!request.headers.get("authorization")) {
+    await auditDenial(options, "unauthorized");
     return unauthorized(resolveWww(options, request));
   }
   return methodNotAllowed("Use POST for MCP");
@@ -80,7 +91,7 @@ const handlePost = async <TCtx>(
   options: McpHandlerOptions<TCtx>,
   publicMethods: Set<string>,
 ): Promise<Response> => {
-  const denied = guardPost(request, options);
+  const denied = await guardPost(request, options);
   if (denied) return denied;
 
   const parsed = await parseBody(request);

@@ -38,6 +38,33 @@ export type ToolRegistry<TCtx> = {
 export type RegistryOptions = {
   /** Validate tools/call args against inputSchema. Default false. */
   validateArgs?: boolean;
+  /**
+   * Map tool exceptions to client-visible text.
+   * Default: `"Tool execution failed"` (no exception leakage).
+   */
+  onToolError?: (exc: unknown) => string;
+};
+
+const DEFAULT_TOOL_ERROR = "Tool execution failed";
+
+/**
+ * Map a tool exception to client-visible text.
+ * A throwing or non-string `onToolError` falls back to the redacted default —
+ * a mapper must never turn a tool failure into a transport failure.
+ */
+const resolveToolError = (
+  exc: unknown,
+  onToolError: RegistryOptions["onToolError"],
+): string => {
+  if (!onToolError) return DEFAULT_TOOL_ERROR;
+  try {
+    const mapped = onToolError(exc);
+    return typeof mapped === "string" && mapped.length > 0
+      ? mapped
+      : DEFAULT_TOOL_ERROR;
+  } catch {
+    return DEFAULT_TOOL_ERROR;
+  }
 };
 
 const asToolResult = (out: ToolResult | string): ToolResult => {
@@ -83,8 +110,7 @@ export const createToolRegistry = <TCtx>(
       try {
         return asToolResult(await tool.handler(ctx, args));
       } catch (exc) {
-        const message = exc instanceof Error ? exc.message : String(exc);
-        return errorResult(message);
+        return errorResult(resolveToolError(exc, options.onToolError));
       }
     },
   };

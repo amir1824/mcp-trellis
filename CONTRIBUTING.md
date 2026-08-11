@@ -43,8 +43,11 @@ Tests live flat under `test/`:
 
 | File | Area |
 |------|------|
+| `app.test.ts` | `createMcpApp` end-to-end, incl. audience enforcement |
+| `audit.test.ts` | Audit port, tool-error redaction |
 | `auth.bearer.test.ts` | Bearer / timing-safe compare |
 | `dispatch.test.ts` | MCP HTTP dispatch |
+| `oauth.clients.test.ts` | Client profiles, confidential clients |
 | `oauth.*.test.ts` | OAuth AS pieces |
 | `protocol.test.ts` | Protocol version negotiation |
 | `validate.test.ts` | JSON Schema subset |

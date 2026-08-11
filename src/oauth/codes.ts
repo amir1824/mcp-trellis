@@ -16,6 +16,10 @@ export type AuthCodeRecord = {
   codeChallenge: string;
   /** Consenting user id — required so minted tokens are bound. */
   userId: string;
+  /** RFC 8707 resource indicator — audience for the eventual access token. */
+  resource: string;
+  /** Space-delimited scope granted at authorize time. */
+  scope: string;
   exp: number;
 };
 
@@ -101,6 +105,9 @@ export const consumeAuthCode = async (
       typeof data.redirectUri !== "string" ||
       typeof data.codeChallenge !== "string" ||
       typeof data.userId !== "string" ||
+      typeof data.resource !== "string" ||
+      data.resource.length === 0 ||
+      typeof data.scope !== "string" ||
       typeof data.exp !== "number" ||
       data.exp < nowMs
     ) {
@@ -118,6 +125,8 @@ export const consumeAuthCode = async (
       redirectUri: data.redirectUri,
       codeChallenge: data.codeChallenge,
       userId: data.userId,
+      resource: data.resource,
+      scope: data.scope,
       exp: data.exp,
     };
   } catch {

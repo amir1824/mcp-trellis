@@ -1,0 +1,230 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import { createMcpApp, type McpApp } from "../src/app.js";
+import { sha256Base64Url } from "../src/oauth/pkce.js";
+import type { ToolDef } from "../src/registry.js";
+
+const ORIGIN = "https://app.test";
+const RESOURCE = `${ORIGIN}/mcp`;
+
+type Ctx = { userId: string };
+
+const echo: ToolDef<Ctx> = {
+  name: "echo",
+  description: "Echo text back",
+  inputSchema: {
+    type: "object",
+    properties: { text: { type: "string" } },
+  },
+  scope: "mcp",
+  handler: (_ctx, args) => String(args.text ?? ""),
+};
+
+/** Opaque test token: the app must still enforce the audience itself. */
+const encodeToken = (payload: {
+  userId: string;
+  scopes: string[];
+  audience: string;
+}): string => Buffer.from(JSON.stringify(payload)).toString("base64url");
+
+const makeApp = (overrides: Partial<{ audience: string }> = {}): McpApp =>
+  createMcpApp<Ctx>({
+    serverInfo: { name: "app-test", version: "1.0.0" },
+    tools: [echo],
+    clients: ["claude"],
+    extraRedirectUris: ["https://client.test/cb"],
+    auth: {
+      codeSecret: "test-secret-value",
+      resolveUser: async () => ({ id: "u1" }),
+      loginUrl: (_req, next) => `/login?next=${encodeURIComponent(next)}`,
+      mintAccessToken: async ({ userId, scope, resource }) => ({
+        accessToken: encodeToken({
+          userId,
+          scopes: scope.split(" "),
+          audience: overrides.audience ?? resource,
+        }),
+        expiresIn: 3600,
+      }),
+      // Deliberately does NOT check the audience — the library must.
+      verifyToken: async (token) => {
+        try {
+          return JSON.parse(
+            Buffer.from(token, "base64url").toString("utf8"),
+          ) as { userId: string; scopes: string[]; audience: string };
+        } catch {
+          return null;
+        }
+      },
+    },
+    context: async (_req, principal) => ({ userId: principal?.id ?? "" }),
+  });
+
+const rpc = (app: McpApp, body: unknown, token?: string) =>
+  app.fetch(
+    new Request(`${ORIGIN}/mcp`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body),
+    }),
+  );
+
+/** Walk the real connector path: authorize with PKCE, then redeem the code. */
+const getAccessToken = async (app: McpApp): Promise<string> => {
+  const verifier = "pkce-verifier-value-that-is-long-enough";
+  const challenge = await sha256Base64Url(verifier);
+  const redirectUri = "https://client.test/cb";
+
+  const authorizeUrl = new URL(`${ORIGIN}/mcp/oauth/authorize`);
+  authorizeUrl.search = new URLSearchParams({
+    response_type: "code",
+    client_id: "client-1",
+    redirect_uri: redirectUri,
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+    resource: RESOURCE,
+  }).toString();
+
+  const authorized = await app.fetch(
+    new Request(authorizeUrl, { method: "GET" }),
+  );
+  assert.equal(authorized.status, 302);
+  const location = authorized.headers.get("location");
+  assert.ok(location, "authorize must redirect");
+  const code = new URL(location).searchParams.get("code");
+  assert.ok(code, "redirect must carry a code");
+
+  const tokenRes = await app.fetch(
+    new Request(`${ORIGIN}/mcp/oauth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        grant_type: "authorization_code",
+        code,
+        client_id: "client-1",
+        redirect_uri: redirectUri,
+        code_verifier: verifier,
+        resource: RESOURCE,
+      }),
+    }),
+  );
+  assert.equal(tokenRes.status, 200);
+  const minted = (await tokenRes.json()) as {
+    access_token: string;
+    scope: string;
+  };
+  assert.equal(minted.scope, "mcp");
+  return minted.access_token;
+};
+
+describe("createMcpApp", () => {
+  it("serves both discovery documents", async () => {
+    const app = makeApp();
+
+    const prm = await app.fetch(
+      new Request(`${ORIGIN}/.well-known/oauth-protected-resource/mcp`),
+    );
+    assert.equal(prm.status, 200);
+    assert.equal(
+      ((await prm.json()) as { resource: string }).resource,
+      RESOURCE,
+    );
+
+    const as = await app.fetch(
+      new Request(`${ORIGIN}/.well-known/oauth-authorization-server`),
+    );
+    assert.equal(as.status, 200);
+    const meta = (await as.json()) as {
+      authorization_endpoint: string;
+      token_endpoint_auth_methods_supported: string[];
+    };
+    assert.equal(
+      meta.authorization_endpoint,
+      `${ORIGIN}/mcp/oauth/authorize`,
+    );
+    assert.deepEqual(meta.token_endpoint_auth_methods_supported, ["none"]);
+  });
+
+  it("rejects an unauthenticated tools/call with WWW-Authenticate", async () => {
+    const app = makeApp();
+    const res = await rpc(app, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "echo", arguments: { text: "hi" } },
+    });
+    assert.equal(res.status, 401);
+    const header = res.headers.get("www-authenticate");
+    assert.ok(header?.includes("resource_metadata="));
+  });
+
+  it("completes authorize → token → tools/call", async () => {
+    const app = makeApp();
+    const token = await getAccessToken(app);
+
+    const res = await rpc(
+      app,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: { name: "echo", arguments: { text: "hello" } },
+      },
+      token,
+    );
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      result: { content: Array<{ text: string }>; isError?: boolean };
+    };
+    assert.equal(body.result.isError, false);
+    assert.equal(body.result.content[0]?.text, "hello");
+  });
+
+  it("rejects a token minted for another resource", async () => {
+    // verifyToken above performs no audience check — the library must.
+    const app = makeApp({ audience: "https://other.test/mcp" });
+    const token = await getAccessToken(app);
+
+    const res = await rpc(
+      app,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: { name: "echo", arguments: { text: "hi" } },
+      },
+      token,
+    );
+    assert.equal(res.status, 401);
+  });
+
+  it("returns 404 off-route", async () => {
+    const app = makeApp();
+    const res = await app.fetch(new Request(`${ORIGIN}/nope`));
+    assert.equal(res.status, 404);
+  });
+
+  it("refuses to construct a pre-registered client without a clientStore", () => {
+    assert.throws(
+      () =>
+        createMcpApp<Ctx>({
+          serverInfo: { name: "x", version: "1" },
+          tools: [echo],
+          clients: ["gemini"],
+          auth: {
+            codeSecret: "s",
+            resolveUser: async () => null,
+            loginUrl: () => "/login",
+            mintAccessToken: async () => ({
+              accessToken: "t",
+              expiresIn: 60,
+            }),
+            verifyToken: async () => null,
+          },
+        }),
+      /clientStore/,
+    );
+  });
+});

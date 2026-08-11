@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { timingSafeEqual, matchesAny, parseBearer, MAX_COMPARE_LENGTH } from "../src/auth/bearer.js";
+import {
+  timingSafeEqual,
+  matchesAny,
+  parseBearer,
+  rejectQueryToken,
+  MAX_COMPARE_LENGTH,
+} from "../src/auth/bearer.js";
 
 describe("timingSafeEqual", () => {
   it("matches equal strings", () => {
@@ -25,5 +31,19 @@ describe("timingSafeEqual", () => {
     assert.equal(parseBearer("Bearer secret"), "secret");
     assert.equal(parseBearer("Basic x"), null);
     assert.equal(parseBearer(null), null);
+  });
+  it("rejectQueryToken rejects token and access_token", () => {
+    assert.equal(
+      rejectQueryToken(new URL("https://example.test/mcp?token=x")),
+      true,
+    );
+    assert.equal(
+      rejectQueryToken(new URL("https://example.test/mcp?access_token=x")),
+      true,
+    );
+    assert.equal(
+      rejectQueryToken(new URL("https://example.test/mcp")),
+      false,
+    );
   });
 });

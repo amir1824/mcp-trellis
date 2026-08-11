@@ -1,4 +1,22 @@
 export {
+  createMcpApp,
+  type McpApp,
+  type McpAppOptions,
+  type McpAppAuth,
+  type VerifiedToken,
+} from "./app.js";
+
+export {
+  CLIENT_PROFILES,
+  DEFAULT_CLIENTS,
+  authMethodsFor,
+  redirectUrisFor,
+  preRegisteredClients,
+  type ClientName,
+  type ClientProfile,
+} from "./clients.js";
+
+export {
   createMcpHandler,
   type McpHandler,
   type McpHandlerOptions,

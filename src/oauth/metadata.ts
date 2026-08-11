@@ -1,4 +1,10 @@
-import { DEFAULT_SCOPE, type GrantType } from "./constants.js";
+import {
+  DEFAULT_SCOPE,
+  TOKEN_ENDPOINT_AUTH_METHODS,
+  type GrantType,
+  type TokenEndpointAuthMethod,
+} from "./constants.js";
+import { canonicalResource, DEFAULT_RESOURCE_PATH } from "./resource.js";
 
 export type { GrantType } from "./constants.js";
 
@@ -19,6 +25,8 @@ export type AuthorizationServerMetadata = {
   code_challenge_methods_supported: string[];
   token_endpoint_auth_methods_supported: string[];
   scopes_supported: string[];
+  /** RFC 8707 — clients must send `resource` on authorize/token. */
+  resource_parameter_supported: boolean;
 };
 
 export type MetadataOptions = {
@@ -30,19 +38,18 @@ export type MetadataOptions = {
   /** Only advertise grants that are actually handled. */
   grantTypes: GrantType[];
   scopes?: string[];
+  /** Only advertise auth methods the configured clients actually use. */
+  tokenEndpointAuthMethods?: TokenEndpointAuthMethod[];
 };
 
 export const protectedResourceMetadata = (
   options: MetadataOptions,
-): ProtectedResourceMetadata => {
-  const resourcePath = options.resourcePath ?? "/mcp";
-  return {
-    resource: `${options.origin}${resourcePath}`,
-    authorization_servers: [options.origin],
-    bearer_methods_supported: ["header"],
-    scopes_supported: options.scopes ?? [DEFAULT_SCOPE],
-  };
-};
+): ProtectedResourceMetadata => ({
+  resource: canonicalResource(options.origin, options.resourcePath),
+  authorization_servers: [options.origin],
+  bearer_methods_supported: ["header"],
+  scopes_supported: options.scopes ?? [DEFAULT_SCOPE],
+});
 
 export const authorizationServerMetadata = (
   options: MetadataOptions,
@@ -56,14 +63,17 @@ export const authorizationServerMetadata = (
     response_types_supported: ["code"],
     grant_types_supported: [...options.grantTypes],
     code_challenge_methods_supported: ["S256"],
-    token_endpoint_auth_methods_supported: ["none"],
+    token_endpoint_auth_methods_supported: options.tokenEndpointAuthMethods ?? [
+      TOKEN_ENDPOINT_AUTH_METHODS.none,
+    ],
     scopes_supported: options.scopes ?? [DEFAULT_SCOPE],
+    resource_parameter_supported: true,
   };
 };
 
 export const mcpWwwAuthenticate = (
   origin: string,
-  resourcePath = "/mcp",
+  resourcePath = DEFAULT_RESOURCE_PATH,
   realm = "mcp",
 ): string =>
   `Bearer realm="${realm}", resource_metadata="${origin}/.well-known/oauth-protected-resource${resourcePath}"`;

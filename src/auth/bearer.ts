@@ -45,5 +45,6 @@ export const wwwAuthenticateHeader = (
 ): string =>
   `${BEARER_PREFIX}realm="${options.realm}", resource_metadata="${options.resourceMetadataUrl}"`;
 
+/** RFC 6750 §2.3 uses `access_token`; also reject legacy `token`. */
 export const rejectQueryToken = (url: URL): boolean =>
-  url.searchParams.has("token");
+  url.searchParams.has("token") || url.searchParams.has("access_token");

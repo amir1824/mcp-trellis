@@ -20,6 +20,7 @@ export type Principal = {
 };
 
 export type AuditEntry = {
+  /** JSON-RPC method, or `""` for transport-level rejections made before parsing. */
   method: string;
   tool?: string;
   principalId?: string;
@@ -89,6 +90,22 @@ export const unauthorized = (
     "WWW-Authenticate": wwwAuthenticateHeader(www),
   });
 
+/**
+ * Invoke the audit port, swallowing any failure.
+ * Telemetry must never turn a served response into a transport error —
+ * this is the only call path to `ports.audit`.
+ */
+export const safeAudit = async <TCtx>(
+  options: McpHandlerOptions<TCtx>,
+  entry: AuditEntry,
+): Promise<void> => {
+  try {
+    await options.ports.audit?.(entry);
+  } catch {
+    // Intentionally ignored.
+  }
+};
+
 export const hasScope = (
   principal: Principal,
   scope: string | undefined,
@@ -135,6 +152,14 @@ const METHODS = {
 
     const tool = options.registry.get(name);
     if (tool?.scope && (!principal || !hasScope(principal, tool.scope))) {
+      await safeAudit(options, {
+        method: "tools/call",
+        tool: name,
+        principalId: principal?.id,
+        ok: false,
+        error: "missing_scope",
+        durationMs: 0,
+      });
       return unauthorized(
         resolveWww(options, req),
         `Missing scope: ${tool.scope}`,
@@ -143,7 +168,7 @@ const METHODS = {
 
     const started = Date.now();
     const result = await options.registry.call(name, ctx, args);
-    await options.ports.audit?.({
+    await safeAudit(options, {
       method: "tools/call",
       tool: name,
       principalId: principal?.id,
@@ -163,7 +188,8 @@ export const dispatchRpc = async <TCtx>(input: {
 }): Promise<Response> => {
   const { req, body, options, publicMethods } = input;
   const method = body.method ?? "";
-  const id = body.id ?? null;
+  // Notifications omit `id`; explicit null is a valid request id (JSON-RPC).
+  const id = body.id === undefined ? null : body.id;
   const toolName =
     method === "tools/call" ? String(body.params?.name ?? "") : undefined;
 
@@ -173,16 +199,25 @@ export const dispatchRpc = async <TCtx>(input: {
 
   if (!isPublic) {
     principal = await options.ports.authenticate(req, method, toolName);
-    if (!principal) return unauthorized(resolveWww(options, req));
+    if (!principal) {
+      await safeAudit(options, {
+        method,
+        tool: toolName,
+        ok: false,
+        error: "unauthorized",
+        durationMs: 0,
+      });
+      return unauthorized(resolveWww(options, req));
+    }
   }
 
   const handler = (METHODS as Record<string, MethodFn<TCtx> | undefined>)[
     method
   ];
   if (!handler) {
-    if (id === null) return emptyResponse(202);
+    if (body.id === undefined) return emptyResponse(202);
     return jsonResponse(
-      rpcError(id, JSONRPC_METHOD_NOT_FOUND, `Method not found: ${method}`),
+      rpcError(body.id, JSONRPC_METHOD_NOT_FOUND, `Method not found: ${method}`),
     );
   }
 

@@ -38,6 +38,7 @@ export const handleWellKnown = async (
     oauthPath: paths.oauthPath,
     grantTypes: grantTypesOf(options.ports),
     scopes: options.scopes,
+    tokenEndpointAuthMethods: options.tokenEndpointAuthMethods,
   };
 
   const body = paths.prmPaths.has(path)

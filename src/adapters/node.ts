@@ -19,6 +19,8 @@ export type NodeResponseLike = {
 export type ToWebRequestOptions = {
   /** Absolute origin, e.g. https://app.example.com. */
   origin: string;
+  /** Pre-read body. Overrides `req.body` when supplied. */
+  body?: unknown;
 };
 
 export type ResolveOriginOptions = {
@@ -123,11 +125,47 @@ export const toWebRequest = (
     return new Request(url, { method, headers });
   }
 
+  const body = options.body !== undefined ? options.body : req.body;
   return new Request(url, {
     method,
     headers,
-    body: toBodyInit(req.body),
+    body: toBodyInit(body),
   });
+};
+
+const isAsyncIterable = (value: unknown): value is AsyncIterable<unknown> =>
+  typeof (value as { [Symbol.asyncIterator]?: unknown } | null)?.[
+    Symbol.asyncIterator
+  ] === "function";
+
+const concatChunks = (chunks: Uint8Array[]): Uint8Array => {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+  const out = new Uint8Array(total);
+  chunks.reduce((offset, chunk) => {
+    out.set(chunk, offset);
+    return offset + chunk.byteLength;
+  }, 0);
+  return out;
+};
+
+/**
+ * Body for a Node request.
+ * Frameworks like Express pre-parse into `req.body`; raw `http.createServer`
+ * does not, so fall back to draining the request stream.
+ */
+export const readNodeBody = async (
+  req: NodeRequestLike,
+): Promise<unknown> => {
+  if (req.body !== undefined && req.body !== null) return req.body;
+  if (!isAsyncIterable(req)) return undefined;
+
+  const chunks: Uint8Array[] = [];
+  for await (const chunk of req as AsyncIterable<Uint8Array | string>) {
+    chunks.push(
+      typeof chunk === "string" ? new TextEncoder().encode(chunk) : chunk,
+    );
+  }
+  return chunks.length > 0 ? concatChunks(chunks) : undefined;
 };
 
 export const sendWebResponse = async (
@@ -155,7 +193,8 @@ export const asNodeHandler = (
   return async (req: NodeRequestLike, res: NodeResponseLike): Promise<void> => {
     const origin =
       options.origin ?? resolveOrigin(req, { trustProxy: true });
-    const request = toWebRequest(req, { origin });
+    const body = await readNodeBody(req);
+    const request = toWebRequest(req, { origin, body });
     await sendWebResponse(res, await mcp.fetch(request));
   };
 };

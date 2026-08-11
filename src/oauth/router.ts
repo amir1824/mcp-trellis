@@ -2,6 +2,7 @@ import { jsonResponse, requireHttpMethod } from "../http.js";
 import { newClientId } from "./codes.js";
 import { GRANT_TYPES, OAUTH_ERRORS } from "./constants.js";
 import { CLAUDE_CALLBACK, isAllowedRedirectUri } from "./redirect.js";
+import { DEFAULT_RESOURCE_PATH } from "./resource.js";
 import { oauthError, type OAuthRouterOptions } from "./types.js";
 import { handleAuthorize } from "./authorize.js";
 import { handleToken } from "./token.js";
@@ -66,7 +67,7 @@ type RouteHandler = (request: Request) => Promise<Response>;
 export const createOAuthRouter = (
   options: OAuthRouterOptions,
 ): OAuthRouter => {
-  const resourcePath = options.resourcePath ?? "/mcp";
+  const resourcePath = options.resourcePath ?? DEFAULT_RESOURCE_PATH;
   const oauthPath = options.oauthPath ?? "/mcp/oauth";
 
   const prmPaths = new Set([
@@ -107,6 +108,12 @@ export {
   protectedResourceMetadata,
   mcpWwwAuthenticate,
 } from "./metadata.js";
+export {
+  canonicalResource,
+  resourcesEqual,
+  DEFAULT_RESOURCE_PATH,
+  firstResourceError,
+} from "./resource.js";
 export { isAllowedRedirectUri, CLAUDE_CALLBACK } from "./redirect.js";
 export {
   issueAuthCode,
@@ -116,4 +123,23 @@ export {
   type CodeStore,
 } from "./codes.js";
 export { verifyPkceS256, sha256Base64Url, randomBase64Url } from "./pkce.js";
-export { GRANT_TYPES, OAUTH_ERRORS, DEFAULT_SCOPE } from "./constants.js";
+export {
+  GRANT_TYPES,
+  OAUTH_ERRORS,
+  DEFAULT_SCOPE,
+  TOKEN_ENDPOINT_AUTH_METHODS,
+  type TokenEndpointAuthMethod,
+} from "./constants.js";
+export {
+  parseScope,
+  formatScope,
+  requestedScopes,
+  firstScopeError,
+} from "./scope.js";
+export { readClientAuth, firstClientAuthError, type ClientAuth } from "./clientauth.js";
+export type {
+  MintAccessTokenInput,
+  RefreshAccessTokenInput,
+  ClientStore,
+  RegisteredClient,
+} from "./types.js";

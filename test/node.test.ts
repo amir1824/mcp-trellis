@@ -129,6 +129,39 @@ describe("asNodeHandler", () => {
     assert.equal(json.result.serverInfo.name, "node-test");
   });
 
+  it("drains the request stream when req.body is absent", async () => {
+    // Raw http.createServer never populates `req.body` — it is a stream.
+    const payload = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 7,
+      method: "initialize",
+      params: { protocolVersion: "2025-06-18" },
+    });
+    const streamed = {
+      method: "POST",
+      url: "/mcp",
+      headers: { "content-type": "application/json" },
+      async *[Symbol.asyncIterator]() {
+        yield new TextEncoder().encode(payload.slice(0, 10));
+        yield new TextEncoder().encode(payload.slice(10));
+      },
+    } as NodeRequestLike;
+
+    const handler = asNodeHandler(mcp, { origin: "https://example.test" });
+    const res = mockRes();
+    await handler(streamed, res);
+
+    assert.equal(res.statusCode, 200);
+    const text =
+      typeof res.chunk === "string"
+        ? res.chunk
+        : new TextDecoder().decode(res.chunk);
+    const json = JSON.parse(text) as {
+      result: { protocolVersion: string };
+    };
+    assert.equal(json.result.protocolVersion, "2025-06-18");
+  });
+
   it("explicit origin overrides Host headers", () => {
     const req: NodeRequestLike = {
       method: "GET",
