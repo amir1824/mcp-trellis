@@ -1,0 +1,61 @@
+{
+  "name": "mcp-trellis",
+  "version": "0.1.0",
+  "description": "Zero-dependency MCP JSON-RPC + OAuth 2.1 AS for Claude/Gemini connectors",
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/amir1824/mcp-trellis.git"
+  },
+  "bugs": {
+    "url": "https://github.com/amir1824/mcp-trellis/issues"
+  },
+  "homepage": "https://github.com/amir1824/mcp-trellis#readme",
+  "keywords": [
+    "mcp",
+    "oauth",
+    "oauth2.1",
+    "json-rpc",
+    "claude",
+    "gemini",
+    "model-context-protocol",
+    "cloudflare-workers",
+    "authorization-server"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./oauth": {
+      "types": "./dist/oauth/router.d.ts",
+      "import": "./dist/oauth/router.js"
+    },
+    "./node": {
+      "types": "./dist/adapters/node.d.ts",
+      "import": "./dist/adapters/node.js"
+    }
+  },
+  "files": [
+    "dist",
+    "docs/diagrams",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}
