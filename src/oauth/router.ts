@@ -44,11 +44,21 @@ const handleRegister = async (
     redirectUris = [];
   }
 
-  if (suppliedRedirectUris && redirectUris.length === 0) {
+  // No redirect_uris in the body: fall back to the Claude callback only if
+  // this server's own allowlist actually accepts it — never advertise a
+  // redirect_uri that `/authorize` would go on to reject (e.g. `clients`
+  // without `"claude"`, where `createMcpApp` sets `allowClaude: false`).
+  if (!suppliedRedirectUris && isAllowedRedirectUri(CLAUDE_CALLBACK, options.redirect)) {
+    redirectUris = [CLAUDE_CALLBACK];
+  }
+
+  if (redirectUris.length === 0) {
     return oauthError(
       OAUTH_ERRORS.invalidRedirectUri,
       400,
-      "no allowed redirect_uris",
+      suppliedRedirectUris
+        ? "no allowed redirect_uris"
+        : "redirect_uris required — this server has no default redirect_uri",
     );
   }
 
@@ -56,7 +66,7 @@ const handleRegister = async (
     client_id: newClientId(),
     client_id_issued_at: Math.floor(Date.now() / 1000),
     token_endpoint_auth_method: "none",
-    redirect_uris: redirectUris.length > 0 ? redirectUris : [CLAUDE_CALLBACK],
+    redirect_uris: redirectUris,
     grant_types: [GRANT_TYPES.authorizationCode],
     response_types: ["code"],
   });

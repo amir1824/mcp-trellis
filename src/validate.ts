@@ -7,7 +7,61 @@ export type JsonSchema = {
   minimum?: number;
   maximum?: number;
   description?: string;
+  title?: string;
   [key: string]: unknown;
+};
+
+/** Keywords `validateAgainstSchema` actually evaluates. */
+export const SUPPORTED_SCHEMA_KEYWORDS: ReadonlySet<string> = new Set([
+  "type",
+  "enum",
+  "required",
+  "properties",
+  "items",
+  "minimum",
+  "maximum",
+]);
+
+/**
+ * Allowed on inputSchema but never evaluated (tools/list / generator metadata).
+ * Semantically-enforcing keywords (`pattern`, `additionalProperties`, …) are
+ * not ignored — with `validateArgs: true` they throw at construction.
+ */
+export const IGNORED_SCHEMA_KEYWORDS: ReadonlySet<string> = new Set([
+  "description",
+  "title",
+  "$schema",
+  "$id",
+  "$comment",
+  "default",
+  "examples",
+  "deprecated",
+  "readOnly",
+  "writeOnly",
+  "format",
+]);
+
+/**
+ * Paths of keywords outside the evaluated subset, e.g. `args.properties.code.pattern`.
+ * Walks nested `properties` / `items`.
+ */
+export const unsupportedKeywords = (
+  schema: JsonSchema,
+  path = "args",
+): string[] => {
+  const local = Object.keys(schema).flatMap((key) =>
+    SUPPORTED_SCHEMA_KEYWORDS.has(key) || IGNORED_SCHEMA_KEYWORDS.has(key)
+      ? []
+      : [`${path}.${key}`],
+  );
+  const fromProperties = Object.entries(schema.properties ?? {}).flatMap(
+    ([key, child]) =>
+      unsupportedKeywords(child, `${path}.properties.${key}`),
+  );
+  const fromItems = schema.items
+    ? unsupportedKeywords(schema.items, `${path}.items`)
+    : [];
+  return [...local, ...fromProperties, ...fromItems];
 };
 
 export const JSON_SCHEMA_TYPES = {

@@ -4,6 +4,12 @@
  */
 
 import { INTERNAL_ERROR } from "../http.js";
+import {
+  isAllowedOrigin,
+  type OriginAllowlistOptions,
+} from "./origins.js";
+
+export { isAllowedOrigin };
 
 export type NodeRequestLike = {
   method?: string;
@@ -26,17 +32,15 @@ export type ToWebRequestOptions = {
 };
 
 export type ResolveOriginOptions = {
-  /**
-   * Trust `X-Forwarded-Host` / `X-Forwarded-Proto`.
-   * Uses the **last** forwarded value (rightmost = closest proxy).
-   */
+  /** Trust last `X-Forwarded-Host` / `X-Forwarded-Proto` hop. */
   trustProxy?: boolean;
 };
 
-export type AsNodeHandlerOptions = {
+export type AsNodeHandlerOptions = OriginAllowlistOptions & {
   /**
-   * Absolute origin. Required unless `trustProxy: true`
-   * (then derived from X-Forwarded-* / Host).
+   * Absolute origin. Required unless `trustProxy: true`.
+   * When omitted (Host-derived), `allowedOrigins` must be non-empty
+   * (`["*"]` to admit any Host).
    */
   origin?: string;
   trustProxy?: boolean;
@@ -46,7 +50,6 @@ const headerValue = (
   value: string | string[] | undefined,
 ): string | undefined => (Array.isArray(value) ? value[0] : value);
 
-/** Last comma-separated hop (closest trusted proxy). */
 const lastForwarded = (value: string | undefined): string | undefined =>
   value?.split(",").pop()?.trim();
 
@@ -72,41 +75,25 @@ export const resolveOrigin = (
   return `${proto}://${host}`;
 };
 
-const BODY_BUILDERS: Array<{
-  match: (body: unknown) => boolean;
-  build: (body: unknown) => BodyInit | undefined;
-}> = [
-  {
-    match: (body) => body === undefined || body === null,
-    build: () => undefined,
-  },
-  {
-    match: (body) => typeof body === "string",
-    build: (body) => body as string,
-  },
-  {
-    match: (body) => body instanceof Uint8Array,
-    build: (body) => {
-      const bytes = body as Uint8Array;
-      return bytes.buffer.slice(
-        bytes.byteOffset,
-        bytes.byteOffset + bytes.byteLength,
-      ) as ArrayBuffer;
-    },
-  },
-];
-
 const toBodyInit = (body: unknown): BodyInit | undefined => {
-  const builder = BODY_BUILDERS.find((entry) => entry.match(body));
-  return builder ? builder.build(body) : JSON.stringify(body);
+  if (body === undefined || body === null) return undefined;
+  if (typeof body === "string") return body;
+  if (body instanceof Uint8Array) {
+    return body.buffer.slice(
+      body.byteOffset,
+      body.byteOffset + body.byteLength,
+    ) as ArrayBuffer;
+  }
+  return JSON.stringify(body);
 };
 
 export const toWebRequest = (
   req: NodeRequestLike,
   options: ToWebRequestOptions,
 ): Request => {
-  const path = req.url ?? "/";
-  const url = path.startsWith("http") ? path : `${options.origin}${path}`;
+  // Never trust an absolute-form request target — rebase onto the validated origin.
+  const target = new URL(req.url ?? "/", options.origin);
+  const url = `${options.origin}${target.pathname}${target.search}`;
   const headers = new Headers(
     Object.entries(req.headers)
       .map(([key, value]): [string, string] | null => {
@@ -170,10 +157,14 @@ export const sendWebResponse = async (
 };
 
 /** Always answer — an unhandled rejection on `http.createServer` hangs the client. */
-const sendInternalError = (res: NodeResponseLike): void => {
-  res.statusCode = 500;
+const sendJsonError = (
+  res: NodeResponseLike,
+  status: number,
+  error: string,
+): void => {
+  res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
-  res.end(JSON.stringify({ error: INTERNAL_ERROR }));
+  res.end(JSON.stringify({ error }));
 };
 
 /** One-liner: Node `(req, res)` → MCP / OAuth Web handler. */
@@ -181,19 +172,42 @@ export const asNodeHandler = (
   mcp: { fetch: (request: Request) => Promise<Response> },
   options?: AsNodeHandlerOptions,
 ) => {
-  if (!options?.origin && options?.trustProxy !== true) {
-    throw new Error("asNodeHandler requires options.origin or options.trustProxy: true");
+  const hostDerived = !options?.origin;
+  if (hostDerived && options?.trustProxy !== true) {
+    throw new Error(
+      "asNodeHandler requires options.origin or options.trustProxy: true",
+    );
+  }
+  // Forgettable Host spoof → AS issuer / PRM / WWW-Authenticate. Require an
+  // explicit allowlist whenever origin comes from the request.
+  if (hostDerived && !options.allowedOrigins?.length) {
+    throw new Error(
+      'asNodeHandler with Host-derived origin requires options.allowedOrigins (use ["*"] to admit any Host)',
+    );
+  }
+  if (
+    options?.origin &&
+    options.allowedOrigins?.length &&
+    !isAllowedOrigin(options.origin, options)
+  ) {
+    throw new Error(
+      "asNodeHandler: options.origin is not in options.allowedOrigins",
+    );
   }
 
   return async (req: NodeRequestLike, res: NodeResponseLike): Promise<void> => {
     try {
       const origin =
-        options.origin ?? resolveOrigin(req, { trustProxy: true });
+        options?.origin ?? resolveOrigin(req, { trustProxy: true });
+      if (!isAllowedOrigin(origin, options)) {
+        sendJsonError(res, 400, "origin not allowed");
+        return;
+      }
       const body = await readNodeBody(req);
       const request = toWebRequest(req, { origin, body });
       await sendWebResponse(res, await mcp.fetch(request));
     } catch {
-      sendInternalError(res);
+      sendJsonError(res, 500, INTERNAL_ERROR);
     }
   };
 };

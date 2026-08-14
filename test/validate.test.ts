@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { validateAgainstSchema } from "../src/validate.js";
+import { createToolRegistry } from "../src/registry.js";
+import {
+  unsupportedKeywords,
+  validateAgainstSchema,
+} from "../src/validate.js";
 
 describe("schema validation", () => {
   const schema = {
@@ -10,6 +14,14 @@ describe("schema validation", () => {
       limit: { type: "number", minimum: 1, maximum: 100 },
       count: { type: "integer" },
       status: { type: "string", enum: ["open", "closed"] },
+      flag: { type: "boolean" },
+      nothing: { type: "null" },
+      tags: { type: "array", items: { type: "string" } },
+      nested: {
+        type: "object",
+        properties: { city: { type: "string" } },
+        required: ["city"],
+      },
     },
     required: ["query"],
   };
@@ -45,6 +57,11 @@ describe("schema validation", () => {
       schema,
     );
     assert.ok(boundErrors.some((e) => /minimum/.test(e)));
+    const maxErrors = validateAgainstSchema(
+      { query: "x", limit: 101 },
+      schema,
+    );
+    assert.ok(maxErrors.some((e) => /maximum/.test(e)));
   });
 
   it("collects multiple errors", () => {
@@ -62,5 +79,146 @@ describe("schema validation", () => {
     );
     const errors = validateAgainstSchema({ query: "x", count: 1.5 }, schema);
     assert.ok(errors.some((e) => /expected integer/.test(e)));
+  });
+
+  it("validates boolean, null, array items, and nested objects", () => {
+    assert.deepEqual(
+      validateAgainstSchema(
+        {
+          query: "x",
+          flag: true,
+          nothing: null,
+          tags: ["a", "b"],
+          nested: { city: "TLV" },
+        },
+        schema,
+      ),
+      [],
+    );
+    assert.ok(
+      validateAgainstSchema({ query: "x", flag: "yes" }, schema).some((e) =>
+        /boolean/.test(e),
+      ),
+    );
+    assert.ok(
+      validateAgainstSchema({ query: "x", tags: [1] }, schema).some((e) =>
+        /expected string/.test(e),
+      ),
+    );
+    assert.ok(
+      validateAgainstSchema({ query: "x", nested: {} }, schema).some((e) =>
+        /required/.test(e),
+      ),
+    );
+  });
+});
+
+describe("unsupportedKeywords / validateArgs construction", () => {
+  const withPattern = {
+    type: "object",
+    properties: {
+      code: { type: "string", pattern: "^[A-Z]{3}$" },
+    },
+  };
+
+  it("lists pattern as unsupported", () => {
+    assert.deepEqual(unsupportedKeywords(withPattern), [
+      "args.properties.code.pattern",
+    ]);
+  });
+
+  it("lists nested items violations", () => {
+    assert.deepEqual(
+      unsupportedKeywords({
+        type: "object",
+        properties: {
+          rows: {
+            type: "array",
+            items: { type: "string", maxLength: 10 },
+          },
+        },
+      }),
+      ["args.properties.rows.items.maxLength"],
+    );
+  });
+
+  it("allows description/title metadata and supported schemas", () => {
+    assert.deepEqual(
+      unsupportedKeywords({
+        type: "object",
+        title: "Echo",
+        description: "Echo text",
+        properties: { text: { type: "string", description: "body" } },
+        required: ["text"],
+      }),
+      [],
+    );
+  });
+
+  it("allows generator metadata ($schema, $id, $comment, format, …)", () => {
+    assert.deepEqual(
+      unsupportedKeywords({
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        $id: "https://example.test/schemas/city.json",
+        $comment: "generator noise",
+        type: "object",
+        default: {},
+        examples: [{}],
+        deprecated: false,
+        readOnly: false,
+        writeOnly: false,
+        properties: {
+          city: {
+            type: "string",
+            format: "email",
+            default: "TLV",
+            examples: ["TLV"],
+          },
+        },
+      }),
+      [],
+    );
+  });
+
+  it("lists additionalProperties as unsupported", () => {
+    assert.deepEqual(
+      unsupportedKeywords({
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      }),
+      ["args.additionalProperties"],
+    );
+  });
+
+  it("throws at createToolRegistry when validateArgs sees pattern", () => {
+    assert.throws(
+      () =>
+        createToolRegistry(
+          [
+            {
+              name: "coded",
+              description: "x",
+              inputSchema: withPattern,
+              handler: () => "ok",
+            },
+          ],
+          { validateArgs: true },
+        ),
+      /unsupported JSON Schema keyword.*pattern/,
+    );
+  });
+
+  it("accepts the same pattern schema when validateArgs is off", () => {
+    assert.doesNotThrow(() =>
+      createToolRegistry([
+        {
+          name: "coded",
+          description: "x",
+          inputSchema: withPattern,
+          handler: () => "ok",
+        },
+      ]),
+    );
   });
 });

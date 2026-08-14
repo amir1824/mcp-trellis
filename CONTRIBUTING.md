@@ -99,3 +99,14 @@ Publishes to npm from GitHub Actions using an **environment secret**
    does it publish to npm and create the GitHub Release.
 
 `prepublishOnly` still runs build + test inside `npm publish` as a last guard.
+
+### 0.2.0 note
+
+`validateArgs: true` now throws at `createToolRegistry` construction when
+`inputSchema` uses unsupported JSON Schema keywords. Pure metadata
+(`description`, `title`, `$schema`, `$id`, `$comment`, `default`, `examples`,
+`deprecated`, `readOnly`, `writeOnly`, `format`) is allowed. Semantically-
+enforcing keywords that generators often emit — especially
+`additionalProperties`, plus `pattern`, `minLength` / `maxLength`, `anyOf`,
+`$ref`, … — will break upgrades until you remove them, enforce them in the
+handler, or turn `validateArgs` off. Default (`validateArgs` off) is unchanged.

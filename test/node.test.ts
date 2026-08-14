@@ -172,12 +172,46 @@ describe("asNodeHandler", () => {
     assert.equal(new URL(web.url).origin, "https://forced.example");
   });
 
+  it("rebases absolute-form request targets onto the validated origin", () => {
+    const req: NodeRequestLike = {
+      method: "GET",
+      url: "http://evil.attacker.test/.well-known/oauth-authorization-server",
+      headers: { host: "acme.example.com" },
+    };
+    const web = toWebRequest(req, { origin: "https://acme.example.com" });
+    assert.equal(
+      web.url,
+      "https://acme.example.com/.well-known/oauth-authorization-server",
+    );
+  });
+
   it("requires origin or trustProxy", () => {
     assert.throws(() => asNodeHandler(mcp), /requires options.origin/);
   });
 
-  it("derives origin with trustProxy when origin omitted", async () => {
-    const handler = asNodeHandler(mcp, { trustProxy: true });
+  it("requires allowedOrigins when origin is Host-derived", () => {
+    assert.throws(
+      () => asNodeHandler(mcp, { trustProxy: true }),
+      /requires options.allowedOrigins/,
+    );
+  });
+
+  it("throws when a fixed origin is absent from allowedOrigins", () => {
+    assert.throws(
+      () =>
+        asNodeHandler(mcp, {
+          origin: "https://wrong.example.com",
+          allowedOrigins: ["https://acme.example.com"],
+        }),
+      /not in options.allowedOrigins/,
+    );
+  });
+
+  it("derives origin with trustProxy and [\"*\"] when origin omitted", async () => {
+    const handler = asNodeHandler(mcp, {
+      trustProxy: true,
+      allowedOrigins: ["*"],
+    });
     const res = mockRes();
     await handler(
       {
@@ -216,5 +250,73 @@ describe("asNodeHandler", () => {
     assert.equal(res.statusCode, 500);
     const body = JSON.parse(String(res.chunk)) as { error: string };
     assert.equal(body.error, "internal_error");
+  });
+
+  it("admits an allowlisted Host-derived origin", async () => {
+    const handler = asNodeHandler(mcp, {
+      trustProxy: true,
+      allowedOrigins: ["https://acme.example.com"],
+    });
+    const res = mockRes();
+    await handler(
+      {
+        method: "POST",
+        url: "/mcp",
+        headers: {
+          host: "acme.example.com",
+          "content-type": "application/json",
+        },
+        body: { jsonrpc: "2.0", id: 2, method: "ping" },
+      },
+      res,
+    );
+    assert.equal(res.statusCode, 200);
+  });
+
+  it("admits a Host matching an allowedOrigins wildcard", async () => {
+    const handler = asNodeHandler(mcp, {
+      trustProxy: true,
+      allowedOrigins: ["*.tenants.example.com"],
+    });
+    const res = mockRes();
+    await handler(
+      {
+        method: "POST",
+        url: "/mcp",
+        headers: {
+          host: "acme.tenants.example.com",
+          "x-forwarded-proto": "https",
+          "content-type": "application/json",
+        },
+        body: { jsonrpc: "2.0", id: 2, method: "ping" },
+      },
+      res,
+    );
+    assert.equal(res.statusCode, 200);
+  });
+
+  it("rejects a Host outside allowedOrigins with 400", async () => {
+    const handler = asNodeHandler(mcp, {
+      trustProxy: true,
+      allowedOrigins: ["https://acme.example.com"],
+    });
+    const res = mockRes();
+    await handler(
+      {
+        method: "POST",
+        url: "/mcp",
+        headers: {
+          host: "evil.example.com",
+          "content-type": "application/json",
+        },
+        body: { jsonrpc: "2.0", id: 2, method: "ping" },
+      },
+      res,
+    );
+    assert.equal(res.statusCode, 400);
+    assert.equal(
+      (JSON.parse(String(res.chunk)) as { error: string }).error,
+      "origin not allowed",
+    );
   });
 });

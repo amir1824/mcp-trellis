@@ -40,6 +40,8 @@ export type VerifiedToken = {
   scopes: string[];
   /** RFC 8707 audience the token was minted for. */
   audience: string;
+  /** Optional host claims passed through to `context` via `Principal`. */
+  claims?: Record<string, unknown>;
 };
 
 export type McpAppAuth = {
@@ -92,6 +94,12 @@ export type McpAppOptions<TCtx> = {
   onToolError?: (exc: unknown) => string;
   /** Per-request context for tools. Defaults to an empty object. */
   context?: (req: Request, principal: Principal | null) => TCtx | Promise<TCtx>;
+  /**
+   * Opt-in metrics hook — same as `McpPorts.audit`. Pass a function to get
+   * per-request entries (tools + denials); omit for silence. The library
+   * never stores or prints these itself. See `consoleAudit` or
+   * `examples/audit-store.ts`.
+   */
   audit?: (entry: AuditEntry) => void | Promise<void>;
 };
 
@@ -128,7 +136,7 @@ export const createMcpApp = <TCtx>(
     const expected = canonicalResource(new URL(req.url).origin, resourcePath);
     if (!resourcesEqual(verified.audience, expected)) return null;
 
-    return { id: verified.userId, scopes: verified.scopes };
+    return { id: verified.userId, scopes: verified.scopes, claims: verified.claims };
   };
 
   const handler = createMcpHandler<TCtx>({

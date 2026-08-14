@@ -310,12 +310,12 @@ The library stays protocol-shaped. Your app plugs in the seams:
 
 | Port | Role |
 |------|------|
-| `verifyToken(token, req)` | Decode a bearer and return `{ userId, scopes, audience }`, or `null`. **The library compares `audience` against this server's canonical resource** — you cannot forget the check |
+| `verifyToken(token, req)` | Decode a bearer and return `{ userId, scopes, audience, claims? }`, or `null`. **The library compares `audience` against this server's canonical resource** — you cannot forget the check. Optional `claims` are passed to `context` on `principal` |
 | `resolveUser`, `loginUrl`, `mintAccessToken`, `codeSecret` | Same as the OAuth ports below |
 | `clientStore?` | Pre-registered clients; required for confidential clients like Gemini |
 | `refreshAccessToken?` | If set, metadata advertises `refresh_token` |
 | `revokeToken?` | RFC 7009; presence mounts `/revoke` and advertises `revocation_endpoint` |
-| `context?`, `audit?` | Same as the MCP ports below; `context` defaults to an empty object |
+| `context?`, `audit?` | Same as the MCP ports below; `context` defaults to an empty object. Receives `principal.claims` when `verifyToken` set them |
 
 ### MCP (`createMcpHandler`)
 
@@ -324,9 +324,35 @@ The lower-level handler. Here the audience check is **yours** — prefer
 
 | Port | Role |
 |------|------|
-| `authenticate(req, method, tool?)` | Return `{ id, scopes }`, or `null` → 401 + `WWW-Authenticate`. **Must reject tokens whose audience is not this server’s canonical resource** (see Threat model) |
-| `context(req, principal)` | Build per-request ctx for tools (DB, env, …) |
-| `audit?(entry)` | Optional telemetry: tool results **and** every denial (bad token, missing scope, query-string token). `entry.method` is `""` for transport-level denials made before parsing. Throwing from this port never fails the request |
+| `authenticate(req, method, tool?)` | Return `{ id, scopes, claims? }`, or `null` → 401 + `WWW-Authenticate`. **Must reject tokens whose audience is not this server’s canonical resource** (see Threat model) |
+| `context(req, principal)` | Build per-request ctx for tools (DB, env, …). Use `principal?.claims` for tenant / plan / role without re-decoding the bearer |
+| `audit?(entry)` | Opt-in **metrics hook**: pass any function to receive tool results **and** every denial (bad token, missing scope, query-string token). `entry.method` is `""` for transport-level denials made before parsing. Throwing from this port never fails the request. Omit it and the library stays silent |
+
+Pass any function to get per-request metrics — do what you want with them
+(DB, APM, admin UI). The library never writes to stdout or a store on its
+own. `consoleAudit` is only a convenience for local / small deploys;
+[`examples/audit-store.ts`](examples/audit-store.ts) shows a ring buffer and
+a DB-shaped sketch:
+
+```ts
+import { createMcpApp, consoleAudit } from "mcp-trellis";
+
+createMcpApp({ /* … */, audit: consoleAudit });
+
+// Or your own sink:
+createMcpApp({
+  /* … */,
+  audit: (entry) => {
+    // entry: { method, tool?, principalId?, ok, error?, durationMs }
+    void metrics.record(entry);
+  },
+});
+```
+
+Failures (denials and tool exceptions) go to `console.error` when using
+`consoleAudit`; everything else to `console.log`. Entries never carry raw
+exceptions or stack traces, so console output is safe. For anything beyond
+stdout, write your own `audit` function — that is the intended production path.
 
 `wwwAuthenticate` can be a static object or `(req) => …` when the PRM URL depends on origin.
 
@@ -364,7 +390,14 @@ createToolRegistry(tools, { validateArgs: false }) // default: off, easy adoptio
 - Unknown tools and thrown errors become `isError: true` (not transport errors)
 - Thrown exceptions are **redacted** by default (`"Tool execution failed"`); pass `onToolError` to map them. An `onToolError` that itself throws or returns a non-string falls back to the redacted default
 - Duplicate tool names throw at registry construction
-- Turn `validateArgs: true` once clients send schema-valid args
+- Turn `validateArgs: true` once clients send schema-valid args. The evaluated
+  subset is `type`, `enum`, `required`, `properties`, `items`, `minimum`,
+  `maximum`. Pure metadata (`description`, `title`, `$schema`, `$id`,
+  `$comment`, `default`, `examples`, `deprecated`, `readOnly`, `writeOnly`,
+  `format`) is allowed and never evaluated. Any other keyword is not
+  evaluated — and with `validateArgs: true` `createToolRegistry` throws at
+  construction so a schema like `pattern` or `additionalProperties` cannot
+  silently look enforced
 
 ### Wrapping an API as a tool
 
@@ -407,6 +440,49 @@ const getWeather = apiTool({
   `fetch` is overridable — testing, request signing, a custom agent.
 - `defineTool` alone (without `request`/`respond`) is just the typed-args
   layer over a regular `ToolDef` — use it for anything, not only REST calls.
+
+## Multi-tenant (SaaS connectors)
+
+Resource-per-tenant already works with **zero library change**.
+`canonicalResource(origin, resourcePath)` is derived per request, and the
+audience check in `createMcpApp` rejects a token minted for another origin
+before any tool runs. Deploy `acme.mcp.example.com` and
+`globex.mcp.example.com` as separate Hosts and cross-tenant token reuse is a
+protocol failure, not an application bug.
+
+For the in-tool half, derive the tenant from the request Host (or from the
+verified audience after the library check) in your `context` port — that is
+the isolation key. Optional `claims` from `verifyToken` (plan, role, …) are
+handy metadata on `principal`; they are **not** Host→tenant authorization.
+A forged `claims.tenant_id` with a matching audience must not change which
+tenant's data a tool can see.
+
+**Host caveat (API requirement).** On Node, multi-tenant needs a Host-derived
+origin (`trustProxy: true` without a fixed `origin`). That path **requires**
+a non-empty `allowedOrigins` at `asNodeHandler` construction — omit it and
+construction throws. Use exact origins and/or `*.example.com` wildcards for
+**https** subdomains; the **resolved** origin must match or the request
+returns **400** before any OAuth or MCP handling. Loud opt-out:
+`allowedOrigins: ["*"]` (admits any Host — only behind a proxy you trust to
+strip client `X-Forwarded-*`). A fixed `origin` absent from a non-empty list
+fails at construction; with a fixed `origin` the allowlist is optional
+defense-in-depth. Absolute-form request targets are rebased onto that
+validated origin, so a spoofed URL line cannot override it. A fixed `origin`
+is otherwise safe but collapses every tenant onto one resource, so it cannot
+do subdomain-per-tenant.
+
+On Cloudflare Workers (or any wildcard route), apply the equivalent
+allowlist check on `new URL(req.url).origin` before calling `app.fetch`
+(`isAllowedOrigin` from `mcp-trellis/node`, or the same module the Worker
+example imports).
+
+Typechecked sketch: [`examples/multi-tenant.ts`](examples/multi-tenant.ts)
+(needs a Host matching `*.mcp.example.com` — loopback alone is rejected).
+Shared `codeStore` / revocation shapes: [`examples/stores.ts`](examples/stores.ts)
+(atomic `setIfAbsent` for auth codes; Workers KV alone is not enough).
+`audit` metrics sink (ring + DB sketch): [`examples/audit-store.ts`](examples/audit-store.ts).
+Worker mount: [`examples/cloudflare-worker.ts`](examples/cloudflare-worker.ts)
+(typecheck-only in CI — no wrangler).
 
 ## Reference
 
@@ -495,10 +571,11 @@ against their own `redirectUris` from `clientStore`.
 <summary><code>mcp-trellis</code></summary>
 
 - `createMcpApp`, `createMcpHandler`, `createToolRegistry`
+- `consoleAudit` — convenience `audit` sink that logs to the console (pass any function for metrics / DB / APM)
 - `defineTool`, `apiTool` — typed, validated tool authoring on top of `ToolDef`
 - `CLIENT_PROFILES`, `DEFAULT_CLIENTS`, `authMethodsFor`, `redirectUrisFor`, `preRegisteredClients`, `hasDynamicClient`
 - `parseBearer`, `timingSafeEqual`, `matchesAny`, `wwwAuthenticateHeader`, `rejectQueryToken`
-- `validateAgainstSchema`, `JSON_SCHEMA_TYPES`
+- `validateAgainstSchema`, `JSON_SCHEMA_TYPES`, `SUPPORTED_SCHEMA_KEYWORDS`, `IGNORED_SCHEMA_KEYWORDS`, `unsupportedKeywords`
 - `rpcResult`, `rpcError`, JSON-RPC error constants
 - `pickProtocolVersion`, `PROTOCOL_VERSIONS`, `DEFAULT_PROTOCOL_VERSION`
 - `jsonResponse`, `emptyResponse`, `optionsResponse`, `corsHeaders`, `methodNotAllowed`
@@ -525,7 +602,7 @@ against their own `redirectUris` from `clientStore`.
 <details>
 <summary><code>mcp-trellis/node</code></summary>
 
-- `asNodeHandler`, `resolveOrigin`, `toWebRequest`, `sendWebResponse`, `readNodeBody`
+- `asNodeHandler`, `resolveOrigin`, `isAllowedOrigin`, `toWebRequest`, `sendWebResponse`, `readNodeBody`
 - Types: `NodeRequestLike`, `NodeResponseLike`, `AsNodeHandlerOptions`
 
 </details>
@@ -551,12 +628,13 @@ This is a **library** threat model, not a third-party audit badge.
 | Audience not enforced at the RS | **`createMcpApp` enforces this** — `verifyToken` returns the token's `audience` and the library rejects any mismatch against `canonicalResource(origin, resourcePath)`. With bare `createMcpHandler`, the check is yours. |
 | Open redirect after login | Your login page must validate `next` is same-origin before redirecting |
 | Auth-code replay across instances | Pass a shared `codeStore`; in-memory jti map is process-local only |
-| Origin spoofing on Node | Pass explicit `origin`, or `trustProxy: true` only behind a proxy that strips client `X-Forwarded-*` |
+| Origin spoofing on Node | Pass explicit `origin`, or `trustProxy: true` only behind a proxy that strips client `X-Forwarded-*`. Host-derived origin **requires** non-empty `allowedOrigins` on `asNodeHandler` (`["*"]` to opt out loudly) |
 | Scope escalation at authorize | Requested `scope` is validated against the advertised `scopes` and rejected with `invalid_scope`; the grant is bound into the auth code and handed to `mintAccessToken` |
 | Stolen access or refresh token | Host `revokeToken` (denylist or equivalent) that `verifyToken` and `refreshAccessToken` consult. Unknown / wrong-client tokens MUST no-op, not throw. Well-formed authenticated revoke is 200 even if the token is unknown |
 | Stolen confidential-client secret | `clientStore.verifySecret` owns comparison — store hashes, not plaintext. The library never sees or persists credentials |
 | Registration-free DCR | `/register` returns a random `client_id` that is **never stored**; any unknown `client_id` works with an allowlisted `redirect_uri`. Defensible for public clients with PKCE — the model dynamic connectors (Claude, Codex) actually need. Pre-registered clients bypass this entirely, bound to their own `redirectUris` and auth method. CIMD replaces this model |
 | Naming only confidential clients doesn't actually block public ones | `clients: ["gemini"]` (or `allowUnregisteredClients: false`) is **enforced**: DCR unmounted, dropped from AS metadata, unresolved `client_id` rejected with `unauthorized_client` at `authorize` and `invalid_client` at `token` and `revoke` |
+| DCR / token-endpoint abuse | Edge or reverse-proxy rate limiting on `/register` and `/token`. The library does not rate-limit |
 
 **Also designed in:** PKCE S256 (timing-safe, length-capped); HMAC auth codes bind `userId`, `clientId`, `redirectUri`, challenge, and `resource`; redirect allowlist + DCR filter; no query-string tokens (`token` and `access_token`); honest `grant_types_supported`; `/token` and `/revoke` omit CORS `*`; audit fires on auth/scope denial as well as tool results.
 
@@ -573,6 +651,7 @@ Explicitly **out** of this package (do not expect parity with full MCP hosts or 
 - **No embedded product surface** — no token store, sessions, or login UI
 - **No stdio** transport; no batch JSON-RPC arrays
 - **No DPoP, PAR, or `client_credentials`** — this AS is authorization_code (+ optional refresh and revoke)
+- **No rate limiting** — put quotas on `/register` and `/token` at the edge or reverse proxy
 - **No paid external security audit** claimed here — see Threat model above
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for what is next — CIMD and the

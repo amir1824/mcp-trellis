@@ -17,8 +17,11 @@ import {
 export type Principal = {
   id: string;
   scopes: string[];
+  /** Optional host claims from `verifyToken` (tenant, plan, role, …). */
+  claims?: Record<string, unknown>;
 };
 
+/** Per-request metrics emitted through the optional `audit` port. */
 export type AuditEntry = {
   /** JSON-RPC method, or `""` for transport-level rejections made before parsing. */
   method: string;
@@ -36,6 +39,12 @@ export type McpPorts<TCtx> = {
     tool?: string,
   ) => Promise<Principal | null>;
   context: (req: Request, principal: Principal | null) => TCtx | Promise<TCtx>;
+  /**
+   * Opt-in metrics hook. Pass any function to receive each tool result and
+   * every denial (bad token, missing scope, query-string token). Omit it and
+   * the library stays silent — no stdout, no store. Do what you want with
+   * `entry` (DB, APM, admin UI). Throwing never fails the request.
+   */
   audit?: (entry: AuditEntry) => void | Promise<void>;
 };
 
@@ -91,7 +100,7 @@ export const unauthorized = (
   });
 
 /**
- * Invoke the audit port, swallowing any failure.
+ * Invoke the audit metrics hook, swallowing any failure.
  * Telemetry must never turn a served response into a transport error —
  * this is the only call path to `ports.audit`.
  */

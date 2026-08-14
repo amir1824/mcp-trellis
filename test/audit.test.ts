@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { createToolRegistry } from "../src/registry.js";
 import { createMcpHandler } from "../src/dispatch.js";
 import type { AuditEntry } from "../src/methods.js";
+import { consoleAudit } from "../src/audit.js";
 
 describe("audit port", () => {
   type Ctx = Record<string, never>;
@@ -272,6 +273,94 @@ describe("tool error redaction", () => {
     );
     const result = await registry.call("boom", {}, {});
     assert.equal(result.content[0]?.text, "mapped:secret-detail");
+  });
+});
+
+describe("consoleAudit", () => {
+  it("logs successes to console.log", (t) => {
+    const log = t.mock.method(console, "log", () => {});
+    const error = t.mock.method(console, "error", () => {});
+
+    consoleAudit({
+      method: "tools/call",
+      tool: "echo",
+      principalId: "u1",
+      ok: true,
+      durationMs: 12,
+    });
+
+    assert.equal(log.mock.callCount(), 1);
+    assert.equal(error.mock.callCount(), 0);
+    assert.match(
+      log.mock.calls[0]?.arguments[0] as string,
+      /^\[mcp-trellis\] tools\/call tool=echo ok 12ms user=u1$/,
+    );
+  });
+
+  it("logs failures to console.error, including transport denials", (t) => {
+    const log = t.mock.method(console, "log", () => {});
+    const error = t.mock.method(console, "error", () => {});
+
+    consoleAudit({
+      method: "",
+      ok: false,
+      error: "unauthorized",
+      durationMs: 0,
+    });
+
+    assert.equal(log.mock.callCount(), 0);
+    assert.equal(error.mock.callCount(), 1);
+    assert.match(
+      error.mock.calls[0]?.arguments[0] as string,
+      /^\[mcp-trellis\] \(transport\) fail 0ms error=unauthorized$/,
+    );
+  });
+
+  it("wires straight into the audit port", async (t) => {
+    const error = t.mock.method(console, "error", () => {});
+    const registry = createToolRegistry<Record<string, never>>([
+      {
+        name: "boom",
+        description: "throws",
+        inputSchema: { type: "object", properties: {} },
+        handler: () => {
+          throw new Error("secret-detail");
+        },
+      },
+    ]);
+    const handler = createMcpHandler({
+      registry,
+      serverInfo: { name: "t", version: "0" },
+      wwwAuthenticate: {
+        realm: "t",
+        resourceMetadataUrl: "https://example.test/.well-known/x",
+      },
+      ports: {
+        authenticate: async () => ({ id: "u1", scopes: ["*"] }),
+        context: async () => ({}),
+        audit: consoleAudit,
+      },
+    });
+
+    await handler.fetch(
+      new Request("https://example.test/mcp", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer x",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "boom", arguments: {} },
+        }),
+      }),
+    );
+
+    assert.equal(error.mock.callCount(), 1);
+    const line = error.mock.calls[0]?.arguments[0] as string;
+    assert.match(line, /^\[mcp-trellis\] tools\/call tool=boom fail \d+ms user=u1 error=Tool execution failed$/);
   });
 });
 

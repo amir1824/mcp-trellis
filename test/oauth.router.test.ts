@@ -414,6 +414,42 @@ describe("oauth router grant advertisement", () => {
     const body = (await res.json()) as { error: string };
     assert.equal(body.error, "invalid_redirect_uri");
   });
+
+  it("defaults to the Claude callback when redirect_uris is omitted and Claude is allowed", async () => {
+    const router = createOAuthRouter({ ports: basePorts });
+    const res = await router.tryHandle(
+      new Request("https://example.test/mcp/oauth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+    );
+    assert.ok(res);
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { redirect_uris: string[] };
+    assert.deepEqual(body.redirect_uris, [CLAUDE_CALLBACK]);
+  });
+
+  it("never advertises the Claude callback as a default when this server's allowlist rejects it", async () => {
+    // Mirrors createMcpApp({ clients: ["codex"] }): DCR stays mounted, but
+    // allowClaude is off and nothing fills the allowlist. The old fallback
+    // returned [CLAUDE_CALLBACK] here even though /authorize would reject it.
+    const router = createOAuthRouter({
+      ports: basePorts,
+      redirect: { allowClaude: false, allowLoopback: false, extra: [] },
+    });
+    const registerRes = await router.tryHandle(
+      new Request("https://example.test/mcp/oauth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+    );
+    assert.ok(registerRes);
+    assert.equal(registerRes.status, 400);
+    const body = (await registerRes.json()) as { error: string };
+    assert.equal(body.error, "invalid_redirect_uri");
+  });
 });
 
 describe("tryHandle survives a throwing port", () => {

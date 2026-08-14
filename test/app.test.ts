@@ -7,7 +7,7 @@ import type { ToolDef } from "../src/registry.js";
 const ORIGIN = "https://app.test";
 const RESOURCE = `${ORIGIN}/mcp`;
 
-type Ctx = { userId: string };
+type Ctx = { userId: string; tenantId?: string };
 
 const echo: ToolDef<Ctx> = {
   name: "echo",
@@ -17,7 +17,10 @@ const echo: ToolDef<Ctx> = {
     properties: { text: { type: "string" } },
   },
   scope: "mcp",
-  handler: (_ctx, args) => String(args.text ?? ""),
+  handler: (ctx, args) =>
+    ctx.tenantId
+      ? `${ctx.tenantId}:${String(args.text ?? "")}`
+      : String(args.text ?? ""),
 };
 
 /** Opaque test token: the app must still enforce the audience itself. */
@@ -25,9 +28,15 @@ const encodeToken = (payload: {
   userId: string;
   scopes: string[];
   audience: string;
+  claims?: Record<string, unknown>;
 }): string => Buffer.from(JSON.stringify(payload)).toString("base64url");
 
-const makeApp = (overrides: Partial<{ audience: string }> = {}): McpApp =>
+const makeApp = (
+  overrides: Partial<{
+    audience: string;
+    claims: Record<string, unknown>;
+  }> = {},
+): McpApp =>
   createMcpApp<Ctx>({
     serverInfo: { name: "app-test", version: "1.0.0" },
     tools: [echo],
@@ -42,6 +51,7 @@ const makeApp = (overrides: Partial<{ audience: string }> = {}): McpApp =>
           userId,
           scopes: scope.split(" "),
           audience: overrides.audience ?? resource,
+          ...(overrides.claims ? { claims: overrides.claims } : {}),
         }),
         expiresIn: 3600,
       }),
@@ -50,13 +60,24 @@ const makeApp = (overrides: Partial<{ audience: string }> = {}): McpApp =>
         try {
           return JSON.parse(
             Buffer.from(token, "base64url").toString("utf8"),
-          ) as { userId: string; scopes: string[]; audience: string };
+          ) as {
+            userId: string;
+            scopes: string[];
+            audience: string;
+            claims?: Record<string, unknown>;
+          };
         } catch {
           return null;
         }
       },
     },
-    context: async (_req, principal) => ({ userId: principal?.id ?? "" }),
+    context: async (_req, principal) => ({
+      userId: principal?.id ?? "",
+      tenantId:
+        typeof principal?.claims?.tenant_id === "string"
+          ? principal.claims.tenant_id
+          : undefined,
+    }),
   });
 
 const rpc = (app: McpApp, body: unknown, token?: string) =>
@@ -198,6 +219,62 @@ describe("createMcpApp", () => {
       token,
     );
     assert.equal(res.status, 401);
+  });
+
+  it("rejects a token minted for another tenant origin", async () => {
+    const app = makeApp({ audience: "https://acme.app.test/mcp" });
+    const token = await getAccessToken(app);
+    const res = await rpc(
+      app,
+      {
+        jsonrpc: "2.0",
+        id: 4,
+        method: "tools/call",
+        params: { name: "echo", arguments: { text: "hi" } },
+      },
+      token,
+    );
+    assert.equal(res.status, 401);
+  });
+
+  it("threads verifyToken claims into context through the PKCE walk", async () => {
+    const app = makeApp({ claims: { tenant_id: "acme" } });
+    const token = await getAccessToken(app);
+    const res = await rpc(
+      app,
+      {
+        jsonrpc: "2.0",
+        id: 5,
+        method: "tools/call",
+        params: { name: "echo", arguments: { text: "hello" } },
+      },
+      token,
+    );
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      result: { content: Array<{ text: string }> };
+    };
+    assert.equal(body.result.content[0]?.text, "acme:hello");
+  });
+
+  it("leaves claims undefined when the token omits them", async () => {
+    const app = makeApp();
+    const token = await getAccessToken(app);
+    const res = await rpc(
+      app,
+      {
+        jsonrpc: "2.0",
+        id: 6,
+        method: "tools/call",
+        params: { name: "echo", arguments: { text: "hello" } },
+      },
+      token,
+    );
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      result: { content: Array<{ text: string }> };
+    };
+    assert.equal(body.result.content[0]?.text, "hello");
   });
 
   it("returns 404 off-route", async () => {

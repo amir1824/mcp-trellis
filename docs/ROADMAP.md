@@ -1,6 +1,6 @@
 # mcp-trellis — roadmap
 
-Status: 2026-08-11. Written against MCP spec revision `2026-07-28`.
+Status: 2026-08-14. Written against MCP spec revision `2026-07-28`.
 
 ## What this library is
 
@@ -107,6 +107,15 @@ a proper JSON-RPC error.
   Stolen-token invalidation lives in the host store that `verifyToken` and
   `refreshAccessToken` consult.
 
+- **Claims on `Principal`.** Optional `claims` from `verifyToken` /
+  `VerifiedToken` flow into `context` (plan/role metadata — not the
+  Host→tenant isolation key). Host-origin allowlisting (`allowedOrigins` on
+  `asNodeHandler`) is **required** when origin is Host-derived.
+
+- **`validateArgs` fail-fast.** With `validateArgs: true`, unsupported JSON
+  Schema keywords throw at `createToolRegistry` construction instead of
+  silently looking enforced. Default (off) is unchanged.
+
 ---
 
 ## Next
@@ -183,7 +192,7 @@ Deferred until asked: MRTR (`input_required`), `subscriptions/listen`,
 
 ## Known gaps
 
-Tracked, not scheduled: `validate.ts` silently ignores unsupported JSON Schema
-keywords when `validateArgs: true`; `pruneMemory` scans the whole jti map on
-every code consume; `mcpWwwAuthenticate` and `wwwAuthenticateHeader` build the
-same header twice.
+Tracked, not scheduled: `pruneMemory` scans the whole jti map on every code
+consume; `mcpWwwAuthenticate` and `wwwAuthenticateHeader` build the same
+header twice. (Unsupported JSON Schema keywords under `validateArgs: true`
+now throw at `createToolRegistry` construction — no longer a silent gap.)

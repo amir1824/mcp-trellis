@@ -1,5 +1,5 @@
 import type { JsonSchema } from "./validate.js";
-import { validateAgainstSchema } from "./validate.js";
+import { unsupportedKeywords, validateAgainstSchema } from "./validate.js";
 
 export type ToolResult = {
   content: Array<{ type: "text"; text: string }>;
@@ -86,6 +86,21 @@ export const createToolRegistry = <TCtx>(
   const byName = new Map(tools.map((t) => [t.name, t]));
   if (byName.size !== tools.length) {
     throw new Error("duplicate tool names in registry");
+  }
+
+  if (options.validateArgs) {
+    const violations = tools.flatMap((tool) =>
+      unsupportedKeywords(tool.inputSchema).map(
+        (path) => `${tool.name}: unsupported JSON Schema keyword at ${path}`,
+      ),
+    );
+    if (violations.length > 0) {
+      throw new Error(
+        `validateArgs: true but inputSchema uses unsupported keywords:\n` +
+          violations.join("\n") +
+          "\nRemove the keyword, enforce it in the handler, or set validateArgs: false",
+      );
+    }
   }
 
   return {

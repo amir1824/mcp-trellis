@@ -27,6 +27,8 @@ export {
   type ServerInfo,
 } from "./dispatch.js";
 
+export { consoleAudit } from "./audit.js";
+
 export {
   createToolRegistry,
   type ToolDef,
@@ -75,7 +77,14 @@ export {
   type WwwAuthenticateOptions,
 } from "./auth/bearer.js";
 
-export { validateAgainstSchema, JSON_SCHEMA_TYPES, type JsonSchema } from "./validate.js";
+export {
+  validateAgainstSchema,
+  JSON_SCHEMA_TYPES,
+  SUPPORTED_SCHEMA_KEYWORDS,
+  IGNORED_SCHEMA_KEYWORDS,
+  unsupportedKeywords,
+  type JsonSchema,
+} from "./validate.js";
 
 export {
   jsonResponse,

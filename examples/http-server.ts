@@ -30,9 +30,8 @@ const encodeToken = (payload: {
   audience: string;
 }): string => Buffer.from(JSON.stringify(payload)).toString("base64url");
 
-// Demo only: an in-memory Set. A real deployment needs a shared denylist
-// that verifyToken (and refreshAccessToken) also consult — see revokeToken's
-// JSDoc in src/oauth/types.ts.
+// ponytail: process-local Set; ceiling is a shared denylist that verifyToken
+// (and refreshAccessToken) read — see examples/stores.ts for the Kv shape.
 const revoked = new Set<string>();
 
 const app = createMcpApp<Ctx>({
