@@ -5,7 +5,11 @@ import {
   TOKEN_ENDPOINT_AUTH_METHODS,
   type TokenEndpointAuthMethod,
 } from "./constants.js";
-import { oauthError, type ClientStore } from "./types.js";
+import {
+  oauthError,
+  unregisteredClientError,
+  type OAuthRouterOptions,
+} from "./types.js";
 
 export type ClientAuth = {
   clientId: string;
@@ -58,15 +62,23 @@ const invalidClient = (description: string): Response =>
 
 /**
  * Enforce the registered auth method for known clients.
- * An unknown client_id is treated as public — PKCE is its only proof, which is
- * how dynamically registered connector clients work.
+ *
+ * An unknown client_id is treated as public — PKCE is its only proof —
+ * unless `allowUnregisteredClients` is false, in which case it is rejected
+ * rather than silently falling back to "no auth required".
  */
 export const firstClientAuthError = async (
   auth: ClientAuth,
-  store: ClientStore | undefined,
+  options: OAuthRouterOptions,
 ): Promise<Response | null> => {
+  const store = options.ports.clientStore;
   const registered = (await store?.get(auth.clientId)) ?? null;
-  if (!registered) return null;
+  if (!registered) {
+    return unregisteredClientError(options, {
+      code: OAUTH_ERRORS.invalidClient,
+      status: 401,
+    });
+  }
 
   const expected = registered.tokenEndpointAuthMethod;
   if (expected === TOKEN_ENDPOINT_AUTH_METHODS.none) return null;

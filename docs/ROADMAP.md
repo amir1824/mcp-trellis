@@ -62,6 +62,17 @@ a proper JSON-RPC error.
   needs, and it was previously impossible: the AS advertised `["none"]` only.
   Secret storage and comparison stay in the port; credentials never enter the
   library.
+- **Naming only confidential clients is enforced, not just advertised.**
+  The first cut of this let `clients: ["gemini"]` configure the AS's metadata
+  while leaving DCR and the loopback allowlist wide open — a self-registered
+  public client could still complete a normal PKCE flow and get a token,
+  quietly defeating the "confidential clients only" intent. Fixed:
+  `allowUnregisteredClients: false` (derived automatically by `createMcpApp`
+  when no configured client registers dynamically) unmounts `/register`, drops
+  it from AS metadata, and rejects any `client_id` the `clientStore` doesn't
+  resolve — `unauthorized_client` at `authorize`, `invalid_client` at `token`.
+  Public type break: `AuthorizationServerMetadata.registration_endpoint` is
+  now optional (`string | undefined`), omitted when DCR is off.
 - **Scope threaded end-to-end.** `authorize` validates the requested scope
   against the advertised set, the auth code carries the grant, and
   `mintAccessToken` receives it. `ToolDef.scope` finally sits on a chain that
@@ -69,6 +80,24 @@ a proper JSON-RPC error.
 - Node adapter drains the request stream when `req.body` is absent, so raw
   `http.createServer` works without a body-parser.
 - `[::1]` added to the loopback redirect allowlist.
+- **`defineTool` / `apiTool`.** The library was easy to run but not easy to
+  *author tools for* — every tool hand-wrote its own JSON Schema disconnected
+  from its handler's types, and every API-backed tool re-invented fetch/error
+  plumbing. `defineTool` adds optional Standard Schema v1 parsing in front of
+  parsing in front of a handler — typed args, validation failures short-circuit
+  before the handler runs. `apiTool` builds on it: give it `request` (+
+  optional `respond`) and get a working REST-call tool, non-2xx handled as
+  `isError` automatically. `inputSchema` (JSON Schema, for `tools/list`) stays
+  required and separate — no library-agnostic way exists to derive it from an
+  arbitrary Standard Schema validator, so the two must be kept in sync by hand.
+- **No host port can crash `fetch`.** Nothing guarded `authenticate`,
+  `context`, `resolveUser`, `mintAccessToken`, `clientStore`, etc. — any of
+  them throwing turned `.fetch()` into a rejected promise instead of a
+  `Response`, with the fallout depending on the runtime (a generic error page
+  on Workers, a hung socket with no response ever sent on raw
+  `http.createServer`). `createMcpHandler`, `createOAuthRouter`,
+  `createMcpApp`, and `asNodeHandler` now each catch at their own boundary and
+  return a real `500` instead.
 
 ---
 

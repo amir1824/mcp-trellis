@@ -19,7 +19,8 @@ export type AuthorizationServerMetadata = {
   issuer: string;
   authorization_endpoint: string;
   token_endpoint: string;
-  registration_endpoint: string;
+  /** Omitted when this server does not accept dynamically registered clients. */
+  registration_endpoint?: string;
   response_types_supported: string[];
   grant_types_supported: string[];
   code_challenge_methods_supported: string[];
@@ -40,6 +41,8 @@ export type MetadataOptions = {
   scopes?: string[];
   /** Only advertise auth methods the configured clients actually use. */
   tokenEndpointAuthMethods?: TokenEndpointAuthMethod[];
+  /** Advertise `registration_endpoint`. Default true. */
+  dcrEnabled?: boolean;
 };
 
 export const protectedResourceMetadata = (
@@ -59,7 +62,9 @@ export const authorizationServerMetadata = (
     issuer: options.origin,
     authorization_endpoint: `${options.origin}${oauthPath}/authorize`,
     token_endpoint: `${options.origin}${oauthPath}/token`,
-    registration_endpoint: `${options.origin}${oauthPath}/register`,
+    ...(options.dcrEnabled !== false
+      ? { registration_endpoint: `${options.origin}${oauthPath}/register` }
+      : {}),
     response_types_supported: ["code"],
     grant_types_supported: [...options.grantTypes],
     code_challenge_methods_supported: ["S256"],

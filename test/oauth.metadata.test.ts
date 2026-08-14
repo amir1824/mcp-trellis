@@ -51,6 +51,24 @@ describe("metadata grant derivation", () => {
     ]);
   });
 
+  it("advertises registration_endpoint by default, omits it when DCR is disabled", () => {
+    const withDcr = authorizationServerMetadata({
+      origin: "https://example.test",
+      grantTypes: ["authorization_code"],
+    });
+    assert.equal(
+      withDcr.registration_endpoint,
+      "https://example.test/mcp/oauth/register",
+    );
+
+    const withoutDcr = authorizationServerMetadata({
+      origin: "https://example.test",
+      grantTypes: ["authorization_code"],
+      dcrEnabled: false,
+    });
+    assert.equal(withoutDcr.registration_endpoint, undefined);
+  });
+
   it("builds PRM resource URL", () => {
     const prm = protectedResourceMetadata({
       origin: "https://example.test",

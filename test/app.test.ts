@@ -206,6 +206,63 @@ describe("createMcpApp", () => {
     assert.equal(res.status, 404);
   });
 
+  it("locks down to pre-registered clients when only gemini is configured", async () => {
+    const app = createMcpApp<Ctx>({
+      serverInfo: { name: "gemini-only", version: "1.0.0" },
+      tools: [echo],
+      clients: ["gemini"],
+      auth: {
+        codeSecret: "test-secret-value",
+        resolveUser: async () => ({ id: "u1" }),
+        loginUrl: () => "/login",
+        mintAccessToken: async ({ userId, scope }) => ({
+          accessToken: `token-for-${userId}`,
+          expiresIn: 3600,
+          scope,
+        }),
+        verifyToken: async () => null,
+        clientStore: {
+          get: async (clientId) =>
+            clientId === "gemini-client"
+              ? {
+                  clientId,
+                  redirectUris: ["https://gemini.test/cb"],
+                  tokenEndpointAuthMethod: "client_secret_basic",
+                }
+              : null,
+          verifySecret: async (_id, presented) => presented === "s3cr3t",
+        },
+      },
+    });
+
+    // DCR is gone — no route to self-register a public client.
+    const register = await app.fetch(
+      new Request(`${ORIGIN}/mcp/oauth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      }),
+    );
+    assert.equal(register.status, 404);
+
+    // Inventing a client_id and using PKCE alone no longer works.
+    const url = new URL(`${ORIGIN}/mcp/oauth/authorize`);
+    url.search = new URLSearchParams({
+      response_type: "code",
+      client_id: "self-issued",
+      redirect_uri: "http://127.0.0.1:4000/cb",
+      code_challenge: await sha256Base64Url("verifier-value-long-enough"),
+      code_challenge_method: "S256",
+      resource: RESOURCE,
+    }).toString();
+    const authorize = await app.fetch(new Request(url, { method: "GET" }));
+    assert.equal(authorize.status, 400);
+    assert.equal(
+      ((await authorize.json()) as { error: string }).error,
+      "unauthorized_client",
+    );
+  });
+
   it("refuses to construct a pre-registered client without a clientStore", () => {
     assert.throws(
       () =>
@@ -225,6 +282,28 @@ describe("createMcpApp", () => {
           },
         }),
       /clientStore/,
+    );
+  });
+
+  it("refuses to construct with an empty clients list", () => {
+    assert.throws(
+      () =>
+        createMcpApp<Ctx>({
+          serverInfo: { name: "x", version: "1" },
+          tools: [echo],
+          clients: [],
+          auth: {
+            codeSecret: "s",
+            resolveUser: async () => null,
+            loginUrl: () => "/login",
+            mintAccessToken: async () => ({
+              accessToken: "t",
+              expiresIn: 60,
+            }),
+            verifyToken: async () => null,
+          },
+        }),
+      /at least one connector/,
     );
   });
 });

@@ -3,6 +3,8 @@
  * Bridges duck-typed Node request/response objects to Web `Request`/`Response`.
  */
 
+import { INTERNAL_ERROR } from "../http.js";
+
 export type NodeRequestLike = {
   method?: string;
   url?: string;
@@ -42,17 +44,11 @@ export type AsNodeHandlerOptions = {
 
 const headerValue = (
   value: string | string[] | undefined,
-): string | undefined => {
-  if (Array.isArray(value)) return value[0];
-  return value;
-};
+): string | undefined => (Array.isArray(value) ? value[0] : value);
 
 /** Last comma-separated hop (closest trusted proxy). */
-const lastForwarded = (value: string | undefined): string | undefined => {
-  if (!value) return undefined;
-  const parts = value.split(",");
-  return parts[parts.length - 1]?.trim();
-};
+const lastForwarded = (value: string | undefined): string | undefined =>
+  value?.split(",").pop()?.trim();
 
 /** Derive origin from Host, or from forwarded headers when trustProxy. */
 export const resolveOrigin = (
@@ -148,11 +144,7 @@ const concatChunks = (chunks: Uint8Array[]): Uint8Array => {
   return out;
 };
 
-/**
- * Body for a Node request.
- * Frameworks like Express pre-parse into `req.body`; raw `http.createServer`
- * does not, so fall back to draining the request stream.
- */
+/** Prefer `req.body`; else drain the stream (raw `http.createServer`). */
 export const readNodeBody = async (
   req: NodeRequestLike,
 ): Promise<unknown> => {
@@ -173,10 +165,15 @@ export const sendWebResponse = async (
   response: Response,
 ): Promise<void> => {
   res.statusCode = response.status;
-  response.headers.forEach((value, key) => {
-    res.setHeader(key, value);
-  });
+  response.headers.forEach((value, key) => res.setHeader(key, value));
   res.end(new Uint8Array(await response.arrayBuffer()));
+};
+
+/** Always answer — an unhandled rejection on `http.createServer` hangs the client. */
+const sendInternalError = (res: NodeResponseLike): void => {
+  res.statusCode = 500;
+  res.setHeader("Content-Type", "application/json");
+  res.end(JSON.stringify({ error: INTERNAL_ERROR }));
 };
 
 /** One-liner: Node `(req, res)` → MCP / OAuth Web handler. */
@@ -185,16 +182,18 @@ export const asNodeHandler = (
   options?: AsNodeHandlerOptions,
 ) => {
   if (!options?.origin && options?.trustProxy !== true) {
-    throw new Error(
-      "asNodeHandler requires options.origin, or options.trustProxy: true behind a trusted proxy",
-    );
+    throw new Error("asNodeHandler requires options.origin or options.trustProxy: true");
   }
 
   return async (req: NodeRequestLike, res: NodeResponseLike): Promise<void> => {
-    const origin =
-      options.origin ?? resolveOrigin(req, { trustProxy: true });
-    const body = await readNodeBody(req);
-    const request = toWebRequest(req, { origin, body });
-    await sendWebResponse(res, await mcp.fetch(request));
+    try {
+      const origin =
+        options.origin ?? resolveOrigin(req, { trustProxy: true });
+      const body = await readNodeBody(req);
+      const request = toWebRequest(req, { origin, body });
+      await sendWebResponse(res, await mcp.fetch(request));
+    } catch {
+      sendInternalError(res);
+    }
   };
 };

@@ -12,6 +12,7 @@ export {
   authMethodsFor,
   redirectUrisFor,
   preRegisteredClients,
+  hasDynamicClient,
   type ClientName,
   type ClientProfile,
 } from "./clients.js";
@@ -35,6 +36,15 @@ export {
   type ToolListEntry,
   type RegistryOptions,
 } from "./registry.js";
+
+export {
+  defineTool,
+  apiTool,
+  type StandardSchemaV1,
+  type DefineToolOptions,
+  type ApiToolOptions,
+  type ApiRequest,
+} from "./tools.js";
 
 export {
   rpcResult,

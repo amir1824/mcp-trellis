@@ -415,3 +415,82 @@ describe("oauth router grant advertisement", () => {
     assert.equal(body.error, "invalid_redirect_uri");
   });
 });
+
+describe("tryHandle survives a throwing port", () => {
+  it("returns server_error instead of rejecting when resolveUser throws", async () => {
+    const router = createOAuthRouter({
+      ports: {
+        ...basePorts,
+        resolveUser: async () => {
+          throw new Error("IdP is unreachable");
+        },
+      },
+    });
+    const url = new URL("https://example.test/mcp/oauth/authorize");
+    url.search = new URLSearchParams({
+      response_type: "code",
+      client_id: "c1",
+      redirect_uri: CLAUDE_CALLBACK,
+      code_challenge: "challenge",
+      code_challenge_method: "S256",
+      resource: RESOURCE,
+    }).toString();
+
+    const res = await router.tryHandle(new Request(url, { method: "GET" }));
+    assert.ok(res);
+    assert.equal(res.status, 500);
+    const body = (await res.json()) as { error: string };
+    assert.equal(body.error, "server_error");
+  });
+
+  it("returns server_error instead of rejecting when mintAccessToken throws", async () => {
+    const verifier = "throwing-mint-verifier-abcdefghijklmnop";
+    const challenge = await sha256Base64Url(verifier);
+
+    const router = createOAuthRouter({
+      ports: {
+        ...basePorts,
+        mintAccessToken: async () => {
+          throw new Error("token service is down");
+        },
+      },
+    });
+
+    const authUrl = new URL("https://example.test/mcp/oauth/authorize");
+    authUrl.search = new URLSearchParams({
+      response_type: "code",
+      client_id: "c1",
+      redirect_uri: CLAUDE_CALLBACK,
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+      resource: RESOURCE,
+    }).toString();
+    const authorized = await router.tryHandle(
+      new Request(authUrl, { method: "GET" }),
+    );
+    assert.ok(authorized);
+    const code = new URL(authorized.headers.get("location")!).searchParams.get(
+      "code",
+    );
+    assert.ok(code);
+
+    const res = await router.tryHandle(
+      new Request("https://example.test/mcp/oauth/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          grant_type: "authorization_code",
+          code,
+          client_id: "c1",
+          redirect_uri: CLAUDE_CALLBACK,
+          code_verifier: verifier,
+          resource: RESOURCE,
+        }),
+      }),
+    );
+    assert.ok(res);
+    assert.equal(res.status, 500);
+    const body = (await res.json()) as { error: string };
+    assert.equal(body.error, "server_error");
+  });
+});

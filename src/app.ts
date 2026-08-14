@@ -8,13 +8,14 @@
 import { parseBearer } from "./auth/bearer.js";
 import {
   DEFAULT_CLIENTS,
+  assertClientsConfigured,
+  hasDynamicClient,
   authMethodsFor,
-  preRegisteredClients,
   redirectUrisFor,
   type ClientName,
 } from "./clients.js";
 import { createMcpHandler } from "./dispatch.js";
-import { jsonResponse } from "./http.js";
+import { INTERNAL_ERROR, jsonResponse } from "./http.js";
 import type { AuditEntry, Principal, ServerInfo } from "./methods.js";
 import { createOAuthRouter } from "./oauth/router.js";
 import {
@@ -95,19 +96,6 @@ export type McpApp = {
   fetch: (request: Request) => Promise<Response>;
 };
 
-const assertClientsConfigured = (
-  clients: ClientName[],
-  clientStore: ClientStore | undefined,
-): void => {
-  const needsStore = preRegisteredClients(clients);
-  if (needsStore.length > 0 && !clientStore) {
-    throw new Error(
-      `clients [${needsStore.join(", ")}] are pre-registered — ` +
-        "pass auth.clientStore so their client_id / client_secret can be resolved",
-    );
-  }
-};
-
 export const createMcpApp = <TCtx>(
   options: McpAppOptions<TCtx>,
 ): McpApp => {
@@ -150,9 +138,7 @@ export const createMcpApp = <TCtx>(
     }),
     ports: {
       authenticate,
-      // Tools that need no context get an empty one.
-      context:
-        options.context ?? (() => ({}) as TCtx),
+      context: options.context ?? (() => ({}) as TCtx),
       audit: options.audit,
     },
   });
@@ -163,6 +149,7 @@ export const createMcpApp = <TCtx>(
     realm,
     scopes: options.scopes,
     tokenEndpointAuthMethods: authMethodsFor(clients),
+    allowUnregisteredClients: hasDynamicClient(clients),
     redirect: {
       // Client profiles are the source of truth for callbacks.
       extra: [
@@ -185,13 +172,20 @@ export const createMcpApp = <TCtx>(
 
   return {
     fetch: async (request: Request): Promise<Response> => {
-      const oauthResponse = await oauth.tryHandle(request);
-      if (oauthResponse) return oauthResponse;
+      try {
+        const oauthResponse = await oauth.tryHandle(request);
+        if (oauthResponse) return oauthResponse;
 
-      if (new URL(request.url).pathname === resourcePath) {
-        return handler.fetch(request);
+        if (new URL(request.url).pathname === resourcePath) {
+          return await handler.fetch(request);
+        }
+        return jsonResponse({ error: "Not found" }, 404);
+      } catch {
+        // Both `oauth` and `handler` already turn port failures into a
+        // Response themselves — this is defense in depth, not the primary
+        // guard. `fetch` must never reject.
+        return jsonResponse({ error: INTERNAL_ERROR }, 500);
       }
-      return jsonResponse({ error: "Not found" }, 404);
     },
   };
 };

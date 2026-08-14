@@ -82,7 +82,23 @@ export type OAuthRouterOptions = {
   redirect?: RedirectAllowlistOptions;
   /** Advertised in AS metadata. Defaults to `["none"]` (public clients only). */
   tokenEndpointAuthMethods?: TokenEndpointAuthMethod[];
+  /**
+   * Allow a `client_id` not resolved by `clientStore` to authorize and
+   * exchange tokens as a public client (PKCE only — no secret).
+   *
+   * Default **true** (DCR / CIMD connectors). Set **false** when every
+   * client is pre-registered: `/register` is unmounted, dropped from AS
+   * metadata, and an unrecognized `client_id` is rejected with
+   * `unauthorized_client` at `authorize` and `invalid_client` at `token`.
+   * `createMcpApp` derives this from `clients` via `hasDynamicClient`.
+   */
+  allowUnregisteredClients?: boolean;
 };
+
+/** Default true — see `OAuthRouterOptions.allowUnregisteredClients`. */
+export const unregisteredClientsAllowed = (
+  options: OAuthRouterOptions,
+): boolean => options.allowUnregisteredClients !== false;
 
 /** Scopes this AS advertises and is willing to grant. */
 export const advertisedScopes = (options: OAuthRouterOptions): string[] =>
@@ -107,6 +123,22 @@ export const oauthError = (
     undefined,
     { cors: false },
   );
+
+const UNREGISTERED_CLIENT_DESCRIPTION =
+  "unknown client_id — this server only serves pre-registered clients";
+
+/** Direct JSON error when this AS does not serve unknown `client_id`s. */
+export const unregisteredClientError = (
+  options: OAuthRouterOptions,
+  reject: { code: string; status: number },
+): Response | null => {
+  if (unregisteredClientsAllowed(options)) return null;
+  return oauthError(
+    reject.code,
+    reject.status,
+    UNREGISTERED_CLIENT_DESCRIPTION,
+  );
+};
 
 /** `grantedScope` is what the auth code carried; the port may narrow it further. */
 export const tokenResponse = (

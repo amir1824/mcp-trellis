@@ -52,6 +52,7 @@ Tests live flat under `test/`:
 | `protocol.test.ts` | Protocol version negotiation |
 | `validate.test.ts` | JSON Schema subset |
 | `node.test.ts` | Node adapter |
+| `tools.test.ts` | `defineTool` / `apiTool` |
 
 Run with:
 

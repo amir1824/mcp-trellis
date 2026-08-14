@@ -207,10 +207,7 @@ export const handleToken = async (
   if (!auth) {
     return oauthError(OAUTH_ERRORS.invalidRequest, 400, "client_id required");
   }
-  const clientAuthError = await firstClientAuthError(
-    auth,
-    options.ports.clientStore,
-  );
+  const clientAuthError = await firstClientAuthError(auth, options);
   if (clientAuthError) return clientAuthError;
 
   const url = new URL(request.url);

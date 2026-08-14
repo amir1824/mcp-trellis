@@ -1,9 +1,13 @@
-import { jsonResponse, requireHttpMethod } from "../http.js";
+import { INTERNAL_ERROR, jsonResponse, requireHttpMethod } from "../http.js";
 import { newClientId } from "./codes.js";
 import { GRANT_TYPES, OAUTH_ERRORS } from "./constants.js";
 import { CLAUDE_CALLBACK, isAllowedRedirectUri } from "./redirect.js";
 import { DEFAULT_RESOURCE_PATH } from "./resource.js";
-import { oauthError, type OAuthRouterOptions } from "./types.js";
+import {
+  oauthError,
+  unregisteredClientsAllowed,
+  type OAuthRouterOptions,
+} from "./types.js";
 import { handleAuthorize } from "./authorize.js";
 import { handleToken } from "./token.js";
 import { handleWellKnown } from "./wellknown.js";
@@ -67,6 +71,13 @@ type RouteHandler = (request: Request) => Promise<Response>;
 export const createOAuthRouter = (
   options: OAuthRouterOptions,
 ): OAuthRouter => {
+  if (!unregisteredClientsAllowed(options) && !options.ports.clientStore) {
+    throw new Error(
+      "allowUnregisteredClients: false requires ports.clientStore " +
+        "so pre-registered clients can be resolved",
+    );
+  }
+
   const resourcePath = options.resourcePath ?? DEFAULT_RESOURCE_PATH;
   const oauthPath = options.oauthPath ?? "/mcp/oauth";
 
@@ -80,25 +91,37 @@ export const createOAuthRouter = (
   ]);
 
   const routes: Record<string, RouteHandler> = {
-    [`${oauthPath}/register`]: (request) => handleRegister(request, options),
+    ...(unregisteredClientsAllowed(options)
+      ? {
+          [`${oauthPath}/register`]: (request: Request) =>
+            handleRegister(request, options),
+        }
+      : {}),
     [`${oauthPath}/authorize`]: (request) => handleAuthorize(request, options),
     [`${oauthPath}/token`]: (request) => handleToken(request, options),
   };
 
   return {
     tryHandle: async (request: Request): Promise<Response | null> => {
-      const path = new URL(request.url).pathname;
+      try {
+        const path = new URL(request.url).pathname;
 
-      const known = await handleWellKnown(request, options, {
-        prmPaths,
-        asPaths,
-        resourcePath,
-        oauthPath,
-      });
-      if (known) return known;
+        const known = await handleWellKnown(request, options, {
+          prmPaths,
+          asPaths,
+          resourcePath,
+          oauthPath,
+        });
+        if (known) return known;
 
-      const route = routes[path];
-      return route ? route(request) : null;
+        const route = routes[path];
+        return route ? await route(request) : null;
+      } catch {
+        // A host port (resolveUser/mintAccessToken/clientStore/...) threw.
+        // We only ever reach here on a route this router owns, so answer
+        // with a real error instead of throwing out of `tryHandle`.
+        return oauthError(OAUTH_ERRORS.serverError, 500, INTERNAL_ERROR);
+      }
     },
   };
 };
@@ -137,6 +160,7 @@ export {
   firstScopeError,
 } from "./scope.js";
 export { readClientAuth, firstClientAuthError, type ClientAuth } from "./clientauth.js";
+export { unregisteredClientsAllowed } from "./types.js";
 export type {
   MintAccessTokenInput,
   RefreshAccessTokenInput,

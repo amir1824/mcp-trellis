@@ -9,15 +9,27 @@ Web-standard `Request` → `Response`. Same handler on Cloudflare Workers, Next.
 
 ## Why mcp-trellis
 
-Pick this when you want a **portable AS + MCP core** and already have (or want) your own login, token minting, and storage:
+Pick this when you want **the whole connector stack in one package** — the MCP
+handler *and* a real OAuth 2.1 authorization server — with no database to run
+and no vendor to sign up with:
 
-| You want… | mcp-trellis |
-|-----------|-------------|
-| One code path across Workers / Next / Deno / Bun / Node | Ports + `Request`/`Response`; Node bridge is optional |
-| OAuth 2.1 + PKCE + RFC 8707 resource indicators for connectors | Built in; you implement `resolveUser` / `mintAccessToken` |
-| Control over IdP, sessions, and token format | You own those ports — no embedded login UI or token store |
+| | mcp-trellis | Official MCP SDK | `workers-oauth-provider` | `@mcpauth/auth` | Auth0 / Clerk / Authlete |
+|---|---|---|---|---|---|
+| MCP handler | ✅ | ✅ | ❌ | ❌ | ❌ |
+| OAuth 2.1 authorization server | ✅ | ❌ bring your own | ✅ | ✅ | ✅ |
+| Runtime | any Web-standard | any Web-standard | Workers only | Node | — |
+| Database | none | — | KV (optional) | **required** — Prisma/Drizzle, with migrations | — |
+| Runtime dependencies | **zero** | several | several | several | — |
+| Self-hosted | ✅ | ✅ | ✅ | ✅ | ❌ SaaS |
+| Named connector profiles (Claude / Gemini / Codex), enforced not just advertised | ✅ | ❌ | ❌ | ❌ | ❌ |
 
-Prefer Cloudflare’s `workers-oauth-provider` or official-SDK host wrappers when you are locked to one platform and want their batteries included. Prefer mcp-trellis when the **host must not own the protocol layer**.
+Prefer the official SDK when you already have (or want) a separate
+authorization server — it doesn't ship one. Prefer `workers-oauth-provider`
+when you're committed to Workers and want Cloudflare's own implementation.
+Prefer a managed IdP (Auth0, Clerk, Authlete, WorkOS) when you'd rather pay
+than operate one. Prefer mcp-trellis when you want the protocol layer and the
+AS in one package, with **nothing to provision** — you still own login, token
+minting, and storage; the library owns the protocol.
 
 ## Requirements
 
@@ -118,15 +130,25 @@ Naming a pre-registered client without a `clientStore` throws at construction
 rather than failing at the first token exchange. Secret storage and comparison
 stay in your `clientStore` — the library never sees or persists credentials.
 
+Naming only pre-registered clients (`clients: ["gemini"]`, no `claude` /
+`codex`) sets `allowUnregisteredClients: false`: `/register` is unmounted
+and dropped from AS metadata, unknown ids are rejected with
+`unauthorized_client` at `authorize` and `invalid_client` at `token`. Naming
+`claude` or `codex` alongside `gemini` reopens dynamic registration.
+
 ## How it fits together
 
-You wire two pieces. Your edge decides who handles each request:
+What `createMcpApp` wires for you — two pieces, one deciding which requests go
+to the other:
 
 ![Architecture: connector → edge → OAuth or MCP → your ports](docs/diagrams/architecture.svg)
 
 Typical first-connection path:
 
 ![Sequence: OAuth authorize and token, then MCP tool call](docs/diagrams/first-connection.svg)
+
+You only touch this routing directly if you skip `createMcpApp` — see
+[Advanced: compose the primitives](#advanced-compose-the-primitives).
 
 ## Package surface
 
@@ -331,7 +353,7 @@ Auth codes carry `userId`, `resource`, and the granted `scope`. Clients **must**
 
 **Scope is negotiated:** `authorize` validates the requested `scope` against `scopes` (default `["mcp"]`) and rejects anything outside it with `invalid_scope`; an omitted `scope` grants the full advertised set. The auth code carries the grant, and `mintAccessToken` receives it — so `ToolDef.scope` and `principal.scopes` sit on a chain that actually reaches the OAuth layer.
 
-**Client authentication:** an unknown `client_id` is treated as a public client, with PKCE as its only proof — this is how dynamically registered connectors work. A `client_id` your `clientStore` resolves must authenticate with its registered method; failures return `invalid_client` (401).
+**Client authentication:** unknown `client_id`s are public (PKCE only) unless `allowUnregisteredClients` is `false` — then DCR is unmounted, dropped from metadata, and unrecognized ids are rejected (`unauthorized_client` at authorize, `invalid_client` at token). `createMcpApp` derives the flag from `clients` via `hasDynamicClient`.
 
 ## Tool registry
 
@@ -347,6 +369,48 @@ createToolRegistry(tools, { validateArgs: false }) // default: off, easy adoptio
 - Thrown exceptions are **redacted** by default (`"Tool execution failed"`); pass `onToolError` to map them. An `onToolError` that itself throws or returns a non-string falls back to the redacted default
 - Duplicate tool names throw at registry construction
 - Turn `validateArgs: true` once clients send schema-valid args
+
+### Wrapping an API as a tool
+
+`ToolDef` stays the primitive. `defineTool` and `apiTool` are optional sugar for
+the common case — turning "I have an API" into "I have an MCP tool" without
+hand-rolling arg validation or fetch/error plumbing each time:
+
+```ts
+import { apiTool } from "mcp-trellis";
+
+const getWeather = apiTool({
+  name: "get_weather",
+  description: "Current weather for a city",
+  inputSchema: {
+    type: "object",
+    properties: { city: { type: "string" } },
+    required: ["city"],
+  },
+  // any Standard Schema v1 validator (https://standardschema.dev)
+  input: citySchema,
+  request: (_ctx, { city }) =>
+    `https://api.example.com/weather?city=${encodeURIComponent(city)}`,
+  respond: async (res) => {
+    const data = await res.json();
+    return `${data.tempC}°C, ${data.condition}`;
+  },
+});
+```
+
+- **`inputSchema` stays required** — it's what `tools/list` actually advertises to
+  clients, and there's no library-agnostic way to derive JSON Schema from an
+  arbitrary Standard Schema validator. Keep the two in sync.
+- **`input`** (optional) parses and types `args` before your handler runs — any
+  [Standard Schema](https://standardschema.dev)-compliant validator works,
+  nothing library-specific. A validation failure returns `isError: true` with
+  the issues and never calls your handler.
+- **`apiTool`** builds on `defineTool`: give it `request` (build the outgoing
+  call from typed args) and optionally `respond` (shape a 2xx response;
+  default is the body as text). Non-2xx becomes `isError: true` automatically.
+  `fetch` is overridable — testing, request signing, a custom agent.
+- `defineTool` alone (without `request`/`respond`) is just the typed-args
+  layer over a regular `ToolDef` — use it for anything, not only REST calls.
 
 ## Reference
 
@@ -401,6 +465,7 @@ Anything else → JSON-RPC `-32601`. Capabilities advertise **tools only**.
 | `realm` | — | Optional realm string |
 | `scopes` | `["mcp"]` | Advertised in metadata, and the ceiling `authorize` validates against |
 | `tokenEndpointAuthMethods` | `["none"]` | Advertised client auth methods |
+| `allowUnregisteredClients` | `true` | `false` requires `clientStore`, unmounts DCR, and rejects unknown `client_id`s (`unauthorized_client` / `invalid_client`) |
 | `redirect` | see below | Redirect URI allowlist |
 
 **`redirect` (`RedirectAllowlistOptions`):**
@@ -434,13 +499,14 @@ against their own `redirectUris` from `clientStore`.
 <summary><code>mcp-trellis</code></summary>
 
 - `createMcpApp`, `createMcpHandler`, `createToolRegistry`
-- `CLIENT_PROFILES`, `DEFAULT_CLIENTS`, `authMethodsFor`, `redirectUrisFor`, `preRegisteredClients`
+- `defineTool`, `apiTool` — typed, validated tool authoring on top of `ToolDef`
+- `CLIENT_PROFILES`, `DEFAULT_CLIENTS`, `authMethodsFor`, `redirectUrisFor`, `preRegisteredClients`, `hasDynamicClient`
 - `parseBearer`, `timingSafeEqual`, `matchesAny`, `wwwAuthenticateHeader`, `rejectQueryToken`
 - `validateAgainstSchema`, `JSON_SCHEMA_TYPES`
 - `rpcResult`, `rpcError`, JSON-RPC error constants
 - `pickProtocolVersion`, `PROTOCOL_VERSIONS`, `DEFAULT_PROTOCOL_VERSION`
 - `jsonResponse`, `emptyResponse`, `optionsResponse`, `corsHeaders`, `methodNotAllowed`
-- Types: `McpApp`, `McpAppOptions`, `McpAppAuth`, `VerifiedToken`, `ClientName`, `ClientProfile`, `McpHandler`, `McpHandlerOptions`, `McpPorts`, `Principal`, `AuditEntry`, `ServerInfo`, `ToolDef`, `ToolHandler`, `ToolResult`, `ToolRegistry`, `JsonSchema`, …
+- Types: `McpApp`, `McpAppOptions`, `McpAppAuth`, `VerifiedToken`, `ClientName`, `ClientProfile`, `McpHandler`, `McpHandlerOptions`, `McpPorts`, `Principal`, `AuditEntry`, `ServerInfo`, `ToolDef`, `ToolHandler`, `ToolResult`, `ToolRegistry`, `JsonSchema`, `StandardSchemaV1`, `DefineToolOptions`, `ApiToolOptions`, `ApiRequest`, …
 
 </details>
 
@@ -453,7 +519,7 @@ against their own `redirectUris` from `clientStore`.
 - `isAllowedRedirectUri`, `CLAUDE_CALLBACK`
 - `issueAuthCode`, `consumeAuthCode`, `newClientId`
 - `verifyPkceS256`, `sha256Base64Url`, `randomBase64Url`
-- `readClientAuth`, `firstClientAuthError`
+- `readClientAuth`, `firstClientAuthError`, `unregisteredClientsAllowed`
 - `parseScope`, `formatScope`, `requestedScopes`, `firstScopeError`
 - `GRANT_TYPES`, `OAUTH_ERRORS`, `DEFAULT_SCOPE`, `TOKEN_ENDPOINT_AUTH_METHODS`
 - Types: `OAuthUser`, `MintedToken`, `OAuthPorts`, `OAuthRouterOptions`, `AuthCodeRecord`, `CodeStore`, `ClientStore`, `RegisteredClient`, `ClientAuth`, `TokenEndpointAuthMethod`, `MintAccessTokenInput`, `RefreshAccessTokenInput`
@@ -476,6 +542,7 @@ against their own `redirectUris` from `clientStore`.
 - Query-string tokens rejected (`token` and RFC 6750 `access_token`)
 - `tools/call` checks `principal.scopes` (`*` = all), and the OAuth grant that produced them is validated at `authorize`
 - With `createMcpApp`, tokens whose audience is not this server's canonical resource are rejected by the library
+- **`fetch` never rejects.** If a host port you supply (`authenticate`, `context`, `resolveUser`, `mintAccessToken`, `clientStore`, …) throws, `createMcpHandler`, `createOAuthRouter`, and `createMcpApp` all catch it and return a real `500` (`-32603` for MCP, `server_error` for OAuth) instead of an unhandled rejection — whose shape and whether it even reaches the client varies by runtime. `asNodeHandler` catches independently too, since on raw `http.createServer` a rejection there leaves the socket open with no response ever sent.
 
 ## Threat model (library)
 
@@ -491,7 +558,8 @@ This is a **library** threat model, not a third-party audit badge.
 | Origin spoofing on Node | Pass explicit `origin`, or `trustProxy: true` only behind a proxy that strips client `X-Forwarded-*` |
 | Scope escalation at authorize | Requested `scope` is validated against the advertised `scopes` and rejected with `invalid_scope`; the grant is bound into the auth code and handed to `mintAccessToken` |
 | Stolen confidential-client secret | `clientStore.verifySecret` owns comparison — store hashes, not plaintext. The library never sees or persists credentials |
-| Registration-free DCR | `/register` returns a random `client_id` that is **never stored**; any unknown `client_id` works with an allowlisted `redirect_uri`. Defensible for public clients with PKCE. Pre-registered clients are exempt — they are bound to their own `redirectUris` and auth method. CIMD replaces this model |
+| Registration-free DCR | `/register` returns a random `client_id` that is **never stored**; any unknown `client_id` works with an allowlisted `redirect_uri`. Defensible for public clients with PKCE — the model dynamic connectors (Claude, Codex) actually need. Pre-registered clients bypass this entirely, bound to their own `redirectUris` and auth method. CIMD replaces this model |
+| Naming only confidential clients doesn't actually block public ones | `clients: ["gemini"]` (or `allowUnregisteredClients: false`) is **enforced**: DCR unmounted, dropped from AS metadata, unresolved `client_id` rejected with `unauthorized_client` at `authorize` and `invalid_client` at `token` |
 
 **Also designed in:** PKCE S256 (timing-safe, length-capped); HMAC auth codes bind `userId`, `clientId`, `redirectUri`, challenge, and `resource`; redirect allowlist + DCR filter; no query-string tokens (`token` and `access_token`); honest `grant_types_supported`; `/token` omits CORS `*`; audit fires on auth/scope denial as well as tool results.
 

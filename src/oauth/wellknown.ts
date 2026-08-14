@@ -5,7 +5,11 @@ import {
   type GrantType,
 } from "./metadata.js";
 import { GRANT_TYPES } from "./constants.js";
-import type { OAuthPorts, OAuthRouterOptions } from "./types.js";
+import {
+  unregisteredClientsAllowed,
+  type OAuthPorts,
+  type OAuthRouterOptions,
+} from "./types.js";
 
 const GET_ONLY = new Set(["GET"]);
 
@@ -39,6 +43,7 @@ export const handleWellKnown = async (
     grantTypes: grantTypesOf(options.ports),
     scopes: options.scopes,
     tokenEndpointAuthMethods: options.tokenEndpointAuthMethods,
+    dcrEnabled: unregisteredClientsAllowed(options),
   };
 
   const body = paths.prmPaths.has(path)

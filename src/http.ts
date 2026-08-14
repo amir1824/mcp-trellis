@@ -1,3 +1,6 @@
+/** JSON `error` body / audit reason when a host port throws. */
+export const INTERNAL_ERROR = "internal_error";
+
 export const corsHeaders = (
   extra?: Record<string, string>,
 ): Record<string, string> => ({

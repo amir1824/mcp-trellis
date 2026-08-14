@@ -174,3 +174,78 @@ describe("dispatch", () => {
     );
   });
 });
+
+describe("dispatch survives a throwing port", () => {
+  type Ctx = { who: string };
+  const registry = createToolRegistry<Ctx>([
+    {
+      name: "echo",
+      description: "echo",
+      inputSchema: { type: "object", properties: {} },
+      handler: () => "ok",
+    },
+  ]);
+
+  const makeHandler = (ports: {
+    authenticate: Parameters<
+      typeof createMcpHandler<Ctx>
+    >[0]["ports"]["authenticate"];
+    context: Parameters<typeof createMcpHandler<Ctx>>[0]["ports"]["context"];
+    audit?: Parameters<typeof createMcpHandler<Ctx>>[0]["ports"]["audit"];
+  }) =>
+    createMcpHandler<Ctx>({
+      registry,
+      serverInfo: { name: "throw-test", version: "0.0.1" },
+      wwwAuthenticate: {
+        realm: "test",
+        resourceMetadataUrl: "https://example.test/.well-known/x",
+      },
+      ports,
+    });
+
+  const post = (handler: ReturnType<typeof createMcpHandler<Ctx>>) =>
+    handler.fetch(
+      new Request("https://example.test/mcp", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer tok",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "echo", arguments: {} },
+        }),
+      }),
+    );
+
+  it("returns a clean 500 when authenticate throws, instead of rejecting", async () => {
+    const audited: string[] = [];
+    const handler = makeHandler({
+      authenticate: async () => {
+        throw new Error("token service is down");
+      },
+      context: async () => ({ who: "x" }),
+      audit: (entry) => {
+        audited.push(entry.error ?? "");
+      },
+    });
+    const res = await post(handler);
+    assert.equal(res.status, 500);
+    const body = (await res.json()) as { error: { code: number } };
+    assert.equal(body.error.code, -32603);
+    assert.equal(audited[0], "token service is down");
+  });
+
+  it("returns a clean 500 when context throws, instead of rejecting", async () => {
+    const handler = makeHandler({
+      authenticate: async () => ({ id: "u1", scopes: ["*"] }),
+      context: async () => {
+        throw new Error("db connection failed");
+      },
+    });
+    const res = await post(handler);
+    assert.equal(res.status, 500);
+  });
+});

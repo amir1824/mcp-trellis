@@ -1,7 +1,7 @@
 {
   "name": "mcp-trellis",
   "version": "0.1.0",
-  "description": "Zero-dependency MCP JSON-RPC + OAuth 2.1 AS for Claude/Gemini connectors",
+  "description": "Zero-dependency MCP server + OAuth 2.1 authorization server in one package, for Claude, Gemini, and Codex connectors",
   "type": "module",
   "license": "MIT",
   "sideEffects": false,
@@ -20,9 +20,12 @@
     "json-rpc",
     "claude",
     "gemini",
+    "codex",
+    "chatgpt",
     "model-context-protocol",
     "cloudflare-workers",
-    "authorization-server"
+    "authorization-server",
+    "connector"
   ],
   "exports": {
     ".": {

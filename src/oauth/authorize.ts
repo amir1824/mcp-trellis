@@ -13,6 +13,7 @@ import { firstScopeError, formatScope, requestedScopes } from "./scope.js";
 import {
   advertisedScopes,
   oauthError,
+  unregisteredClientError,
   resolveSecret,
   type OAuthRouterOptions,
   type RegisteredClient,
@@ -84,6 +85,14 @@ export const handleAuthorize = async (
 
   const registered =
     (await options.ports.clientStore?.get(clientId)) ?? null;
+
+  if (!registered) {
+    const unregistered = unregisteredClientError(options, {
+      code: OAUTH_ERRORS.unauthorizedClient,
+      status: 400,
+    });
+    if (unregistered) return unregistered;
+  }
 
   const authzError = firstAuthzError({
     responseType: url.searchParams.get("response_type") ?? "",

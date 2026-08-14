@@ -193,4 +193,28 @@ describe("asNodeHandler", () => {
     );
     assert.equal(res.statusCode, 200);
   });
+
+  it("answers with 500 instead of leaving the connection hanging when fetch throws", async () => {
+    // On raw http.createServer, an unhandled rejection here never sends a
+    // response at all — the client just hangs until it times out.
+    const throwingMcp = {
+      fetch: async (): Promise<Response> => {
+        throw new Error("downstream is on fire");
+      },
+    };
+    const handler = asNodeHandler(throwingMcp, { origin: "https://example.test" });
+    const res = mockRes();
+    await handler(
+      {
+        method: "POST",
+        url: "/mcp",
+        headers: { "content-type": "application/json" },
+        body: { jsonrpc: "2.0", id: 1, method: "ping" },
+      },
+      res,
+    );
+    assert.equal(res.statusCode, 500);
+    const body = JSON.parse(String(res.chunk)) as { error: string };
+    assert.equal(body.error, "internal_error");
+  });
 });

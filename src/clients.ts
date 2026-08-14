@@ -11,6 +11,7 @@ import {
   type TokenEndpointAuthMethod,
 } from "./oauth/constants.js";
 import { CLAUDE_CALLBACK } from "./oauth/redirect.js";
+import type { ClientStore } from "./oauth/types.js";
 
 export type ClientName = "claude" | "gemini" | "codex";
 
@@ -77,3 +78,21 @@ export const authMethodsFor = (
 /** Clients that need a `clientStore` to work at all. */
 export const preRegisteredClients = (clients: ClientName[]): ClientName[] =>
   clients.filter((name) => CLIENT_PROFILES[name].preRegistered);
+
+/** True when any named client registers dynamically. Drives `allowUnregisteredClients`. */
+export const hasDynamicClient = (clients: ClientName[]): boolean =>
+  clients.some((name) => !CLIENT_PROFILES[name].preRegistered);
+
+export const assertClientsConfigured = (
+  clients: ClientName[],
+  clientStore: ClientStore | undefined,
+): void => {
+  if (clients.length === 0) throw new Error("clients must name at least one connector");
+  const needsStore = preRegisteredClients(clients);
+  if (needsStore.length > 0 && !clientStore) {
+    throw new Error(
+      `clients [${needsStore.join(", ")}] are pre-registered — ` +
+        "pass auth.clientStore so their client_id / client_secret can be resolved",
+    );
+  }
+};

@@ -1,10 +1,12 @@
 import {
+  JSONRPC_INTERNAL_ERROR,
   JSONRPC_INVALID_REQUEST,
   JSONRPC_PARSE_ERROR,
   type JsonRpcRequest,
   rpcError,
 } from "./jsonrpc.js";
 import {
+  INTERNAL_ERROR,
   emptyResponse,
   jsonResponse,
   methodNotAllowed,
@@ -139,10 +141,23 @@ export const createMcpHandler = <TCtx>(
 
   return {
     fetch: async (request: Request): Promise<Response> => {
-      const handler = HTTP_METHODS[request.method];
-      return handler
-        ? handler(request, options, publicMethods)
-        : methodNotAllowed();
+      try {
+        const handler = HTTP_METHODS[request.method];
+        return await (handler
+          ? handler(request, options, publicMethods)
+          : methodNotAllowed());
+      } catch (exc) {
+        // A host port (authenticate/context/audit) threw. `fetch` must never
+        // reject — the caller gets an honest 500, not an unhandled rejection
+        // whose shape depends on which runtime is hosting this.
+        const error =
+          exc instanceof Error && exc.message ? exc.message : INTERNAL_ERROR;
+        await auditDenial(options, error);
+        return jsonResponse(
+          rpcError(null, JSONRPC_INTERNAL_ERROR, "Internal error"),
+          500,
+        );
+      }
     },
   };
 };
