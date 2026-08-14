@@ -6,6 +6,18 @@ export {
   type VerifiedToken,
 } from "./app.js";
 
+/** Auth-port types used by `McpAppAuth` — annotate extracted stores/callbacks. */
+export type {
+  ClientStore,
+  RegisteredClient,
+  MintAccessTokenInput,
+  RefreshAccessTokenInput,
+  RevokeTokenInput,
+  MintedToken,
+  OAuthUser,
+} from "./oauth/types.js";
+export type { CodeStore } from "./oauth/codes.js";
+
 export {
   CLIENT_PROFILES,
   DEFAULT_CLIENTS,

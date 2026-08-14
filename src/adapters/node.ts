@@ -9,7 +9,7 @@ import {
   type OriginAllowlistOptions,
 } from "./origins.js";
 
-export { isAllowedOrigin };
+export { isAllowedOrigin, type OriginAllowlistOptions };
 
 export type NodeRequestLike = {
   method?: string;
