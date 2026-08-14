@@ -44,6 +44,7 @@ export const handleWellKnown = async (
     scopes: options.scopes,
     tokenEndpointAuthMethods: options.tokenEndpointAuthMethods,
     dcrEnabled: unregisteredClientsAllowed(options),
+    revocationEnabled: Boolean(options.ports.revokeToken),
   };
 
   const body = paths.prmPaths.has(path)

@@ -10,6 +10,7 @@ import {
 } from "./types.js";
 import { handleAuthorize } from "./authorize.js";
 import { handleToken } from "./token.js";
+import { handleRevoke } from "./revoke.js";
 import { handleWellKnown } from "./wellknown.js";
 
 export type {
@@ -99,6 +100,12 @@ export const createOAuthRouter = (
       : {}),
     [`${oauthPath}/authorize`]: (request) => handleAuthorize(request, options),
     [`${oauthPath}/token`]: (request) => handleToken(request, options),
+    ...(options.ports.revokeToken
+      ? {
+          [`${oauthPath}/revoke`]: (request: Request) =>
+            handleRevoke(request, options),
+        }
+      : {}),
   };
 
   return {
@@ -164,6 +171,7 @@ export { unregisteredClientsAllowed } from "./types.js";
 export type {
   MintAccessTokenInput,
   RefreshAccessTokenInput,
+  RevokeTokenInput,
   ClientStore,
   RegisteredClient,
 } from "./types.js";

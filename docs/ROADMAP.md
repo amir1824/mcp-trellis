@@ -99,6 +99,14 @@ a proper JSON-RPC error.
   `createMcpApp`, and `asNodeHandler` now each catch at their own boundary and
   return a real `500` instead.
 
+- **RFC 7009 token revocation.** The library never stores access or refresh
+  tokens, so revocation is a host port — `revokeToken` — advertised and mounted
+  only when implemented (same honest-advertisement pattern as refresh).
+  Well-formed authenticated `POST /revoke` returns 200 even if the token is
+  unknown (`invalid_request` 400 and `invalid_client` 401 still apply).
+  Stolen-token invalidation lives in the host store that `verifyToken` and
+  `refreshAccessToken` consult.
+
 ---
 
 ## Next
@@ -166,6 +174,9 @@ Backed by the spec, not just by our own scoping:
 - **No HTTP+SSE transport** — deprecated; Gemini Enterprise refuses it outright
 - **No embedded login UI, token store, or IdP** — the ports stay the product
 - **No resources / prompts** — a real limitation; revisit on demand
+- **No DPoP** — sender-constrained tokens; connectors use bearer + PKCE
+- **No PAR (RFC 9126)** — pushed authorization requests
+- **No `client_credentials`** — connectors are user-delegated; this AS is authorization_code (+ optional refresh)
 
 Deferred until asked: MRTR (`input_required`), `subscriptions/listen`,
 `io.modelcontextprotocol/tasks`.

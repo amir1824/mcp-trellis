@@ -54,6 +54,12 @@ export type RefreshAccessTokenInput = {
   resource: string;
 };
 
+export type RevokeTokenInput = {
+  token: string;
+  clientId: string;
+  tokenTypeHint?: "access_token" | "refresh_token";
+};
+
 export type OAuthPorts = {
   /** HMAC secret for signing auth codes. */
   codeSecret: string | ((req: Request) => string | Promise<string>);
@@ -67,6 +73,14 @@ export type OAuthPorts = {
   refreshAccessToken?: (
     input: RefreshAccessTokenInput,
   ) => Promise<MintedToken | null>;
+  /**
+   * RFC 7009. Presence mounts `/revoke` and advertises `revocation_endpoint`.
+   * Well-formed authenticated revoke is HTTP 200 even if the token is unknown
+   * (`invalid_request` / `invalid_client` still apply). `verifyToken` and
+   * `refreshAccessToken` MUST consult the same store; unknown tokens and
+   * tokens not issued to `clientId` MUST no-op (not throw).
+   */
+  revokeToken?: (input: RevokeTokenInput) => Promise<void>;
   /** Shared single-use jti store for multi-instance; in-memory default otherwise. */
   codeStore?: CodeStore;
   /** Pre-registered clients. Required to serve confidential clients. */
@@ -89,8 +103,9 @@ export type OAuthRouterOptions = {
    * Default **true** (DCR / CIMD connectors). Set **false** when every
    * client is pre-registered: `/register` is unmounted, dropped from AS
    * metadata, and an unrecognized `client_id` is rejected with
-   * `unauthorized_client` at `authorize` and `invalid_client` at `token`.
-   * `createMcpApp` derives this from `clients` via `hasDynamicClient`.
+   * `unauthorized_client` at `authorize` and `invalid_client` at `token`
+   * and `revoke`. `createMcpApp` derives this from `clients` via
+   * `hasDynamicClient`.
    */
   allowUnregisteredClients?: boolean;
 };

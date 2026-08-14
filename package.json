@@ -50,6 +50,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "test": "tsx --test test/*.test.ts",
+    "test:e2e": "tsx --test test/e2e/*.test.ts",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build && npm test"
   },

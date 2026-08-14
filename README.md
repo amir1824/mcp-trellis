@@ -133,8 +133,9 @@ stay in your `clientStore` — the library never sees or persists credentials.
 Naming only pre-registered clients (`clients: ["gemini"]`, no `claude` /
 `codex`) sets `allowUnregisteredClients: false`: `/register` is unmounted
 and dropped from AS metadata, unknown ids are rejected with
-`unauthorized_client` at `authorize` and `invalid_client` at `token`. Naming
-`claude` or `codex` alongside `gemini` reopens dynamic registration.
+`unauthorized_client` at `authorize` and `invalid_client` at `token` and
+`revoke`. Naming `claude` or `codex` alongside `gemini` reopens dynamic
+registration.
 
 ## How it fits together
 
@@ -170,9 +171,10 @@ With defaults `resourcePath: "/mcp"` and `oauthPath: "/mcp/oauth"`:
 |------|---------|
 | `/.well-known/oauth-protected-resource` (+ `/mcp`) | Protected resource metadata |
 | `/.well-known/oauth-authorization-server` (+ `/mcp`) | Authorization server metadata |
-| `/mcp/oauth/register` | Dynamic client registration |
+| `/mcp/oauth/register` | Dynamic client registration (unmounted when DCR is off) |
 | `/mcp/oauth/authorize` | Authorization endpoint |
 | `/mcp/oauth/token` | Token endpoint |
+| `/mcp/oauth/revoke` | Token revocation (RFC 7009; mounted only when `revokeToken` is set) |
 
 ## Recipes
 
@@ -195,7 +197,8 @@ export const mcp = asNodeHandler(app, { origin: process.env.MCP_PUBLIC_ORIGIN! }
 ```
 
 The Node bridge reads the request stream when `req.body` is absent, so raw
-`http.createServer` works without a body-parser.
+`http.createServer` works without a body-parser. Runnable recipe:
+[`examples/http-server.ts`](examples/http-server.ts).
 
 ## Advanced: compose the primitives
 
@@ -293,19 +296,9 @@ Also mount `.well-known/*` and `/mcp/oauth/*` the same way (or route everything 
 
 ### Node HTTP `(req, res)`
 
-Express, Cloud Functions, Cloud Run, `http.createServer` — bridge with `asNodeHandler`:
-
-```ts
-import { createMcpHandler } from "mcp-trellis";
-import { asNodeHandler } from "mcp-trellis/node";
-
-const handler = createMcpHandler({ /* same ports as above */ });
-
-export const mcp = asNodeHandler(handler, {
-  origin: process.env.MCP_PUBLIC_ORIGIN!, // required unless trustProxy
-  // trustProxy: true, // only behind a known reverse proxy
-});
-```
+Express, Cloud Functions, Cloud Run, `http.createServer` — bridge with
+`asNodeHandler`. Runnable recipe: [`examples/http-server.ts`](examples/http-server.ts)
+(`npx tsx examples/http-server.ts`).
 
 ## Ports — what you implement
 
@@ -320,6 +313,8 @@ The library stays protocol-shaped. Your app plugs in the seams:
 | `verifyToken(token, req)` | Decode a bearer and return `{ userId, scopes, audience }`, or `null`. **The library compares `audience` against this server's canonical resource** — you cannot forget the check |
 | `resolveUser`, `loginUrl`, `mintAccessToken`, `codeSecret` | Same as the OAuth ports below |
 | `clientStore?` | Pre-registered clients; required for confidential clients like Gemini |
+| `refreshAccessToken?` | If set, metadata advertises `refresh_token` |
+| `revokeToken?` | RFC 7009; presence mounts `/revoke` and advertises `revocation_endpoint` |
 | `context?`, `audit?` | Same as the MCP ports below; `context` defaults to an empty object |
 
 ### MCP (`createMcpHandler`)
@@ -346,6 +341,7 @@ By default `initialize`, `ping`, and notifications are public. Override `publicM
 | `loginUrl` | Where unauthenticated authorize requests go |
 | `mintAccessToken` | Issue a **user-bound**, **audience-bound** access token (`resource` is the RFC 8707 URI) — never a shared god token |
 | `refreshAccessToken?` | If set, metadata advertises `refresh_token`; also receives `resource` |
+| `revokeToken?` | If set, mounts `/revoke` and advertises `revocation_endpoint`. Well-formed authenticated revoke → 200 even if the token is unknown; `invalid_request` 400 and `invalid_client` 401 still apply |
 | `codeStore?` | Shared single-use jti store for multi-instance (`consume(jti, expMs)`); pruning in-memory default otherwise |
 | `clientStore?` | Pre-registered clients: `get(clientId)` returns registered redirect URIs and auth method; `verifySecret(clientId, presented)` authenticates confidential clients. Credentials never enter the library |
 
@@ -353,7 +349,7 @@ Auth codes carry `userId`, `resource`, and the granted `scope`. Clients **must**
 
 **Scope is negotiated:** `authorize` validates the requested `scope` against `scopes` (default `["mcp"]`) and rejects anything outside it with `invalid_scope`; an omitted `scope` grants the full advertised set. The auth code carries the grant, and `mintAccessToken` receives it — so `ToolDef.scope` and `principal.scopes` sit on a chain that actually reaches the OAuth layer.
 
-**Client authentication:** unknown `client_id`s are public (PKCE only) unless `allowUnregisteredClients` is `false` — then DCR is unmounted, dropped from metadata, and unrecognized ids are rejected (`unauthorized_client` at authorize, `invalid_client` at token). `createMcpApp` derives the flag from `clients` via `hasDynamicClient`.
+**Client authentication:** unknown `client_id`s are public (PKCE only) unless `allowUnregisteredClients` is `false` — then DCR is unmounted, dropped from metadata, and unrecognized ids are rejected (`unauthorized_client` at authorize, `invalid_client` at token and revoke). `createMcpApp` derives the flag from `clients` via `hasDynamicClient`.
 
 ## Tool registry
 
@@ -461,7 +457,7 @@ Anything else → JSON-RPC `-32601`. Capabilities advertise **tools only**.
 |--------|---------|-------------|
 | `ports` | — | Required OAuth ports (see above) |
 | `resourcePath` | `"/mcp"` | MCP resource path in PRM |
-| `oauthPath` | `"/mcp/oauth"` | Prefix for authorize / token / register |
+| `oauthPath` | `"/mcp/oauth"` | Prefix for authorize / token / register / revoke |
 | `realm` | — | Optional realm string |
 | `scopes` | `["mcp"]` | Advertised in metadata, and the ceiling `authorize` validates against |
 | `tokenEndpointAuthMethods` | `["none"]` | Advertised client auth methods |
@@ -522,7 +518,7 @@ against their own `redirectUris` from `clientStore`.
 - `readClientAuth`, `firstClientAuthError`, `unregisteredClientsAllowed`
 - `parseScope`, `formatScope`, `requestedScopes`, `firstScopeError`
 - `GRANT_TYPES`, `OAUTH_ERRORS`, `DEFAULT_SCOPE`, `TOKEN_ENDPOINT_AUTH_METHODS`
-- Types: `OAuthUser`, `MintedToken`, `OAuthPorts`, `OAuthRouterOptions`, `AuthCodeRecord`, `CodeStore`, `ClientStore`, `RegisteredClient`, `ClientAuth`, `TokenEndpointAuthMethod`, `MintAccessTokenInput`, `RefreshAccessTokenInput`
+- Types: `OAuthUser`, `MintedToken`, `OAuthPorts`, `OAuthRouterOptions`, `AuthCodeRecord`, `CodeStore`, `ClientStore`, `RegisteredClient`, `ClientAuth`, `TokenEndpointAuthMethod`, `MintAccessTokenInput`, `RefreshAccessTokenInput`, `RevokeTokenInput`
 
 </details>
 
@@ -557,11 +553,12 @@ This is a **library** threat model, not a third-party audit badge.
 | Auth-code replay across instances | Pass a shared `codeStore`; in-memory jti map is process-local only |
 | Origin spoofing on Node | Pass explicit `origin`, or `trustProxy: true` only behind a proxy that strips client `X-Forwarded-*` |
 | Scope escalation at authorize | Requested `scope` is validated against the advertised `scopes` and rejected with `invalid_scope`; the grant is bound into the auth code and handed to `mintAccessToken` |
+| Stolen access or refresh token | Host `revokeToken` (denylist or equivalent) that `verifyToken` and `refreshAccessToken` consult. Unknown / wrong-client tokens MUST no-op, not throw. Well-formed authenticated revoke is 200 even if the token is unknown |
 | Stolen confidential-client secret | `clientStore.verifySecret` owns comparison — store hashes, not plaintext. The library never sees or persists credentials |
 | Registration-free DCR | `/register` returns a random `client_id` that is **never stored**; any unknown `client_id` works with an allowlisted `redirect_uri`. Defensible for public clients with PKCE — the model dynamic connectors (Claude, Codex) actually need. Pre-registered clients bypass this entirely, bound to their own `redirectUris` and auth method. CIMD replaces this model |
-| Naming only confidential clients doesn't actually block public ones | `clients: ["gemini"]` (or `allowUnregisteredClients: false`) is **enforced**: DCR unmounted, dropped from AS metadata, unresolved `client_id` rejected with `unauthorized_client` at `authorize` and `invalid_client` at `token` |
+| Naming only confidential clients doesn't actually block public ones | `clients: ["gemini"]` (or `allowUnregisteredClients: false`) is **enforced**: DCR unmounted, dropped from AS metadata, unresolved `client_id` rejected with `unauthorized_client` at `authorize` and `invalid_client` at `token` and `revoke` |
 
-**Also designed in:** PKCE S256 (timing-safe, length-capped); HMAC auth codes bind `userId`, `clientId`, `redirectUri`, challenge, and `resource`; redirect allowlist + DCR filter; no query-string tokens (`token` and `access_token`); honest `grant_types_supported`; `/token` omits CORS `*`; audit fires on auth/scope denial as well as tool results.
+**Also designed in:** PKCE S256 (timing-safe, length-capped); HMAC auth codes bind `userId`, `clientId`, `redirectUri`, challenge, and `resource`; redirect allowlist + DCR filter; no query-string tokens (`token` and `access_token`); honest `grant_types_supported`; `/token` and `/revoke` omit CORS `*`; audit fires on auth/scope denial as well as tool results.
 
 **Known limits:** in-memory jti map is process-local (multi-instance needs `codeStore`); loopback redirect allowlist permits any path/port on `localhost` / `127.0.0.1` (expected for native clients); DCR does not bind credentials to a stored client record until CIMD.
 
@@ -575,6 +572,7 @@ Explicitly **out** of this package (do not expect parity with full MCP hosts or 
 - **No enterprise-managed auth** — no ID-JAG, no IdP product integration; you wire login + minting
 - **No embedded product surface** — no token store, sessions, or login UI
 - **No stdio** transport; no batch JSON-RPC arrays
+- **No DPoP, PAR, or `client_credentials`** — this AS is authorization_code (+ optional refresh and revoke)
 - **No paid external security audit** claimed here — see Threat model above
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for what is next — CIMD and the

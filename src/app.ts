@@ -30,6 +30,7 @@ import type {
   MintedToken,
   OAuthUser,
   RefreshAccessTokenInput,
+  RevokeTokenInput,
 } from "./oauth/types.js";
 import { createToolRegistry, type ToolDef } from "./registry.js";
 
@@ -62,6 +63,8 @@ export type McpAppAuth = {
   refreshAccessToken?: (
     input: RefreshAccessTokenInput,
   ) => Promise<MintedToken | null>;
+  /** RFC 7009 — presence mounts `/revoke` and advertises it. */
+  revokeToken?: (input: RevokeTokenInput) => Promise<void>;
   codeStore?: CodeStore;
   /** Required when any configured client is pre-registered (e.g. Gemini). */
   clientStore?: ClientStore;
@@ -165,6 +168,7 @@ export const createMcpApp = <TCtx>(
       loginUrl: options.auth.loginUrl,
       mintAccessToken: options.auth.mintAccessToken,
       refreshAccessToken: options.auth.refreshAccessToken,
+      revokeToken: options.auth.revokeToken,
       codeStore: options.auth.codeStore,
       clientStore: options.auth.clientStore,
     },

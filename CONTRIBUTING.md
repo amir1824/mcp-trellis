@@ -20,6 +20,7 @@ Verify:
 ```bash
 npm run typecheck
 npm test
+npm run test:e2e
 npm run build
 ```
 
@@ -27,8 +28,8 @@ npm run build
 
 1. Branch from `main`.
 2. Keep the change focused — one concern per PR.
-3. Add or update tests under `test/*.test.ts` when behavior changes.
-4. Ensure CI is green: typecheck, test, and build must pass.
+3. Add or update tests under `test/*.test.ts` (unit) or `test/e2e/` (real-socket) when behavior changes.
+4. Ensure CI is green: typecheck, test, test:e2e, and build must pass.
 
 ## Scope rules
 
@@ -39,7 +40,7 @@ npm run build
 
 ## Tests
 
-Tests live flat under `test/`:
+Unit tests live flat under `test/`:
 
 | File | Area |
 |------|------|
@@ -54,10 +55,13 @@ Tests live flat under `test/`:
 | `node.test.ts` | Node adapter |
 | `tools.test.ts` | `defineTool` / `apiTool` |
 
+`test/e2e/` is a separate tier: it spawns [`examples/http-server.ts`](examples/http-server.ts) (`http.createServer` + `asNodeHandler`) and `fetch`es over loopback (header casing, streamed bodies, real redirects). It is not part of `npm test`.
+
 Run with:
 
 ```bash
 npm test
+npm run test:e2e
 ```
 
 ## Releasing (maintainers)

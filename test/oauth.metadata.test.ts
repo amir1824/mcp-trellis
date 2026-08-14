@@ -69,6 +69,26 @@ describe("metadata grant derivation", () => {
     assert.equal(withoutDcr.registration_endpoint, undefined);
   });
 
+  it("advertises revocation_endpoint only when enabled", () => {
+    const off = authorizationServerMetadata({
+      origin: "https://example.test",
+      grantTypes: ["authorization_code"],
+    });
+    assert.equal(off.revocation_endpoint, undefined);
+    assert.equal(off.revocation_endpoint_auth_methods_supported, undefined);
+
+    const on = authorizationServerMetadata({
+      origin: "https://example.test",
+      grantTypes: ["authorization_code"],
+      revocationEnabled: true,
+    });
+    assert.equal(
+      on.revocation_endpoint,
+      "https://example.test/mcp/oauth/revoke",
+    );
+    assert.deepEqual(on.revocation_endpoint_auth_methods_supported, ["none"]);
+  });
+
   it("builds PRM resource URL", () => {
     const prm = protectedResourceMetadata({
       origin: "https://example.test",

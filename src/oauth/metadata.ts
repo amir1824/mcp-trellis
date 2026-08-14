@@ -24,10 +24,13 @@ export type AuthorizationServerMetadata = {
   response_types_supported: string[];
   grant_types_supported: string[];
   code_challenge_methods_supported: string[];
-  token_endpoint_auth_methods_supported: string[];
+  token_endpoint_auth_methods_supported: TokenEndpointAuthMethod[];
   scopes_supported: string[];
   /** RFC 8707 — clients must send `resource` on authorize/token. */
   resource_parameter_supported: boolean;
+  /** Omitted when `revokeToken` is not configured. */
+  revocation_endpoint?: string;
+  revocation_endpoint_auth_methods_supported?: TokenEndpointAuthMethod[];
 };
 
 export type MetadataOptions = {
@@ -43,6 +46,8 @@ export type MetadataOptions = {
   tokenEndpointAuthMethods?: TokenEndpointAuthMethod[];
   /** Advertise `registration_endpoint`. Default true. */
   dcrEnabled?: boolean;
+  /** Advertise `revocation_endpoint`. Default false. */
+  revocationEnabled?: boolean;
 };
 
 export const protectedResourceMetadata = (
@@ -58,6 +63,9 @@ export const authorizationServerMetadata = (
   options: MetadataOptions,
 ): AuthorizationServerMetadata => {
   const oauthPath = options.oauthPath ?? "/mcp/oauth";
+  const tokenEndpointAuthMethods = options.tokenEndpointAuthMethods ?? [
+    TOKEN_ENDPOINT_AUTH_METHODS.none,
+  ];
   return {
     issuer: options.origin,
     authorization_endpoint: `${options.origin}${oauthPath}/authorize`,
@@ -65,12 +73,16 @@ export const authorizationServerMetadata = (
     ...(options.dcrEnabled !== false
       ? { registration_endpoint: `${options.origin}${oauthPath}/register` }
       : {}),
+    ...(options.revocationEnabled
+      ? {
+          revocation_endpoint: `${options.origin}${oauthPath}/revoke`,
+          revocation_endpoint_auth_methods_supported: tokenEndpointAuthMethods,
+        }
+      : {}),
     response_types_supported: ["code"],
     grant_types_supported: [...options.grantTypes],
     code_challenge_methods_supported: ["S256"],
-    token_endpoint_auth_methods_supported: options.tokenEndpointAuthMethods ?? [
-      TOKEN_ENDPOINT_AUTH_METHODS.none,
-    ],
+    token_endpoint_auth_methods_supported: tokenEndpointAuthMethods,
     scopes_supported: options.scopes ?? [DEFAULT_SCOPE],
     resource_parameter_supported: true,
   };
