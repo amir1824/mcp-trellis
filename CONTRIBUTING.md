@@ -66,11 +66,36 @@ npm run test:e2e
 
 ## Releasing (maintainers)
 
-Publishing is **manual** for now (no npm token in CI).
+Releases publish to npm from GitHub Actions via **Trusted Publishing**
+(OIDC) — no long-lived npm token in secrets, no local OTP.
+
+### One-time setup
+
+1. Publish `0.1.0` once from your machine (granular access token), so the
+   package exists on npm:
+   ```bash
+   npm publish --access public
+   ```
+2. On [npmjs.com/package/mcp-trellis](https://www.npmjs.com/package/mcp-trellis)
+   → **Settings** → **Trusted Publisher** → GitHub Actions:
+   - Organization or user: `amir1824`
+   - Repository: `mcp-trellis`
+   - Workflow filename: `publish.yml` (filename only)
+   - Allowed action: `npm publish`
+3. Push this workflow to `main` if it is not there yet.
+
+### Each release
 
 1. Bump `"version"` in `package.json`.
 2. Commit: `chore: release vX.Y.Z`.
-3. Tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-4. Publish: `npm publish` (from a clean tree after `npm run build`).
+3. Tag and push:
+   ```bash
+   git tag vX.Y.Z
+   git push origin main
+   git push origin vX.Y.Z
+   ```
+4. The [Release](.github/workflows/publish.yml) workflow checks that the tag
+   matches `package.json`, runs typecheck / unit / e2e / build, publishes to
+   npm, and creates a GitHub Release.
 
-`prepublishOnly` already runs build + test before publish.
+`prepublishOnly` still runs build + test inside `npm publish` as a last guard.
