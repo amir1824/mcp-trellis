@@ -66,36 +66,36 @@ npm run test:e2e
 
 ## Releasing (maintainers)
 
-Releases publish to npm from GitHub Actions via **Trusted Publishing**
-(OIDC) — no long-lived npm token in secrets, no local OTP.
+Publishes to npm from GitHub Actions using an **environment secret**
+(`NPM_TOKEN`). The `npm-publish` environment is gated so only you approve.
 
-### One-time setup
+### One-time setup (GitHub)
 
-1. Publish `0.1.0` once from your machine (granular access token), so the
-   package exists on npm:
-   ```bash
-   npm publish --access public
-   ```
-2. On [npmjs.com/package/mcp-trellis](https://www.npmjs.com/package/mcp-trellis)
-   → **Settings** → **Trusted Publisher** → GitHub Actions:
-   - Organization or user: `amir1824`
-   - Repository: `mcp-trellis`
-   - Workflow filename: `publish.yml` (filename only)
-   - Allowed action: `npm publish`
-3. Push this workflow to `main` if it is not there yet.
+1. Create an npm [Granular Access Token](https://www.npmjs.com/settings/~/tokens)
+   with **Read and write** on packages.
+2. Repo → **Settings** → **Environments** → **New environment** → `npm-publish`
+3. On that environment:
+   - **Required reviewers** → add yourself (and only yourself)
+   - **Environment secrets** → `NPM_TOKEN` = the npm token
+4. Optional hardening: **Settings** → **Tags** → restrict who can create `v*`
+   tags to yourself.
 
 ### Each release
 
-1. Bump `"version"` in `package.json`.
-2. Commit: `chore: release vX.Y.Z`.
-3. Tag and push:
+1. Bump `"version"` in `package.json` and commit (`chore: release vX.Y.Z`).
+2. Push `main`, then either:
+
+   **A — tag (recommended)**
    ```bash
    git tag vX.Y.Z
-   git push origin main
    git push origin vX.Y.Z
    ```
-4. The [Release](.github/workflows/publish.yml) workflow checks that the tag
-   matches `package.json`, runs typecheck / unit / e2e / build, publishes to
-   npm, and creates a GitHub Release.
+
+   **B — button**
+   Actions → **Release** → **Run workflow** (publishes the version currently
+   in `package.json` on the branch you pick).
+
+3. GitHub asks you to **Approve** the `npm-publish` deployment — only then
+   does it publish to npm and create the GitHub Release.
 
 `prepublishOnly` still runs build + test inside `npm publish` as a last guard.

@@ -4,14 +4,18 @@ on:
   push:
     tags:
       - "v*"
+  # Actions → Release → Run workflow (only people with write access)
+  workflow_dispatch:
 
 permissions:
-  id-token: write # npm Trusted Publishing (OIDC)
   contents: write # GitHub Release
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Gate: Settings → Environments → npm-publish → Required reviewers = you
+    # Put NPM_TOKEN on this environment (not a repo-wide secret).
+    environment: npm-publish
     steps:
       - uses: actions/checkout@v4
 
@@ -20,14 +24,23 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
-      # Trusted Publishing needs npm ≥ 11.5.1.
-      - run: npm install -g npm@latest
+      - name: Resolve version
+        id: ver
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            version="$(node -p "require('./package.json').version")"
+            echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+            echo "version=${version}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Check version matches tag
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          tag="${GITHUB_REF_NAME#v}"
           pkg="$(node -p "require('./package.json').version")"
-          test "$tag" = "$pkg"
+          test "${{ steps.ver.outputs.version }}" = "$pkg"
 
       - run: npm ci
       - run: npm run typecheck
@@ -35,11 +48,22 @@ jobs:
       - run: npm run test:e2e
       - run: npm run build
 
-      # Auth via OIDC — no NPM_TOKEN. Configure Trusted Publisher on npmjs.com
-      # for this repo + workflow filename `publish.yml`.
-      - run: npm publish --access public
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag
+        run: |
+          tag="${{ steps.ver.outputs.tag }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists"
+            exit 0
+          fi
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            gh release create "$tag" --generate-notes --verify-tag
+          else
+            gh release create "$tag" --generate-notes --target "$GITHUB_SHA"
+          fi
