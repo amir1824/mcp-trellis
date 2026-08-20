@@ -44,7 +44,7 @@
   },
   "files": [
     "dist",
-    "docs/diagrams",
+    "docs",
     "README.md",
     "LICENSE"
   ],
