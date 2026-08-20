@@ -91,6 +91,10 @@ curl -s http://127.0.0.1:8787/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}'
 ```
 
+```json
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"serverInfo":{"name":"demo","version":"1.0.0"},"instructions":""}}
+```
+
 ## Clients
 
 | Client | Registration | Token endpoint auth | Notes |

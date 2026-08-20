@@ -5,6 +5,11 @@ connectors. For a working minimal server, start from the [README](../README.md).
 API tables and exports live in [reference.md](reference.md). Security guarantees
 and threat model: [security.md](security.md).
 
+[Architecture](#how-it-fits-together) · [Clients](#clients) · [Recipes](#recipes) ·
+[Compose the primitives](#advanced-compose-the-primitives) ·
+[Ports](#ports--what-you-implement) · [Tool registry](#tool-registry) ·
+[Multi-tenant](#multi-tenant-saas-connectors)
+
 ## How it fits together
 
 What `createMcpApp` wires for you — two pieces, one deciding which requests go
@@ -202,7 +207,7 @@ The lower-level handler. Here the audience check is **yours** — prefer
 
 | Port | Role |
 |------|------|
-| `authenticate(req, method, tool?)` | Return `{ id, scopes, claims? }`, or `null` → 401 + `WWW-Authenticate`. **Must reject tokens whose audience is not this server’s canonical resource** |
+| `authenticate(req, method, tool?)` | Return `{ id, scopes, claims? }`, or `null` → 401 + `WWW-Authenticate`. **Must reject tokens whose audience is not this server's canonical resource** |
 | `context(req, principal)` | Build per-request ctx for tools (DB, env, …). Use `principal?.claims` for tenant / plan / role without re-decoding the bearer |
 | `audit?(entry)` | Opt-in **metrics hook**: pass any function to receive tool results **and** every denial (bad token, missing scope, query-string token). `entry.method` is `""` for transport-level denials made before parsing. Throwing from this port never fails the request. Omit it and the library stays silent |
 
@@ -257,7 +262,7 @@ Auth codes carry `userId`, `resource`, and the granted `scope`. Clients **must**
 
 ## Tool registry
 
-Schema and handler live in one place — no parallel “defs” and “handlers” lists to keep in sync:
+Schema and handler live in one place — no parallel "defs" and "handlers" lists to keep in sync:
 
 ```ts
 createToolRegistry(tools, { validateArgs: false }) // default: off, easy adoption

@@ -53,6 +53,7 @@ Unit tests live flat under `test/`:
 | `protocol.test.ts` | Protocol version negotiation |
 | `validate.test.ts` | JSON Schema subset |
 | `node.test.ts` | Node adapter |
+| `origins.test.ts` | Origin allowlist (multi-tenant Host checks) |
 | `tools.test.ts` | `defineTool` / `apiTool` |
 
 `test/e2e/` is a separate tier: it spawns [`examples/http-server.ts`](examples/http-server.ts) (`http.createServer` + `asNodeHandler`) and `fetch`es over loopback (header casing, streamed bodies, real redirects). It is not part of `npm test`.
