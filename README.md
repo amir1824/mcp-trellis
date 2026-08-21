@@ -21,7 +21,18 @@ The whole connector stack in one package — MCP handler **and** OAuth 2.1 autho
 | Self-hosted | ✅ | ✅ | ✅ | ✅ | ❌ SaaS |
 | Named connector profiles (Claude / Gemini / Codex), enforced | ✅ | ❌ | ❌ | ❌ | ❌ |
 
-Prefer the official SDK when you already have a separate AS. Prefer `workers-oauth-provider` when you want Cloudflare's Workers-only implementation. Prefer a managed IdP when you'd rather pay than operate one.
+Prefer the official SDK when you already have a separate AS. Prefer
+`workers-oauth-provider` when you want Cloudflare's Workers-only
+implementation. Prefer a managed IdP when you'd rather pay than operate one.
+
+Named alternatives in the same problem space:
+
+- **`@mcpauth/auth` / `getmcpauth` / `mcp-auth`** — OAuth for MCP, typically
+  with a DB or a different runtime/stack assumption. mcp-trellis is the
+  **zero-dependency** option that ships the MCP handler **and** the OAuth 2.1
+  AS in one package.
+- **`fastmcp-oauth`** — OAuth helpers around FastMCP. mcp-trellis is host-agnostic
+  (`Request`/`Response`) and not tied to a particular MCP framework.
 
 ## Requirements
 
