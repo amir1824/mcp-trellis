@@ -6,4 +6,5 @@ dist/
 .env
 .env.*
 # Working doc — not part of the published package
+GAP-ROADMAP.md
 docs/GAP-ROADMAP.md
