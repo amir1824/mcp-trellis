@@ -68,20 +68,28 @@ npm run test:e2e
 ## Releasing (maintainers)
 
 Publishes to npm from GitHub Actions via **trusted publishing (OIDC)** —
-no long-lived `NPM_TOKEN`. Provenance is attached automatically
-(`npm publish --provenance`).
+no long-lived `NPM_TOKEN`. Provenance is attached automatically when the
+trusted publisher is configured.
 
-### One-time setup
+### One-time setup (required — publish fails with ENEEDAUTH until this exists)
 
-1. On [npmjs.com](https://www.npmjs.com/) → package `mcp-trellis` →
-   **Trusted Publisher** → configure GitHub Actions:
-   - Repository: `amir1824/mcp-trellis`
-   - Workflow filename: `publish.yml`
-   - Environment name: **leave blank** (the Release workflow does not use a
-     GitHub Environment — filling one in here causes provenance to sign and
-     then a 404 on `npm publish`)
-2. Optional hardening: **Settings** → **Tags** → restrict who can create `v*`
-   tags to yourself.
+1. Log in to npm as the package owner (`amir-b`).
+2. Open [mcp-trellis → Settings → Trusted Publisher](https://www.npmjs.com/package/mcp-trellis/access)
+   (or Package Settings → Trusted publishing).
+3. Choose **GitHub Actions** and save exactly:
+
+   | Field | Value |
+   |-------|-------|
+   | Organization or user | `amir1824` |
+   | Repository | `mcp-trellis` |
+   | Workflow filename | `publish.yml` (filename only — not `Release`, not a path) |
+   | Environment name | leave **blank** |
+   | Allowed actions | `npm publish` (check the box) |
+
+   npm does **not** validate this form on save. Typos only show up as
+   `ENEEDAUTH` / 404 when Actions runs.
+
+4. Optional: GitHub → Settings → Tags → restrict who can create `v*` tags.
 
 ### Each release
 
@@ -95,14 +103,11 @@ no long-lived `NPM_TOKEN`. Provenance is attached automatically
    ```
 
    **B — button**
-   Actions → **Release** → **Run workflow** (publishes the version currently
-   in `package.json` on the branch you pick).
+   Actions → **Release** → **Run workflow**.
 
-If publish fails with `ENEEDAUTH` or a 404 on `PUT …/mcp-trellis`, check in
-order: (1) trusted publisher on npmjs.com matches repo + `publish.yml` with
-Environment blank; (2) the Release workflow must not write an `.npmrc` auth
-token (`setup-node` `registry-url` does that — leave it unset). Do not fall
-back to a long-lived token.
+If publish fails with `ENEEDAUTH` or a 404 on `PUT …/mcp-trellis`, the
+trusted-publisher row above is missing or mistyped — fix it on npmjs.com and
+re-run. Do not add a long-lived `NPM_TOKEN`.
 
 `prepublishOnly` still runs build + test inside `npm publish` as a last guard.
 
