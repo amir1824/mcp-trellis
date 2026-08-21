@@ -114,9 +114,8 @@ export type McpAppOptions<TCtx> = {
   /** Per-request context for tools. Defaults to an empty object. */
   context?: (req: Request, principal: Principal | null) => TCtx | Promise<TCtx>;
   /**
-   * Opt-in metrics hook — same as `McpPorts.audit`. Pass a function to get
-   * per-request entries (tools + denials); omit for silence. The library
-   * never stores or prints these itself. See `consoleAudit` or
+   * Opt-in metrics hook — same as `McpPorts.audit`. Omit for silence. The
+   * library never stores or prints these itself. See `consoleAudit` or
    * `examples/audit-store.ts`.
    */
   audit?: (entry: AuditEntry) => void | Promise<void>;

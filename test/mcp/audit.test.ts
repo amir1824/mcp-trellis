@@ -178,8 +178,7 @@ describe("audit port", () => {
         realm: "test",
         resourceMetadataUrl: "https://example.test/.well-known/oauth-protected-resource/mcp",
       },
-      // Wide enough that a loaded CI event loop still loses to the race timer,
-      // not to wall-clock noise. A 200 while the sink never resolves is the proof.
+      // A 200 while the sink never resolves is the proof the race timer won.
       auditTimeoutMs: 150,
       ports: {
         authenticate: async () => ({ id: "u1", scopes: [] }),
@@ -198,7 +197,6 @@ describe("audit port", () => {
 
   it("a slow audit port that resolves after the timeout never becomes an unhandled rejection", async () => {
     let auditFinished = false;
-    let auditThrew = false;
     const registry = createToolRegistry<Ctx>([
       {
         name: "echo",
@@ -224,8 +222,6 @@ describe("audit port", () => {
               auditFinished = true;
               reject(new Error("audit sink failed, arriving late"));
             }, 60);
-          }).catch(() => {
-            auditThrew = true;
           }),
       },
     });
@@ -249,7 +245,6 @@ describe("audit port", () => {
       process.removeListener("unhandledRejection", onUnhandled);
     }
     assert.equal(unhandled, undefined, "a late audit rejection must never surface as unhandled");
-    void auditThrew;
   });
 
   it("audits a query-string token on POST", async () => {

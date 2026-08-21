@@ -33,11 +33,14 @@ export type McpPorts<TCtx> = {
   authenticate: (req: Request, method: string, tool?: string) => Promise<Principal | null>;
   context: (req: Request, principal: Principal | null) => TCtx | Promise<TCtx>;
   /**
-   * Opt-in metrics hook. Pass any function to receive each tool result and
-   * every denial (bad token, missing scope, query-string token). Omit it and
-   * the library stays silent — no stdout, no store. Do what you want with
-   * `entry` (DB, APM, admin UI). Throwing never fails the request, and
-   * neither does hanging — see `McpHandlerOptions.auditTimeoutMs`.
+   * Opt-in metrics hook. Pass any function to receive tool results and auth
+   * denials (bad token, missing scope, query-string token), plus the 500
+   * path when a host port throws. Protocol errors (malformed JSON, bad
+   * `jsonrpc`, unsupported protocol version, oversized body, batch) are not
+   * audited. Omit it and the library stays silent — no stdout, no store.
+   * Do what you want with `entry` (DB, APM, admin UI). Throwing never fails
+   * the request, and neither does hanging — see
+   * `McpHandlerOptions.auditTimeoutMs`.
    */
   audit?: ((entry: AuditEntry) => void | Promise<void>) | undefined;
 };
