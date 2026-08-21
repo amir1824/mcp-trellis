@@ -1,10 +1,7 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
-  # Actions → Release → Run workflow (only people with write access)
+  # Manual only — Actions → Release → Run workflow
   workflow_dispatch:
 
 # Top-level + job-level: npm OIDC needs id-token on the job that publishes.
