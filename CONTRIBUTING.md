@@ -78,6 +78,9 @@ you approve the deployment. Provenance is attached automatically
    **Trusted Publisher** → configure GitHub Actions:
    - Repository: `amir1824/mcp-trellis`
    - Workflow filename: `publish.yml`
+   - Environment name: `npm-publish` (must match the job's
+     `environment:` in `.github/workflows/publish.yml` — omit it and
+     OIDC may sign provenance but still get a 404 on `npm publish`)
 2. Repo → **Settings** → **Environments** → **New environment** → `npm-publish`
 3. On that environment: **Required reviewers** → add yourself (and only yourself).
    Do **not** add an `NPM_TOKEN` secret — OIDC replaces it.
