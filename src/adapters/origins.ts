@@ -17,10 +17,7 @@ export type OriginAllowlistOptions = {
   allowedOrigins?: string[];
 };
 
-type OriginPredicate = (
-  origin: string,
-  options: OriginAllowlistOptions,
-) => boolean;
+type OriginPredicate = (origin: string, options: OriginAllowlistOptions) => boolean;
 
 const originOf = (value: string): string | null => {
   try {
@@ -57,15 +54,9 @@ const isWildcardSubdomain: OriginPredicate = (origin, options) => {
   }
 };
 
-const ORIGIN_PREDICATES: OriginPredicate[] = [
-  isExactOrigin,
-  isWildcardSubdomain,
-];
+const ORIGIN_PREDICATES: OriginPredicate[] = [isExactOrigin, isWildcardSubdomain];
 
-export const isAllowedOrigin = (
-  origin: string,
-  options: OriginAllowlistOptions = {},
-): boolean => {
+export const isAllowedOrigin = (origin: string, options: OriginAllowlistOptions = {}): boolean => {
   // Empty/omitted: admit all — callers that derive origin from Host must
   // require a non-empty list before reaching here (see asNodeHandler).
   if (!options.allowedOrigins || options.allowedOrigins.length === 0) {

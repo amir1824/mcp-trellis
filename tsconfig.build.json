@@ -15,7 +15,11 @@
     "noUnusedParameters": true,
     "noImplicitReturns": true,
     "isolatedModules": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "verbatimModuleSyntax": true,
+    "exactOptionalPropertyTypes": true
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist", "test"]

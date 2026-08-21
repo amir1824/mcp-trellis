@@ -83,6 +83,8 @@ export default { fetch: (req: Request) => app.fetch(req) };
 
 You return the token's `audience`; **the library rejects tokens minted for a different resource** before any tool runs. Details: [docs/security.md](docs/security.md).
 
+A real `/authorize` walk includes an approval step: a resolved session doesn't redirect straight back with a code, it renders a consent screen first (built in, or your own via `consent`). First-time integrators clicking through by hand should expect an HTML page there, not an immediate redirect — see [Consent](docs/guide.md#consent).
+
 Smoke-test with `initialize` (public — no Bearer needed):
 
 ```bash

@@ -56,7 +56,8 @@ const app = createMcpApp<Ctx>({
   tools: [listRows],
   clients: ["claude"],
   auth: {
-    codeSecret: "multi-tenant-code-secret",
+    // Real deployments: process.env.OAUTH_CODE_SECRET, generated via `openssl rand -base64 32`.
+    codeSecret: "example-multi-tenant-code-secret-do-not-reuse",
     resolveUser: async () => ({ id: "u1" }),
     loginUrl: (_req, next) => `/login?next=${encodeURIComponent(next)}`,
     mintAccessToken: async ({ userId, scope, resource }) => {
@@ -75,9 +76,7 @@ const app = createMcpApp<Ctx>({
     },
     verifyToken: async (token) => {
       try {
-        return JSON.parse(
-          Buffer.from(token, "base64url").toString("utf8"),
-        ) as {
+        return JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as {
           userId: string;
           scopes: string[];
           audience: string;
@@ -90,11 +89,12 @@ const app = createMcpApp<Ctx>({
   },
   context: async (req, principal) => {
     const tenantId = tenantOf(new URL(req.url).origin) ?? "";
-    const plan =
-      typeof principal?.claims?.plan === "string"
-        ? principal.claims.plan
-        : undefined;
-    return { userId: principal?.id ?? "", tenantId, plan };
+    const plan = typeof principal?.claims?.plan === "string" ? principal.claims.plan : undefined;
+    return {
+      userId: principal?.id ?? "",
+      tenantId,
+      ...(plan !== undefined ? { plan } : {}),
+    };
   },
 });
 

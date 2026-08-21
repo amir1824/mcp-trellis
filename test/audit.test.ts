@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createToolRegistry } from "../src/registry.js";
+import { consoleAudit } from "../src/audit.js";
 import { createMcpHandler } from "../src/dispatch.js";
 import type { AuditEntry } from "../src/methods.js";
-import { consoleAudit } from "../src/audit.js";
+import { createToolRegistry } from "../src/registry.js";
 
 describe("audit port", () => {
   type Ctx = Record<string, never>;
@@ -31,8 +31,7 @@ describe("audit port", () => {
       serverInfo: { name: "audit-test", version: "0.0.1" },
       wwwAuthenticate: {
         realm: "test",
-        resourceMetadataUrl:
-          "https://example.test/.well-known/oauth-protected-resource/mcp",
+        resourceMetadataUrl: "https://example.test/.well-known/oauth-protected-resource/mcp",
       },
       ports: {
         authenticate: async (req) => {
@@ -43,16 +42,12 @@ describe("audit port", () => {
           return null;
         },
         context: async () => ({}),
-        audit,
+        ...(audit !== undefined ? { audit } : {}),
       },
     });
   };
 
-  const post = (
-    handler: ReturnType<typeof makeHandler>,
-    body: unknown,
-    token?: string,
-  ) =>
+  const post = (handler: ReturnType<typeof makeHandler>, body: unknown, token?: string) =>
     handler.fetch(
       new Request("https://example.test/mcp", {
         method: "POST",
@@ -167,6 +162,97 @@ describe("audit port", () => {
     assert.equal(denied.status, 401);
   });
 
+  it("a hanging audit port does not stall the response past auditTimeoutMs", async () => {
+    const registry = createToolRegistry<Ctx>([
+      {
+        name: "echo",
+        description: "echo",
+        inputSchema: { type: "object", properties: {} },
+        handler: () => "ok",
+      },
+    ]);
+    const handler = createMcpHandler<Ctx>({
+      registry,
+      serverInfo: { name: "audit-timeout-test", version: "0.0.1" },
+      wwwAuthenticate: {
+        realm: "test",
+        resourceMetadataUrl: "https://example.test/.well-known/oauth-protected-resource/mcp",
+      },
+      auditTimeoutMs: 20,
+      ports: {
+        authenticate: async () => ({ id: "u1", scopes: [] }),
+        context: async () => ({}),
+        audit: () => new Promise<void>(() => {}), // never resolves
+      },
+    });
+
+    const startedAt = Date.now();
+    const res = await post(
+      handler,
+      { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "echo", arguments: {} } },
+      "irrelevant",
+    );
+    const elapsed = Date.now() - startedAt;
+    assert.equal(res.status, 200);
+    assert.ok(elapsed < 500, `expected the response well under 500ms, took ${elapsed}ms`);
+  });
+
+  it("a slow audit port that resolves after the timeout never becomes an unhandled rejection", async () => {
+    let auditFinished = false;
+    let auditThrew = false;
+    const registry = createToolRegistry<Ctx>([
+      {
+        name: "echo",
+        description: "echo",
+        inputSchema: { type: "object", properties: {} },
+        handler: () => "ok",
+      },
+    ]);
+    const handler = createMcpHandler<Ctx>({
+      registry,
+      serverInfo: { name: "audit-timeout-test", version: "0.0.1" },
+      wwwAuthenticate: {
+        realm: "test",
+        resourceMetadataUrl: "https://example.test/.well-known/oauth-protected-resource/mcp",
+      },
+      auditTimeoutMs: 10,
+      ports: {
+        authenticate: async () => ({ id: "u1", scopes: [] }),
+        context: async () => ({}),
+        audit: () =>
+          new Promise<void>((_resolve, reject) => {
+            setTimeout(() => {
+              auditFinished = true;
+              reject(new Error("audit sink failed, arriving late"));
+            }, 60);
+          }).catch(() => {
+            auditThrew = true;
+          }),
+      },
+    });
+
+    let unhandled: unknown;
+    const onUnhandled = (reason: unknown) => {
+      unhandled = reason;
+    };
+    process.once("unhandledRejection", onUnhandled);
+    try {
+      const res = await post(
+        handler,
+        { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "echo", arguments: {} } },
+        "irrelevant",
+      );
+      assert.equal(res.status, 200);
+      // Wait past the audit's own 60ms delay so we can observe it settle.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      assert.equal(auditFinished, true, "the slow audit call should still run to completion");
+    } finally {
+      process.removeListener("unhandledRejection", onUnhandled);
+    }
+    assert.equal(unhandled, undefined, "a late audit rejection must never surface as unhandled");
+    void auditThrew;
+  });
+
   it("audits a query-string token on POST", async () => {
     const entries: AuditEntry[] = [];
     const handler = makeHandler((e) => {
@@ -190,9 +276,7 @@ describe("audit port", () => {
     const handler = makeHandler((e) => {
       entries.push(e);
     });
-    const res = await handler.fetch(
-      new Request("https://example.test/mcp", { method: "GET" }),
-    );
+    const res = await handler.fetch(new Request("https://example.test/mcp", { method: "GET" }));
     assert.equal(res.status, 401);
     assert.equal(entries.length, 1);
     assert.equal(entries[0]?.error, "unauthorized");
@@ -360,7 +444,10 @@ describe("consoleAudit", () => {
 
     assert.equal(error.mock.callCount(), 1);
     const line = error.mock.calls[0]?.arguments[0] as string;
-    assert.match(line, /^\[mcp-trellis\] tools\/call tool=boom fail \d+ms user=u1 error=Tool execution failed$/);
+    assert.match(
+      line,
+      /^\[mcp-trellis\] tools\/call tool=boom fail \d+ms user=u1 error=Tool execution failed$/,
+    );
   });
 });
 

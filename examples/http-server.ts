@@ -24,11 +24,8 @@ const echo: ToolDef<Ctx> = {
   handler: (_ctx, args) => String(args.text ?? ""),
 };
 
-const encodeToken = (payload: {
-  userId: string;
-  scopes: string[];
-  audience: string;
-}): string => Buffer.from(JSON.stringify(payload)).toString("base64url");
+const encodeToken = (payload: { userId: string; scopes: string[]; audience: string }): string =>
+  Buffer.from(JSON.stringify(payload)).toString("base64url");
 
 // ponytail: process-local Set; ceiling is a shared denylist that verifyToken
 // (and refreshAccessToken) read — see examples/stores.ts for the Kv shape.
@@ -39,7 +36,8 @@ const app = createMcpApp<Ctx>({
   tools: [echo],
   clients: ["claude"],
   auth: {
-    codeSecret: "e2e-code-secret-value",
+    // Real deployments: process.env.OAUTH_CODE_SECRET, generated via `openssl rand -base64 32`.
+    codeSecret: "example-http-server-code-secret-do-not-reuse",
     resolveUser: async () => ({ id: "u1" }),
     loginUrl: (_req, next) => `/login?next=${encodeURIComponent(next)}`,
     mintAccessToken: async ({ userId, scope, resource }) => ({
@@ -54,9 +52,11 @@ const app = createMcpApp<Ctx>({
     verifyToken: async (token) => {
       if (revoked.has(token)) return null;
       try {
-        return JSON.parse(
-          Buffer.from(token, "base64url").toString("utf8"),
-        ) as { userId: string; scopes: string[]; audience: string };
+        return JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as {
+          userId: string;
+          scopes: string[];
+          audience: string;
+        };
       } catch {
         return null;
       }

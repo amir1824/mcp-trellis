@@ -5,17 +5,11 @@ import { isAllowedOrigin } from "../src/adapters/origins.js";
 describe("isAllowedOrigin", () => {
   it("admits everything when the list is empty or omitted", () => {
     assert.equal(isAllowedOrigin("https://anywhere.test"), true);
-    assert.equal(
-      isAllowedOrigin("https://anywhere.test", { allowedOrigins: [] }),
-      true,
-    );
+    assert.equal(isAllowedOrigin("https://anywhere.test", { allowedOrigins: [] }), true);
   });
 
-  it("admits everything when the list is [\"*\"]", () => {
-    assert.equal(
-      isAllowedOrigin("https://anywhere.test", { allowedOrigins: ["*"] }),
-      true,
-    );
+  it('admits everything when the list is ["*"]', () => {
+    assert.equal(isAllowedOrigin("https://anywhere.test", { allowedOrigins: ["*"] }), true);
   });
 
   it("matches exact origins after URL.origin normalization", () => {
@@ -53,9 +47,6 @@ describe("isAllowedOrigin", () => {
     assert.equal(isAllowedOrigin("https://example.com", opts), false);
     assert.equal(isAllowedOrigin("http://acme.example.com", opts), false);
     assert.equal(isAllowedOrigin("https://evilexample.com", opts), false);
-    assert.equal(
-      isAllowedOrigin("https://acme.example.com.evil.com", opts),
-      false,
-    );
+    assert.equal(isAllowedOrigin("https://acme.example.com.evil.com", opts), false);
   });
 });

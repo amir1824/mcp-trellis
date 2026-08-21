@@ -1,7 +1,7 @@
 import {
   DEFAULT_SCOPE,
-  TOKEN_ENDPOINT_AUTH_METHODS,
   type GrantType,
+  TOKEN_ENDPOINT_AUTH_METHODS,
   type TokenEndpointAuthMethod,
 } from "./constants.js";
 import { canonicalResource, DEFAULT_RESOURCE_PATH } from "./resource.js";
@@ -36,23 +36,21 @@ export type AuthorizationServerMetadata = {
 export type MetadataOptions = {
   origin: string;
   /** MCP resource path, e.g. "/mcp". */
-  resourcePath?: string;
+  resourcePath?: string | undefined;
   /** OAuth path prefix, e.g. "/mcp/oauth". */
-  oauthPath?: string;
+  oauthPath?: string | undefined;
   /** Only advertise grants that are actually handled. */
   grantTypes: GrantType[];
-  scopes?: string[];
+  scopes?: string[] | undefined;
   /** Only advertise auth methods the configured clients actually use. */
-  tokenEndpointAuthMethods?: TokenEndpointAuthMethod[];
+  tokenEndpointAuthMethods?: TokenEndpointAuthMethod[] | undefined;
   /** Advertise `registration_endpoint`. Default true. */
-  dcrEnabled?: boolean;
+  dcrEnabled?: boolean | undefined;
   /** Advertise `revocation_endpoint`. Default false. */
-  revocationEnabled?: boolean;
+  revocationEnabled?: boolean | undefined;
 };
 
-export const protectedResourceMetadata = (
-  options: MetadataOptions,
-): ProtectedResourceMetadata => ({
+export const protectedResourceMetadata = (options: MetadataOptions): ProtectedResourceMetadata => ({
   resource: canonicalResource(options.origin, options.resourcePath),
   authorization_servers: [options.origin],
   bearer_methods_supported: ["header"],

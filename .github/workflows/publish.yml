@@ -9,20 +9,26 @@ on:
 
 permissions:
   contents: write # GitHub Release
+  id-token: write # npm trusted publishing (OIDC) — no long-lived NPM_TOKEN
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     # Gate: Settings → Environments → npm-publish → Required reviewers = you
-    # Put NPM_TOKEN on this environment (not a repo-wide secret).
+    # Manual prerequisite: configure a trusted publisher on npmjs.com for
+    # amir1824/mcp-trellis + this workflow filename before merging, or the
+    # publish step below fails with ENEEDAUTH.
     environment: npm-publish
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+
+      # Trusted publishing (OIDC) needs npm >= 11.5.1; Node 22 ships an older npm.
+      - run: npm install -g npm@^11.5.1
 
       - name: Resolve version
         id: ver
@@ -43,15 +49,16 @@ jobs:
           test "${{ steps.ver.outputs.version }}" = "$pkg"
 
       - run: npm ci
+      - run: npm run lint
       - run: npm run typecheck
       - run: npm test
       - run: npm run test:e2e
       - run: npm run build
 
+      # No NODE_AUTH_TOKEN — npm uses the OIDC token from `id-token: write`
+      # and publishes with provenance automatically.
       - name: Publish to npm
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public
 
       - name: GitHub Release
         env:

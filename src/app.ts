@@ -7,27 +7,30 @@
 
 import { parseBearer } from "./auth/bearer.js";
 import {
-  DEFAULT_CLIENTS,
   assertClientsConfigured,
-  hasDynamicClient,
   authMethodsFor,
-  redirectUrisFor,
   type ClientName,
+  DEFAULT_CLIENTS,
+  hasDynamicClient,
+  redirectUrisFor,
 } from "./clients.js";
 import { createMcpHandler } from "./dispatch.js";
 import { INTERNAL_ERROR, jsonResponse } from "./http.js";
 import type { AuditEntry, Principal, ServerInfo } from "./methods.js";
-import { createOAuthRouter } from "./oauth/router.js";
+import type { CodeStore } from "./oauth/codes.js";
+import type { ConsentOptions } from "./oauth/consent.js";
 import {
-  DEFAULT_RESOURCE_PATH,
   canonicalResource,
+  DEFAULT_RESOURCE_PATH,
+  normalizeConfiguredPath,
   resourcesEqual,
 } from "./oauth/resource.js";
-import type { CodeStore } from "./oauth/codes.js";
+import { createOAuthRouter } from "./oauth/router.js";
 import type {
   ClientStore,
   MintAccessTokenInput,
   MintedToken,
+  OAuthAuditEntry,
   OAuthUser,
   RefreshAccessTokenInput,
   RevokeTokenInput,
@@ -58,18 +61,20 @@ export type McpAppAuth = {
    * `createMcpApp` rejects tokens minted for a different resource itself,
    * so this check cannot be forgotten.
    */
-  verifyToken: (
-    token: string,
-    req: Request,
-  ) => Promise<VerifiedToken | null>;
-  refreshAccessToken?: (
-    input: RefreshAccessTokenInput,
-  ) => Promise<MintedToken | null>;
+  verifyToken: (token: string, req: Request) => Promise<VerifiedToken | null>;
+  refreshAccessToken?: (input: RefreshAccessTokenInput) => Promise<MintedToken | null>;
   /** RFC 7009 — presence mounts `/revoke` and advertises it. */
   revokeToken?: (input: RevokeTokenInput) => Promise<void>;
   codeStore?: CodeStore;
   /** Required when any configured client is pre-registered (e.g. Gemini). */
   clientStore?: ClientStore;
+  /**
+   * Opt-in OAuth-side metrics hook — see the tool-call `audit` below for
+   * the general shape. This one sees the real reason behind a collapsed
+   * `invalid_client` or a rejected `codeSecret`, which the caller never
+   * does. Omit for silence.
+   */
+  audit?: (entry: OAuthAuditEntry) => void | Promise<void>;
 };
 
 export type McpAppOptions<TCtx> = {
@@ -85,11 +90,25 @@ export type McpAppOptions<TCtx> = {
   oauthPath?: string;
   /** Scopes this server grants. Default `["mcp"]`. */
   scopes?: string[];
+  /** Required when `scopes` has more than one entry — see `OAuthRouterOptions.defaultScopes`. */
+  defaultScopes?: string[];
   realm?: string;
   /** Extra exact-match redirect URIs beyond the client profiles. */
   extraRedirectUris?: string[];
   /** Allow loopback redirects (native clients). Default true. */
   allowLoopback?: boolean;
+  /**
+   * Consent policy — policy, not a credential, so it sits alongside
+   * `allowLoopback` rather than under `auth`. Omit for the built-in
+   * hardened interstitial.
+   */
+  consent?: ConsentOptions;
+  /**
+   * Require every `client_id` to come from `clientStore` or this server's
+   * own `/register` (sealed assertion). Default **true** since 1.0.
+   * Set false only to accept invented public ids (pre-CIMD).
+   */
+  requireRegisteredClients?: boolean;
   validateArgs?: boolean;
   onToolError?: (exc: unknown) => string;
   /** Per-request context for tools. Defaults to an empty object. */
@@ -101,16 +120,18 @@ export type McpAppOptions<TCtx> = {
    * `examples/audit-store.ts`.
    */
   audit?: (entry: AuditEntry) => void | Promise<void>;
+  /** Max time to wait for `audit` above before responding anyway. Default 1000ms. */
+  auditTimeoutMs?: number;
 };
 
 export type McpApp = {
   fetch: (request: Request) => Promise<Response>;
 };
 
-export const createMcpApp = <TCtx>(
-  options: McpAppOptions<TCtx>,
-): McpApp => {
-  const resourcePath = options.resourcePath ?? DEFAULT_RESOURCE_PATH;
+export const createMcpApp = <TCtx>(options: McpAppOptions<TCtx>): McpApp => {
+  // Normalized once here — "/mcp/" and "/mcp" must route identically, not
+  // diverge into a 404 for one of them. See `normalizeConfiguredPath`.
+  const resourcePath = normalizeConfiguredPath(options.resourcePath ?? DEFAULT_RESOURCE_PATH);
   const oauthPath = options.oauthPath ?? `${resourcePath}/oauth`;
   const clients = options.clients ?? DEFAULT_CLIENTS;
   const realm = options.realm ?? options.serverInfo.name;
@@ -118,8 +139,8 @@ export const createMcpApp = <TCtx>(
   assertClientsConfigured(clients, options.auth.clientStore);
 
   const registry = createToolRegistry<TCtx>(options.tools, {
-    validateArgs: options.validateArgs,
-    onToolError: options.onToolError,
+    ...(options.validateArgs !== undefined ? { validateArgs: options.validateArgs } : {}),
+    ...(options.onToolError !== undefined ? { onToolError: options.onToolError } : {}),
   });
 
   /**
@@ -136,13 +157,18 @@ export const createMcpApp = <TCtx>(
     const expected = canonicalResource(new URL(req.url).origin, resourcePath);
     if (!resourcesEqual(verified.audience, expected)) return null;
 
-    return { id: verified.userId, scopes: verified.scopes, claims: verified.claims };
+    return {
+      id: verified.userId,
+      scopes: verified.scopes,
+      ...(verified.claims !== undefined ? { claims: verified.claims } : {}),
+    };
   };
 
   const handler = createMcpHandler<TCtx>({
     registry,
     serverInfo: options.serverInfo,
-    instructions: options.instructions,
+    ...(options.instructions !== undefined ? { instructions: options.instructions } : {}),
+    ...(options.auditTimeoutMs !== undefined ? { auditTimeoutMs: options.auditTimeoutMs } : {}),
     wwwAuthenticate: (req) => ({
       realm,
       resourceMetadataUrl: `${new URL(req.url).origin}/.well-known/oauth-protected-resource${resourcePath}`,
@@ -150,7 +176,7 @@ export const createMcpApp = <TCtx>(
     ports: {
       authenticate,
       context: options.context ?? (() => ({}) as TCtx),
-      audit: options.audit,
+      ...(options.audit !== undefined ? { audit: options.audit } : {}),
     },
   });
 
@@ -158,15 +184,17 @@ export const createMcpApp = <TCtx>(
     resourcePath,
     oauthPath,
     realm,
-    scopes: options.scopes,
+    ...(options.scopes !== undefined ? { scopes: options.scopes } : {}),
+    ...(options.defaultScopes !== undefined ? { defaultScopes: options.defaultScopes } : {}),
     tokenEndpointAuthMethods: authMethodsFor(clients),
     allowUnregisteredClients: hasDynamicClient(clients),
+    ...(options.requireRegisteredClients !== undefined
+      ? { requireRegisteredClients: options.requireRegisteredClients }
+      : {}),
+    ...(options.consent !== undefined ? { consent: options.consent } : {}),
     redirect: {
       // Client profiles are the source of truth for callbacks.
-      extra: [
-        ...redirectUrisFor(clients),
-        ...(options.extraRedirectUris ?? []),
-      ],
+      extra: [...redirectUrisFor(clients), ...(options.extraRedirectUris ?? [])],
       allowClaude: false,
       allowLoopback: options.allowLoopback ?? true,
     },
@@ -175,10 +203,13 @@ export const createMcpApp = <TCtx>(
       resolveUser: options.auth.resolveUser,
       loginUrl: options.auth.loginUrl,
       mintAccessToken: options.auth.mintAccessToken,
-      refreshAccessToken: options.auth.refreshAccessToken,
-      revokeToken: options.auth.revokeToken,
-      codeStore: options.auth.codeStore,
-      clientStore: options.auth.clientStore,
+      ...(options.auth.refreshAccessToken !== undefined
+        ? { refreshAccessToken: options.auth.refreshAccessToken }
+        : {}),
+      ...(options.auth.revokeToken !== undefined ? { revokeToken: options.auth.revokeToken } : {}),
+      ...(options.auth.codeStore !== undefined ? { codeStore: options.auth.codeStore } : {}),
+      ...(options.auth.clientStore !== undefined ? { clientStore: options.auth.clientStore } : {}),
+      ...(options.auth.audit !== undefined ? { audit: options.auth.audit } : {}),
     },
   });
 
@@ -188,7 +219,8 @@ export const createMcpApp = <TCtx>(
         const oauthResponse = await oauth.tryHandle(request);
         if (oauthResponse) return oauthResponse;
 
-        if (new URL(request.url).pathname === resourcePath) {
+        const requestPath = normalizeConfiguredPath(new URL(request.url).pathname);
+        if (requestPath === resourcePath) {
           return await handler.fetch(request);
         }
         return jsonResponse({ error: "Not found" }, 404);

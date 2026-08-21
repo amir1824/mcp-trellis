@@ -1,15 +1,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  hasDynamicClient,
   authMethodsFor,
+  hasDynamicClient,
   preRegisteredClients,
   redirectUrisFor,
 } from "../src/clients.js";
-import { CLAUDE_CALLBACK } from "../src/oauth/redirect.js";
-import { createOAuthRouter } from "../src/oauth/router.js";
 import { sha256Base64Url } from "../src/oauth/pkce.js";
+import { CLAUDE_CALLBACK } from "../src/oauth/redirect.js";
+import { hashClientSecret } from "../src/oauth/router.js";
 import type { ClientStore } from "../src/oauth/types.js";
+import { createOAuthRouter } from "./helpers/router.js";
 
 const ORIGIN = "https://app.test";
 const RESOURCE = `${ORIGIN}/mcp`;
@@ -25,10 +26,7 @@ describe("client profiles", () => {
 
   it("composes advertised auth methods in a stable order", () => {
     assert.deepEqual(authMethodsFor(["claude"]), ["none"]);
-    assert.deepEqual(authMethodsFor(["gemini"]), [
-      "client_secret_basic",
-      "client_secret_post",
-    ]);
+    assert.deepEqual(authMethodsFor(["gemini"]), ["client_secret_basic", "client_secret_post"]);
     assert.deepEqual(authMethodsFor(["claude", "gemini"]), [
       "none",
       "client_secret_basic",
@@ -66,8 +64,24 @@ const authorizeForCode = async (
 
   const res = await router.tryHandle(new Request(url, { method: "GET" }));
   assert.ok(res);
-  assert.equal(res.status, 302);
-  const location = res.headers.get("location");
+  assert.equal(res.status, 200, "authorize must render the consent interstitial");
+  const html = await res.text();
+  const ticketMatch = html.match(/name="consent_ticket"\s+value="([^"]+)"/);
+  assert.ok(ticketMatch?.[1], "consent page must carry a well-formed consent_ticket");
+
+  const approved = await router.tryHandle(
+    new Request(`${ORIGIN}/mcp/oauth/consent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        consent_ticket: ticketMatch[1],
+        approved: "true",
+      }).toString(),
+    }),
+  );
+  assert.ok(approved);
+  assert.equal(approved.status, 302);
+  const location = approved.headers.get("location");
   assert.ok(location);
   const code = new URL(location).searchParams.get("code");
   assert.ok(code);
@@ -91,7 +105,7 @@ describe("confidential clients", () => {
     createOAuthRouter({
       tokenEndpointAuthMethods: [authMethod],
       ports: {
-        codeSecret: "code-signing-secret",
+        codeSecret: "code-signing-secret-value-32-characters-long",
         resolveUser: async () => ({ id: "u1" }),
         loginUrl: () => `${ORIGIN}/login`,
         mintAccessToken: async ({ userId, scope }) => ({
@@ -199,6 +213,220 @@ describe("confidential clients", () => {
     assert.ok(res);
     assert.equal(res.status, 400);
   });
+
+  it("rejects a confidential client presenting no auth at all (method downgrade to none)", async () => {
+    const router = makeRouter("client_secret_basic");
+    const res = await router.tryHandle(
+      new Request(`${ORIGIN}/mcp/oauth/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          code: "irrelevant",
+          client_id: "gemini-client",
+          resource: RESOURCE,
+        }).toString(),
+      }),
+    );
+    assert.ok(res);
+    assert.equal(res.status, 401);
+    assert.equal(((await res.json()) as { error: string }).error, "invalid_client");
+  });
+
+  it("rejects Basic auth carrying an empty password (secret present in method, empty in value)", async () => {
+    const router = makeRouter("client_secret_basic");
+    const basic = Buffer.from("gemini-client:").toString("base64");
+    const res = await router.tryHandle(
+      new Request(`${ORIGIN}/mcp/oauth/token`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Authorization: `Basic ${basic}`,
+        },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          code: "irrelevant",
+          resource: RESOURCE,
+        }).toString(),
+      }),
+    );
+    assert.ok(res);
+    assert.equal(res.status, 401);
+  });
+
+  it("rejects a registered confidential client whose store configures neither verifySecret nor secretHash", async () => {
+    const router = createOAuthRouter({
+      tokenEndpointAuthMethods: ["client_secret_basic"],
+      ports: {
+        codeSecret: "code-signing-secret-value-32-characters-long",
+        resolveUser: async () => ({ id: "u1" }),
+        loginUrl: () => `${ORIGIN}/login`,
+        mintAccessToken: async () => ({ accessToken: "t", expiresIn: 60 }),
+        clientStore: {
+          get: async (clientId) =>
+            clientId === "gemini-client"
+              ? {
+                  clientId,
+                  redirectUris: [REDIRECT],
+                  tokenEndpointAuthMethod: "client_secret_basic",
+                }
+              : null,
+          // Neither verifySecret nor secretHash configured.
+        },
+      },
+    });
+    const basic = Buffer.from(`gemini-client:${SECRET}`).toString("base64");
+    const res = await router.tryHandle(
+      new Request(`${ORIGIN}/mcp/oauth/token`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Authorization: `Basic ${basic}`,
+        },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          code: "irrelevant",
+          resource: RESOURCE,
+        }).toString(),
+      }),
+    );
+    assert.ok(res);
+    assert.equal(res.status, 401);
+    assert.equal(((await res.json()) as { error: string }).error, "invalid_client");
+  });
+});
+
+describe("client_secret_basic via secretHash (preferred over verifySecret)", () => {
+  const CODE_SECRET = "code-signing-secret-value-32-characters-long";
+
+  const makeHashRouter = (storedHash: string | null, alsoConfigureVerifySecret = false) =>
+    createOAuthRouter({
+      tokenEndpointAuthMethods: ["client_secret_basic"],
+      ports: {
+        codeSecret: CODE_SECRET,
+        resolveUser: async () => ({ id: "u1" }),
+        loginUrl: () => `${ORIGIN}/login`,
+        mintAccessToken: async ({ userId, scope }) => ({
+          accessToken: `token-for-${userId}`,
+          expiresIn: 3600,
+          scope,
+        }),
+        clientStore: {
+          get: async (clientId) =>
+            clientId === "gemini-client"
+              ? {
+                  clientId,
+                  redirectUris: [REDIRECT],
+                  tokenEndpointAuthMethod: "client_secret_basic",
+                }
+              : null,
+          secretHash: async (clientId) => (clientId === "gemini-client" ? storedHash : null),
+          // Present but must never be reached when secretHash is configured —
+          // if this fires the "wrong secret" case below would pass for the
+          // wrong reason.
+          ...(alsoConfigureVerifySecret
+            ? {
+                verifySecret: async () =>
+                  assert.fail("verifySecret must not be called when secretHash is set"),
+              }
+            : {}),
+        },
+      },
+    });
+
+  it("authenticates via a hash from hashClientSecret, preferred over verifySecret", async () => {
+    const stored = await hashClientSecret(SECRET, CODE_SECRET);
+    const router = makeHashRouter(stored, true);
+
+    const verifier = "verifier-value-long-enough-for-pkce";
+    const authorizeUrl = new URL(`${ORIGIN}/mcp/oauth/authorize`);
+    authorizeUrl.search = new URLSearchParams({
+      response_type: "code",
+      client_id: "gemini-client",
+      redirect_uri: REDIRECT,
+      code_challenge: await sha256Base64Url(verifier),
+      code_challenge_method: "S256",
+      resource: RESOURCE,
+    }).toString();
+    const authRes = await router.tryHandle(new Request(authorizeUrl, { method: "GET" }));
+    const html = await authRes?.text();
+    const ticket = html?.match(/name="consent_ticket"\s+value="([^"]+)"/)?.[1];
+    assert.ok(ticket);
+    const consented = await router.tryHandle(
+      new Request(`${ORIGIN}/mcp/oauth/consent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ consent_ticket: ticket, approved: "true" }).toString(),
+      }),
+    );
+    const code = new URL(consented?.headers.get("location") ?? "").searchParams.get("code");
+    assert.ok(code);
+
+    const basic = Buffer.from(`gemini-client:${SECRET}`).toString("base64");
+    const res = await router.tryHandle(
+      new Request(`${ORIGIN}/mcp/oauth/token`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Authorization: `Basic ${basic}`,
+        },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          code,
+          redirect_uri: REDIRECT,
+          code_verifier: verifier,
+          resource: RESOURCE,
+        }).toString(),
+      }),
+    );
+    assert.ok(res);
+    assert.equal(res.status, 200);
+  });
+
+  it("rejects a wrong secret via secretHash with the same generic invalid_client", async () => {
+    const stored = await hashClientSecret(SECRET, CODE_SECRET);
+    const router = makeHashRouter(stored);
+
+    const basic = Buffer.from("gemini-client:wrong-secret").toString("base64");
+    const res = await router.tryHandle(
+      new Request(`${ORIGIN}/mcp/oauth/token`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Authorization: `Basic ${basic}`,
+        },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          code: "irrelevant",
+          resource: RESOURCE,
+        }).toString(),
+      }),
+    );
+    assert.ok(res);
+    assert.equal(res.status, 401);
+    assert.equal(((await res.json()) as { error: string }).error, "invalid_client");
+  });
+
+  it("rejects when secretHash returns null (no hash on file) for an otherwise-known client", async () => {
+    const router = makeHashRouter(null);
+    const basic = Buffer.from(`gemini-client:${SECRET}`).toString("base64");
+    const res = await router.tryHandle(
+      new Request(`${ORIGIN}/mcp/oauth/token`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Authorization: `Basic ${basic}`,
+        },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          code: "irrelevant",
+          resource: RESOURCE,
+        }).toString(),
+      }),
+    );
+    assert.ok(res);
+    assert.equal(res.status, 401);
+  });
 });
 
 describe("locked to pre-registered clients (allowUnregisteredClients: false)", () => {
@@ -237,7 +465,7 @@ describe("locked to pre-registered clients (allowUnregisteredClients: false)", (
     allowUnregisteredClients: false,
     tokenEndpointAuthMethods: ["client_secret_basic"],
     ports: {
-      codeSecret: "code-signing-secret",
+      codeSecret: "code-signing-secret-value-32-characters-long",
       resolveUser: async () => ({ id: "u1" }),
       loginUrl: () => `${ORIGIN}/login`,
       mintAccessToken: async ({ userId, scope }) => ({
@@ -289,10 +517,7 @@ describe("locked to pre-registered clients (allowUnregisteredClients: false)", (
     const res = await router.tryHandle(new Request(url, { method: "GET" }));
     assert.ok(res);
     assert.equal(res.status, 400);
-    assert.equal(
-      ((await res.json()) as { error: string }).error,
-      "unauthorized_client",
-    );
+    assert.equal(((await res.json()) as { error: string }).error, "unauthorized_client");
   });
 
   it("rejects an unregistered client_id at token before grant dispatch", async () => {
@@ -312,18 +537,12 @@ describe("locked to pre-registered clients (allowUnregisteredClients: false)", (
     );
     assert.ok(res);
     assert.equal(res.status, 401);
-    assert.equal(
-      ((await res.json()) as { error: string }).error,
-      "invalid_client",
-    );
+    assert.equal(((await res.json()) as { error: string }).error, "invalid_client");
   });
 
   it("rejects redeeming a registered client's auth code as an unregistered client", async () => {
     const verifier = "verifier-value-long-enough-for-pkce";
-    const code = await authorizeForCode(
-      router,
-      await sha256Base64Url(verifier),
-    );
+    const code = await authorizeForCode(router, await sha256Base64Url(verifier));
     const res = await router.tryHandle(
       new Request(`${ORIGIN}/mcp/oauth/token`, {
         method: "POST",
@@ -340,10 +559,7 @@ describe("locked to pre-registered clients (allowUnregisteredClients: false)", (
     );
     assert.ok(res);
     assert.equal(res.status, 401);
-    assert.equal(
-      ((await res.json()) as { error: string }).error,
-      "invalid_client",
-    );
+    assert.equal(((await res.json()) as { error: string }).error, "invalid_client");
   });
 
   it("rejects an unregistered client_id on refresh_token", async () => {
@@ -361,18 +577,12 @@ describe("locked to pre-registered clients (allowUnregisteredClients: false)", (
     );
     assert.ok(res);
     assert.equal(res.status, 401);
-    assert.equal(
-      ((await res.json()) as { error: string }).error,
-      "invalid_client",
-    );
+    assert.equal(((await res.json()) as { error: string }).error, "invalid_client");
   });
 
   it("still serves the registered gemini client end to end", async () => {
     const verifier = "verifier-value-long-enough-for-pkce";
-    const code = await authorizeForCode(
-      router,
-      await sha256Base64Url(verifier),
-    );
+    const code = await authorizeForCode(router, await sha256Base64Url(verifier));
 
     const basic = Buffer.from(`gemini-client:${SECRET}`).toString("base64");
     const res = await router.tryHandle(

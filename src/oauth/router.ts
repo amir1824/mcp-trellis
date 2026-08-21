@@ -1,38 +1,44 @@
+import { BodyTooLargeError, DEFAULT_OAUTH_BODY_LIMIT, readBoundedText } from "../body.js";
 import { INTERNAL_ERROR, jsonResponse, requireHttpMethod } from "../http.js";
-import { newClientId } from "./codes.js";
+import { handleAuthorize } from "./authorize.js";
+import { handleConsent } from "./consent.js";
 import { GRANT_TYPES, OAUTH_ERRORS } from "./constants.js";
 import { CLAUDE_CALLBACK, isAllowedRedirectUri } from "./redirect.js";
-import { DEFAULT_RESOURCE_PATH } from "./resource.js";
-import {
-  oauthError,
-  unregisteredClientsAllowed,
-  type OAuthRouterOptions,
-} from "./types.js";
-import { handleAuthorize } from "./authorize.js";
-import { handleToken } from "./token.js";
+import { DEFAULT_RESOURCE_PATH, normalizeConfiguredPath } from "./resource.js";
 import { handleRevoke } from "./revoke.js";
+import { seal } from "./sealed.js";
+import { handleToken } from "./token.js";
+import {
+  assertCodeSecret,
+  assertScopeConfig,
+  type ClientAssertion,
+  type OAuthRouterOptions,
+  oauthError,
+  resolveSecret,
+  safeOAuthAudit,
+  unregisteredClientsAllowed,
+} from "./types.js";
 import { handleWellKnown } from "./wellknown.js";
 
 export type {
-  OAuthUser,
   MintedToken,
+  OAuthAuditEntry,
   OAuthPorts,
   OAuthRouterOptions,
+  OAuthUser,
 } from "./types.js";
 
 const POST_ONLY = new Set(["POST"]);
 
-const handleRegister = async (
-  request: Request,
-  options: OAuthRouterOptions,
-): Promise<Response> => {
+const handleRegister = async (request: Request, options: OAuthRouterOptions): Promise<Response> => {
   const methodError = requireHttpMethod(request, POST_ONLY);
   if (methodError) return methodError;
 
   let suppliedRedirectUris = false;
   let redirectUris: string[] = [];
   try {
-    const body = (await request.json()) as Record<string, unknown>;
+    const text = await readBoundedText(request, DEFAULT_OAUTH_BODY_LIMIT);
+    const body = JSON.parse(text) as Record<string, unknown>;
     const raw = body.redirect_uris;
     if (Array.isArray(raw)) {
       suppliedRedirectUris = true;
@@ -40,7 +46,10 @@ const handleRegister = async (
         .map((u) => String(u))
         .filter((uri) => isAllowedRedirectUri(uri, options.redirect));
     }
-  } catch {
+  } catch (exc) {
+    if (exc instanceof BodyTooLargeError) {
+      return oauthError(OAUTH_ERRORS.invalidRequest, 413, "request body too large");
+    }
     redirectUris = [];
   }
 
@@ -62,8 +71,15 @@ const handleRegister = async (
     );
   }
 
+  // Zero storage: the client_id *is* the registration record — a sealed,
+  // self-verifying assertion of the redirect_uris this call just validated.
+  // `/authorize` unseals it and binds the client to exactly this list,
+  // the same protection a stored registration would give a pre-registered id.
+  const secret = await resolveSecret(options.ports, request);
+  const clientId = await seal(secret, "client", { redirectUris } satisfies ClientAssertion);
+
   return jsonResponse({
-    client_id: newClientId(),
+    client_id: clientId,
     client_id_issued_at: Math.floor(Date.now() / 1000),
     token_endpoint_auth_method: "none",
     redirect_uris: redirectUris,
@@ -79,9 +95,7 @@ export type OAuthRouter = {
 
 type RouteHandler = (request: Request) => Promise<Response>;
 
-export const createOAuthRouter = (
-  options: OAuthRouterOptions,
-): OAuthRouter => {
+export const createOAuthRouter = (options: OAuthRouterOptions): OAuthRouter => {
   if (!unregisteredClientsAllowed(options) && !options.ports.clientStore) {
     throw new Error(
       "allowUnregisteredClients: false requires ports.clientStore " +
@@ -89,8 +103,32 @@ export const createOAuthRouter = (
     );
   }
 
-  const resourcePath = options.resourcePath ?? DEFAULT_RESOURCE_PATH;
+  // Function-form codeSecret is re-validated on every call in resolveSecret,
+  // since its value can vary per request; a string form is fixed for the
+  // life of this router, so fail fast at construction instead of at the
+  // first request.
+  if (typeof options.ports.codeSecret === "string") {
+    assertCodeSecret(options.ports.codeSecret);
+  }
+  assertScopeConfig(options);
+
+  // Normalized once here, not per request — "/mcp/" and "/mcp" must never
+  // produce divergent canonical resources (canonicalResource doesn't strip
+  // a trailing slash itself; normalizeResource, used to compare an
+  // incoming request's resource against it, does).
+  const resourcePath = normalizeConfiguredPath(options.resourcePath ?? DEFAULT_RESOURCE_PATH);
   const oauthPath = options.oauthPath ?? "/mcp/oauth";
+
+  if (oauthPath === resourcePath) {
+    throw new Error(
+      `oauthPath (${oauthPath}) must not equal resourcePath — they would shadow each other`,
+    );
+  }
+  if (resourcePath.startsWith("/.well-known")) {
+    throw new Error(
+      `resourcePath (${resourcePath}) must not start with /.well-known — reserved for OAuth discovery documents`,
+    );
+  }
 
   const prmPaths = new Set([
     "/.well-known/oauth-protected-resource",
@@ -104,16 +142,15 @@ export const createOAuthRouter = (
   const routes: Record<string, RouteHandler> = {
     ...(unregisteredClientsAllowed(options)
       ? {
-          [`${oauthPath}/register`]: (request: Request) =>
-            handleRegister(request, options),
+          [`${oauthPath}/register`]: (request: Request) => handleRegister(request, options),
         }
       : {}),
     [`${oauthPath}/authorize`]: (request) => handleAuthorize(request, options),
+    [`${oauthPath}/consent`]: (request) => handleConsent(request, options),
     [`${oauthPath}/token`]: (request) => handleToken(request, options),
     ...(options.ports.revokeToken
       ? {
-          [`${oauthPath}/revoke`]: (request: Request) =>
-            handleRevoke(request, options),
+          [`${oauthPath}/revoke`]: (request: Request) => handleRevoke(request, options),
         }
       : {}),
   };
@@ -133,55 +170,75 @@ export const createOAuthRouter = (
 
         const route = routes[path];
         return route ? await route(request) : null;
-      } catch {
-        // A host port (resolveUser/mintAccessToken/clientStore/...) threw.
-        // We only ever reach here on a route this router owns, so answer
-        // with a real error instead of throwing out of `tryHandle`.
+      } catch (exc) {
+        // A host port (resolveUser/mintAccessToken/clientStore/...) threw,
+        // or codeSecret failed validation (assertCodeSecret, e.g. a
+        // per-request function returning something too short). We only
+        // ever reach here on a route this router owns, so answer with a
+        // real error instead of throwing out of `tryHandle` — the caller
+        // gets the generic server_error; ports.audit gets the real reason.
+        await safeOAuthAudit(options, {
+          event: "server_error",
+          reason: exc instanceof Error ? exc.message : String(exc),
+        });
         return oauthError(OAUTH_ERRORS.serverError, 500, INTERNAL_ERROR);
       }
     },
   };
 };
 
+export { type ClientAuth, firstClientAuthError, readClientAuth } from "./clientauth.js";
 export {
-  authorizationServerMetadata,
-  protectedResourceMetadata,
-  mcpWwwAuthenticate,
-} from "./metadata.js";
-export {
-  canonicalResource,
-  resourcesEqual,
-  DEFAULT_RESOURCE_PATH,
-  firstResourceError,
-} from "./resource.js";
-export { isAllowedRedirectUri, CLAUDE_CALLBACK } from "./redirect.js";
-export {
-  issueAuthCode,
-  consumeAuthCode,
-  newClientId,
   type AuthCodeRecord,
   type CodeStore,
+  consumeAuthCode,
+  issueAuthCode,
+  newClientId,
 } from "./codes.js";
-export { verifyPkceS256, sha256Base64Url, randomBase64Url } from "./pkce.js";
+export type { ConsentOptions, ConsentRequest } from "./consent.js";
+export { buildErrorRedirectUrl } from "./consent.js";
 export {
+  DEFAULT_SCOPE,
   GRANT_TYPES,
   OAUTH_ERRORS,
-  DEFAULT_SCOPE,
   TOKEN_ENDPOINT_AUTH_METHODS,
   type TokenEndpointAuthMethod,
 } from "./constants.js";
 export {
-  parseScope,
-  formatScope,
-  requestedScopes,
+  authorizationServerMetadata,
+  mcpWwwAuthenticate,
+  protectedResourceMetadata,
+} from "./metadata.js";
+export { randomBase64Url, sha256Base64Url, verifyPkceS256 } from "./pkce.js";
+export { CLAUDE_CALLBACK, isAllowedRedirectUri } from "./redirect.js";
+export {
+  canonicalResource,
+  DEFAULT_RESOURCE_PATH,
+  firstResourceError,
+  normalizeConfiguredPath,
+  resourceErrorInfo,
+  resourcesEqual,
+} from "./resource.js";
+export {
   firstScopeError,
+  formatScope,
+  parseScope,
+  requestedScopes,
+  scopeErrorInfo,
 } from "./scope.js";
-export { readClientAuth, firstClientAuthError, type ClientAuth } from "./clientauth.js";
-export { unregisteredClientsAllowed } from "./types.js";
+export { hashClientSecret, verifyClientSecret } from "./secrethash.js";
 export type {
-  MintAccessTokenInput,
-  RefreshAccessTokenInput,
-  RevokeTokenInput,
+  ClientAssertion,
   ClientStore,
+  MintAccessTokenInput,
+  OAuthErrorInfo,
+  RefreshAccessTokenInput,
   RegisteredClient,
+  RevokeTokenInput,
+} from "./types.js";
+export {
+  advertisedScopes,
+  defaultScopes,
+  registeredClientsRequired,
+  unregisteredClientsAllowed,
 } from "./types.js";

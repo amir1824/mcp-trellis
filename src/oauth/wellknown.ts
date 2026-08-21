@@ -1,15 +1,11 @@
 import { jsonResponse, requireHttpMethod } from "../http.js";
-import {
-  authorizationServerMetadata,
-  protectedResourceMetadata,
-  type GrantType,
-} from "./metadata.js";
 import { GRANT_TYPES } from "./constants.js";
 import {
-  unregisteredClientsAllowed,
-  type OAuthPorts,
-  type OAuthRouterOptions,
-} from "./types.js";
+  authorizationServerMetadata,
+  type GrantType,
+  protectedResourceMetadata,
+} from "./metadata.js";
+import { type OAuthPorts, type OAuthRouterOptions, unregisteredClientsAllowed } from "./types.js";
 
 const GET_ONLY = new Set(["GET"]);
 
@@ -41,8 +37,10 @@ export const handleWellKnown = async (
     resourcePath: paths.resourcePath,
     oauthPath: paths.oauthPath,
     grantTypes: grantTypesOf(options.ports),
-    scopes: options.scopes,
-    tokenEndpointAuthMethods: options.tokenEndpointAuthMethods,
+    ...(options.scopes !== undefined ? { scopes: options.scopes } : {}),
+    ...(options.tokenEndpointAuthMethods !== undefined
+      ? { tokenEndpointAuthMethods: options.tokenEndpointAuthMethods }
+      : {}),
     dcrEnabled: unregisteredClientsAllowed(options),
     revocationEnabled: Boolean(options.ports.revokeToken),
   };

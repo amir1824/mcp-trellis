@@ -1,13 +1,10 @@
 /** JSON `error` body / audit reason when a host port throws. */
 export const INTERNAL_ERROR = "internal_error";
 
-export const corsHeaders = (
-  extra?: Record<string, string>,
-): Record<string, string> => ({
+export const corsHeaders = (extra?: Record<string, string>): Record<string, string> => ({
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers":
-    "Content-Type, Authorization, MCP-Protocol-Version",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, MCP-Protocol-Version",
   ...extra,
 });
 
@@ -59,10 +56,5 @@ export const requireHttpMethod = (
 ): Response | null => {
   if (request.method === "OPTIONS") return optionsResponse(options);
   if (allowed.has(request.method)) return null;
-  return jsonResponse(
-    { detail: "method not allowed" },
-    405,
-    undefined,
-    options,
-  );
+  return jsonResponse({ detail: "method not allowed" }, 405, undefined, options);
 };

@@ -8,8 +8,8 @@
  * actually parses and types `args` at call time — keep the two in sync.
  */
 
-import type { JsonSchema } from "./validate.js";
 import type { ToolDef, ToolResult } from "./registry.js";
+import type { JsonSchema } from "./validate.js";
 
 /**
  * Minimal Standard Schema v1 surface (https://standardschema.dev).
@@ -70,7 +70,7 @@ type ToolCore = {
   description: string;
   /** Advertised via tools/list. Required — see module doc for why. */
   inputSchema: JsonSchema;
-  scope?: string;
+  scope?: string | undefined;
 };
 
 type ToolHandler<TCtx, Args> = (
@@ -99,7 +99,7 @@ export const defineTool = <TCtx, Input = Record<string, unknown>>(
   name: options.name,
   description: options.description,
   inputSchema: options.inputSchema,
-  scope: options.scope,
+  ...(options.scope !== undefined ? { scope: options.scope } : {}),
   handler: async (ctx, rawArgs) => {
     if (!options.input) return options.handler(ctx, rawArgs);
     const parsed = await parseWithSchema(options.input, rawArgs);
@@ -113,6 +113,15 @@ export type ApiRequest = string | URL | Request;
 type ApiExtra<TCtx, Args> = {
   request: (ctx: TCtx, args: Args) => ApiRequest | Promise<ApiRequest>;
   respond?: (res: Response) => Promise<ToolResult | string> | ToolResult | string;
+  /**
+   * Shape a non-2xx response yourself — you get the raw `Response`, so read
+   * `res.text()`/`res.json()` if you want the body. Omit for the default:
+   * status only, upstream body never forwarded. A returned bare `string` is
+   * **not** automatically marked as an error (same as any other tool
+   * handler) — return `{ content: [...], isError: true }` explicitly if
+   * that's what you want the model to see.
+   */
+  onError?: (res: Response) => Promise<ToolResult | string> | ToolResult | string;
   fetch?: typeof fetch;
 };
 
@@ -122,18 +131,19 @@ export type ApiToolOptions<TCtx, Input = Record<string, unknown>> =
 
 const defaultRespond = (res: Response): Promise<string> => res.text();
 
-const requestFailedResult = async (res: Response): Promise<ToolResult> => {
-  const body = (await res.text()).trim();
+/**
+ * Status only — the upstream body is never forwarded by default. It's a
+ * return value from `runApi`, not a thrown exception, so `onToolError`
+ * redaction (see `registry.ts`) never sees it and can't redact it; the
+ * previous default forwarded the raw upstream body verbatim into both the
+ * tool result and the audit log, which can leak internal detail, tokens,
+ * or SQL an upstream error page happens to echo back. Use `onError` when
+ * you specifically want (a redacted version of) the body.
+ */
+const defaultErrorResult = (res: Response): ToolResult => {
   const status = [res.status, res.statusText].filter(Boolean).join(" ");
   return {
-    content: [
-      {
-        type: "text",
-        text: body
-          ? `Request failed: ${status}: ${body}`
-          : `Request failed: ${status}`,
-      },
-    ],
+    content: [{ type: "text", text: `Request failed: ${status}` }],
     isError: true,
   };
 };
@@ -144,7 +154,7 @@ const runApi = async <TCtx, Args>(
   args: Args,
 ): Promise<ToolResult | string> => {
   const res = await (options.fetch ?? fetch)(await options.request(ctx, args));
-  if (!res.ok) return requestFailedResult(res);
+  if (!res.ok) return options.onError ? options.onError(res) : defaultErrorResult(res);
   return (options.respond ?? defaultRespond)(res);
 };
 
@@ -161,7 +171,7 @@ export const apiTool = <TCtx, Input = Record<string, unknown>>(
     name: options.name,
     description: options.description,
     inputSchema: options.inputSchema,
-    scope: options.scope,
+    ...(options.scope !== undefined ? { scope: options.scope } : {}),
   };
   if (options.input) {
     return defineTool<TCtx, Input>({

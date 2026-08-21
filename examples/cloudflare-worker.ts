@@ -31,10 +31,7 @@ const ping: ToolDef<Ctx> = {
 };
 
 const encodeToken = (payload: TokenPayload): string =>
-  btoa(JSON.stringify(payload))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+  btoa(JSON.stringify(payload)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
 const decodeToken = (token: string): TokenPayload | null => {
   try {
@@ -53,8 +50,7 @@ const buildApp = (env: Env) =>
     auth: {
       codeSecret: env.OAUTH_CODE_SECRET,
       resolveUser: async () => ({ id: "u1" }),
-      loginUrl: (req, next) =>
-        `${new URL(req.url).origin}/login?next=${encodeURIComponent(next)}`,
+      loginUrl: (req, next) => `${new URL(req.url).origin}/login?next=${encodeURIComponent(next)}`,
       mintAccessToken: async ({ userId, scope, resource }) => ({
         accessToken: encodeToken({
           userId,
@@ -83,9 +79,7 @@ const appFor = (env: Env): App => {
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
-    if (
-      !isAllowedOrigin(new URL(req.url).origin, { allowedOrigins: ALLOWED })
-    ) {
+    if (!isAllowedOrigin(new URL(req.url).origin, { allowedOrigins: ALLOWED })) {
       return Response.json({ error: "origin not allowed" }, { status: 400 });
     }
     return appFor(env).fetch(req);

@@ -7,8 +7,8 @@ and threat model: [security.md](security.md).
 
 [Architecture](#how-it-fits-together) · [Clients](#clients) · [Recipes](#recipes) ·
 [Compose the primitives](#advanced-compose-the-primitives) ·
-[Ports](#ports--what-you-implement) · [Tool registry](#tool-registry) ·
-[Multi-tenant](#multi-tenant-saas-connectors)
+[Ports](#ports--what-you-implement) · [Consent](#consent) ·
+[Tool registry](#tool-registry) · [Multi-tenant](#multi-tenant-saas-connectors)
 
 ## How it fits together
 
@@ -198,6 +198,10 @@ The library stays protocol-shaped. Your app plugs in the seams:
 | `clientStore?` | Pre-registered clients; required for confidential clients like Gemini |
 | `refreshAccessToken?` | If set, metadata advertises `refresh_token` |
 | `revokeToken?` | RFC 7009; presence mounts `/revoke` and advertises `revocation_endpoint` |
+
+`consent?` (approval-page policy — see [Consent](#consent), below) and
+`defaultScopes?` sit as top-level `McpAppOptions`, not under `auth` — they
+are policy, not credentials, the same reasoning as `allowLoopback`.
 | `context?`, `audit?` | Same as the MCP ports below; `context` defaults to an empty object. Receives `principal.claims` when `verifyToken` set them |
 
 ### MCP (`createMcpHandler`)
@@ -209,7 +213,10 @@ The lower-level handler. Here the audience check is **yours** — prefer
 |------|------|
 | `authenticate(req, method, tool?)` | Return `{ id, scopes, claims? }`, or `null` → 401 + `WWW-Authenticate`. **Must reject tokens whose audience is not this server's canonical resource** |
 | `context(req, principal)` | Build per-request ctx for tools (DB, env, …). Use `principal?.claims` for tenant / plan / role without re-decoding the bearer |
-| `audit?(entry)` | Opt-in **metrics hook**: pass any function to receive tool results **and** every denial (bad token, missing scope, query-string token). `entry.method` is `""` for transport-level denials made before parsing. Throwing from this port never fails the request. Omit it and the library stays silent |
+| `audit?(entry)` | Opt-in **metrics hook**: pass any function to receive tool results **and** every denial (bad token, missing scope, query-string token). `entry.method` is `""` for transport-level denials made before parsing. Throwing from this port never fails the request, and neither does hanging — see `auditTimeoutMs` below. Omit it and the library stays silent |
+
+`auditTimeoutMs` (default 1000ms) races `audit` against a timeout, so a
+slow sink can't stall a response past that bound either.
 
 Pass any function to get per-request metrics — do what you want with them
 (DB, APM, admin UI). The library never writes to stdout or a store on its
@@ -251,14 +258,52 @@ By default `initialize`, `ping`, and notifications are public. Override `publicM
 | `mintAccessToken` | Issue a **user-bound**, **audience-bound** access token (`resource` is the RFC 8707 URI) — never a shared god token |
 | `refreshAccessToken?` | If set, metadata advertises `refresh_token`; also receives `resource` |
 | `revokeToken?` | If set, mounts `/revoke` and advertises `revocation_endpoint`. Well-formed authenticated revoke → 200 even if the token is unknown; `invalid_request` 400 and `invalid_client` 401 still apply |
-| `codeStore?` | Shared single-use jti store for multi-instance (`consume(jti, expMs)`); pruning in-memory default otherwise |
-| `clientStore?` | Pre-registered clients: `get(clientId)` returns registered redirect URIs and auth method; `verifySecret(clientId, presented)` authenticates confidential clients. Credentials never enter the library |
+| `codeStore?` | Shared single-use jti store for multi-instance (`consume(jti, expMs)`); pruning in-memory default otherwise. Also backs consent-ticket single-use — see below |
+| `clientStore?` | Pre-registered clients: `get(clientId)` returns registered redirect URIs and auth method. Two ways to authenticate a confidential client's secret — **prefer `secretHash(clientId)`**: return a stored hash from `hashClientSecret`, and the library compares it with the same constant-time primitive it uses everywhere else; `verifySecret(clientId, presented)` is the fallback when you'd rather compare yourself. Credentials never enter the library either way |
+| `audit?` | Opt-in **OAuth-side metrics hook** — mirrors the MCP-side one above. `/token`/`/revoke` collapse every client-auth failure to one generic `invalid_client` (an enumeration-oracle fix — see [security.md](security.md)), and a rejected `codeSecret` surfaces to the caller only as `server_error`. This is where you get the real reason back (`entry.reason`) without handing it to an unauthenticated caller. Throwing never fails the request |
+
+```ts
+import { hashClientSecret } from "mcp-trellis/oauth";
+
+// Once, when you provision a confidential client (e.g. Gemini Enterprise):
+const stored = await hashClientSecret(theSecretYouGenerated, codeSecretValue);
+// Save `stored` — never the plaintext secret — and return it from
+// clientStore.secretHash(clientId) at verify time.
+```
 
 Auth codes carry `userId`, `resource`, and the granted `scope`. Clients **must** send `resource` on authorize and token (MCP MUST) — omitting it is a **breaking** requirement vs earlier 0.1.x drafts that ignored the parameter. Advertised grants come only from the handlers you configure. AS metadata sets `resource_parameter_supported: true`.
 
-**Scope is negotiated:** `authorize` validates the requested `scope` against `scopes` (default `["mcp"]`) and rejects anything outside it with `invalid_scope`; an omitted `scope` grants the full advertised set. The auth code carries the grant, and `mintAccessToken` receives it — so `ToolDef.scope` and `principal.scopes` sit on a chain that actually reaches the OAuth layer.
+**Scope is negotiated:** `authorize` validates the requested `scope` against `scopes` (default `["mcp"]`) and rejects anything outside it with `invalid_scope`. An omitted `scope` grants `defaultScopes` — which defaults to the full advertised set **only when `scopes` has a single entry**. Once `scopes` names more than one, `createOAuthRouter` throws at construction unless you set `defaultScopes` explicitly: silently granting everything advertised to a client that asked for nothing is exactly the escalation least-privilege scoping exists to prevent. The auth code carries the grant, and `mintAccessToken` receives it — so `ToolDef.scope` and `principal.scopes` sit on a chain that actually reaches the OAuth layer.
 
-**Client authentication:** unknown `client_id`s are public (PKCE only) unless `allowUnregisteredClients` is `false` — then DCR is unmounted, dropped from metadata, and unrecognized ids are rejected (`unauthorized_client` at authorize, `invalid_client` at token and revoke). `createMcpApp` derives the flag from `clients` via `hasDynamicClient`.
+**Client authentication:** unknown `client_id`s are public (PKCE only) unless `allowUnregisteredClients` is `false` — then DCR is unmounted, dropped from metadata, and unrecognized ids are rejected (`unauthorized_client` at authorize, `invalid_client` at token and revoke). `createMcpApp` derives the flag from `clients` via `hasDynamicClient`. Separately, `requireRegisteredClients` (default **true** since 1.0) keeps DCR mounted but rejects any `client_id` that isn't `clientStore`-resolved or a sealed id this server itself issued via `/register` — see [security.md](security.md). Set `requireRegisteredClients: false` only when you intentionally accept invented public ids.
+
+### Consent
+
+`/authorize` never issues a code directly, even for a resolved session — it
+renders an approval interstitial and only issues the code once the user
+POSTs an explicit approval to `/consent`. This closes a cross-site flow
+where an attacker's page could otherwise walk a logged-in visitor through
+`/authorize` with an attacker-chosen `client_id` and a loopback
+`redirect_uri`, then catch the code on a local listener; PKCE alone does
+not stop this, because it proves possession of the verifier, not the
+identity of a legitimate client.
+
+| Option (`consent`) | Default | Role |
+|---|---|---|
+| `render?(input)` | built-in interstitial | Render your own approval page — return any `Response`, or redirect to a route you own. `input.ticket` is the opaque value your form must echo back as `consent_ticket` |
+| `preApprovedClientIds?` | `[]` | Skip the screen for these ids — **only** when `clientStore` actually resolves the id. A DCR or self-invented id is never trusted to pre-approve itself, no matter what's in this list |
+
+The built-in interstitial ships `Content-Security-Policy`,
+`X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and HTML-escapes
+every reflected value (`client_id` and `redirect_uri` are attacker-
+controlled input up to this point). If you supply `render`, you own that
+hardening for your own markup.
+
+Approval tickets are sealed (AES-GCM, single-use via the same store as
+auth-code replay protection, 5-minute TTL) and re-checked against the
+resolved user at redemption — approving as one user and redeeming as
+another is rejected, and a ticket can never be presented at `/token` as an
+authorization code, or vice versa.
 
 ## Tool registry
 
@@ -319,8 +364,12 @@ const getWeather = apiTool({
   the issues and never calls your handler.
 - **`apiTool`** builds on `defineTool`: give it `request` (build the outgoing
   call from typed args) and optionally `respond` (shape a 2xx response;
-  default is the body as text). Non-2xx becomes `isError: true` automatically.
-  `fetch` is overridable — testing, request signing, a custom agent.
+  default is the body as text). Non-2xx becomes `isError: true` automatically
+  — **status only by default, the upstream body is never forwarded** (it
+  could contain internal detail, tokens, or SQL an upstream error page
+  echoes back). Pass `onError(res)` to shape it yourself, e.g. include a
+  redacted version of the body. `fetch` is overridable — testing, request
+  signing, a custom agent.
 - `defineTool` alone (without `request`/`respond`) is just the typed-args
   layer over a regular `ToolDef` — use it for anything, not only REST calls.
 

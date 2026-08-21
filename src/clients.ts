@@ -6,10 +6,7 @@
  * point: you name your clients, the library configures the AS to match.
  */
 
-import {
-  TOKEN_ENDPOINT_AUTH_METHODS,
-  type TokenEndpointAuthMethod,
-} from "./oauth/constants.js";
+import { TOKEN_ENDPOINT_AUTH_METHODS, type TokenEndpointAuthMethod } from "./oauth/constants.js";
 import { CLAUDE_CALLBACK } from "./oauth/redirect.js";
 import type { ClientStore } from "./oauth/types.js";
 
@@ -40,10 +37,7 @@ export const CLIENT_PROFILES: Record<ClientName, ClientProfile> = {
    */
   gemini: {
     redirectUris: [],
-    tokenEndpointAuthMethods: [
-      TOKEN_ENDPOINT_AUTH_METHODS.basic,
-      TOKEN_ENDPOINT_AUTH_METHODS.post,
-    ],
+    tokenEndpointAuthMethods: [TOKEN_ENDPOINT_AUTH_METHODS.basic, TOKEN_ENDPOINT_AUTH_METHODS.post],
     preRegistered: true,
   },
   /** OpenAI Codex / ChatGPT connectors — OAuth 2.1 per the MCP auth spec. */
@@ -62,9 +56,7 @@ export const redirectUrisFor = (clients: ClientName[]): string[] => [
 ];
 
 /** Auth methods to advertise, in a stable order. */
-export const authMethodsFor = (
-  clients: ClientName[],
-): TokenEndpointAuthMethod[] => {
+export const authMethodsFor = (clients: ClientName[]): TokenEndpointAuthMethod[] => {
   const present = new Set(
     clients.flatMap((name) => CLIENT_PROFILES[name].tokenEndpointAuthMethods),
   );

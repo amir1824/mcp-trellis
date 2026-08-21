@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   asNodeHandler,
-  resolveOrigin,
-  toWebRequest,
   type NodeRequestLike,
   type NodeResponseLike,
+  resolveOrigin,
+  toWebRequest,
 } from "../src/adapters/node.js";
 import { createMcpHandler } from "../src/dispatch.js";
 import { createToolRegistry } from "../src/registry.js";
@@ -27,8 +27,9 @@ const mockRes = (): MockRes => {
     setHeader(name, value) {
       headers[name.toLowerCase()] = String(value);
     },
-    end(body) {
+    end(body, callback) {
       chunk = body;
+      callback?.();
     },
   };
   return res;
@@ -50,10 +51,7 @@ describe("resolveOrigin", () => {
         "x-forwarded-proto": "http, https",
       },
     };
-    assert.equal(
-      resolveOrigin(req, { trustProxy: true }),
-      "https://public.example.com",
-    );
+    assert.equal(resolveOrigin(req, { trustProxy: true }), "https://public.example.com");
   });
 
   it("ignores X-Forwarded-Host when trustProxy is false", () => {
@@ -68,10 +66,7 @@ describe("resolveOrigin", () => {
   });
 
   it("throws without host", () => {
-    assert.throws(
-      () => resolveOrigin({ headers: {} }),
-      /Cannot resolve origin/,
-    );
+    assert.throws(() => resolveOrigin({ headers: {} }), /Cannot resolve origin/);
   });
 });
 
@@ -90,8 +85,7 @@ describe("asNodeHandler", () => {
     serverInfo: { name: "node-test", version: "0.0.1" },
     wwwAuthenticate: {
       realm: "test",
-      resourceMetadataUrl:
-        "https://example.test/.well-known/oauth-protected-resource/mcp",
+      resourceMetadataUrl: "https://example.test/.well-known/oauth-protected-resource/mcp",
     },
     ports: {
       authenticate: async () => ({ id: "u", scopes: ["*"] }),
@@ -118,10 +112,7 @@ describe("asNodeHandler", () => {
     );
     assert.equal(res.statusCode, 200);
     assert.ok(res.chunk);
-    const text =
-      typeof res.chunk === "string"
-        ? res.chunk
-        : new TextDecoder().decode(res.chunk);
+    const text = typeof res.chunk === "string" ? res.chunk : new TextDecoder().decode(res.chunk);
     const json = JSON.parse(text) as {
       result: { protocolVersion: string; serverInfo: { name: string } };
     };
@@ -152,14 +143,76 @@ describe("asNodeHandler", () => {
     await handler(streamed, res);
 
     assert.equal(res.statusCode, 200);
-    const text =
-      typeof res.chunk === "string"
-        ? res.chunk
-        : new TextDecoder().decode(res.chunk);
+    const text = typeof res.chunk === "string" ? res.chunk : new TextDecoder().decode(res.chunk);
     const json = JSON.parse(text) as {
       result: { protocolVersion: string };
     };
     assert.equal(json.result.protocolVersion, "2025-06-18");
+  });
+
+  it("returns 413 JSON-RPC and destroys only after the response is written", async () => {
+    let destroyed = false;
+    const oversized = "x".repeat(1_048_577); // DEFAULT_MCP_BODY_LIMIT + 1
+    const streamed: NodeRequestLike = {
+      method: "POST",
+      url: "/mcp",
+      headers: { "content-type": "application/json" },
+      destroy: () => {
+        destroyed = true;
+      },
+      async *[Symbol.asyncIterator]() {
+        yield new TextEncoder().encode(oversized);
+      },
+    };
+
+    const handler = asNodeHandler(mcp, { origin: "https://example.test" });
+    const res = mockRes();
+    await handler(streamed, res);
+
+    assert.equal(res.statusCode, 413);
+    const body = JSON.parse(String(res.chunk)) as { error: { code: number; message: string } };
+    assert.equal(body.error.code, -32002);
+    assert.equal(destroyed, true, "destroy runs from res.end callback after the 413 is written");
+  });
+
+  it("returns 413 on an honest oversized Content-Length before draining the stream", async () => {
+    let drained = false;
+    const streamed: NodeRequestLike = {
+      method: "POST",
+      url: "/mcp",
+      headers: { "content-type": "application/json", "content-length": "99999999" },
+      async *[Symbol.asyncIterator]() {
+        drained = true;
+        yield new TextEncoder().encode("{}");
+      },
+    };
+
+    const handler = asNodeHandler(mcp, { origin: "https://example.test" });
+    const res = mockRes();
+    await handler(streamed, res);
+
+    assert.equal(res.statusCode, 413);
+    assert.equal(drained, false, "must reject on Content-Length before reading any chunk");
+  });
+
+  it("applies the 64 KiB OAuth cap on /mcp/oauth/* paths", async () => {
+    const oversized = "x".repeat(65_537);
+    const streamed: NodeRequestLike = {
+      method: "POST",
+      url: "/mcp/oauth/token",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      async *[Symbol.asyncIterator]() {
+        yield new TextEncoder().encode(oversized);
+      },
+    };
+
+    const handler = asNodeHandler(mcp, { origin: "https://example.test" });
+    const res = mockRes();
+    await handler(streamed, res);
+
+    assert.equal(res.statusCode, 413);
+    const body = JSON.parse(String(res.chunk)) as { error: string };
+    assert.equal(body.error, "request body too large");
   });
 
   it("explicit origin overrides Host headers", () => {
@@ -179,10 +232,7 @@ describe("asNodeHandler", () => {
       headers: { host: "acme.example.com" },
     };
     const web = toWebRequest(req, { origin: "https://acme.example.com" });
-    assert.equal(
-      web.url,
-      "https://acme.example.com/.well-known/oauth-authorization-server",
-    );
+    assert.equal(web.url, "https://acme.example.com/.well-known/oauth-authorization-server");
   });
 
   it("requires origin or trustProxy", () => {
@@ -207,7 +257,7 @@ describe("asNodeHandler", () => {
     );
   });
 
-  it("derives origin with trustProxy and [\"*\"] when origin omitted", async () => {
+  it('derives origin with trustProxy and ["*"] when origin omitted', async () => {
     const handler = asNodeHandler(mcp, {
       trustProxy: true,
       allowedOrigins: ["*"],
@@ -314,9 +364,6 @@ describe("asNodeHandler", () => {
       res,
     );
     assert.equal(res.statusCode, 400);
-    assert.equal(
-      (JSON.parse(String(res.chunk)) as { error: string }).error,
-      "origin not allowed",
-    );
+    assert.equal((JSON.parse(String(res.chunk)) as { error: string }).error, "origin not allowed");
   });
 });

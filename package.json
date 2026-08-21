@@ -1,6 +1,6 @@
 {
   "name": "mcp-trellis",
-  "version": "0.2.1",
+  "version": "1.0.0",
   "description": "Zero-dependency MCP server + OAuth 2.1 authorization server in one package, for Claude, Gemini, and Codex connectors",
   "type": "module",
   "license": "MIT",
@@ -55,13 +55,16 @@
     "build": "tsc -p tsconfig.build.json",
     "test": "tsx --test test/*.test.ts",
     "test:e2e": "tsx --test test/e2e/*.test.ts",
+    "test:coverage": "node --import tsx --test --experimental-test-coverage --test-coverage-lines=85 --test-coverage-branches=75 --enable-source-maps test/*.test.ts",
     "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
     "prepublishOnly": "npm run build && npm test"
   },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.9",
     "@types/node": "^22.13.10",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2"

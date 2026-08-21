@@ -1,6 +1,6 @@
 # mcp-trellis — roadmap
 
-Status: 2026-08-14. Written against MCP spec revision `2026-07-28`.
+Status: 2026-08-21. Written against MCP spec revision `2026-07-28`.
 
 ## What this library is
 
@@ -116,6 +116,100 @@ a proper JSON-RPC error.
   Schema keywords throw at `createToolRegistry` construction instead of
   silently looking enforced. Default (off) is unchanged.
 
+**Phase 2 — the authorize endpoint (0.2.2 / 0.3.0).**
+
+- **Consent step at `/authorize`.** A resolved session no longer issues a
+  code and redirects on its own; it renders an approval interstitial (built
+  in, or your own via `consent.render`) and only issues a code after an
+  explicit `POST ${oauthPath}/consent` approval. Closes a cross-site flow
+  where an attacker-controlled page could otherwise walk a logged-in user
+  through `/authorize` with an attacker-chosen `client_id`/`code_challenge`
+  and a loopback `redirect_uri`, catching the code with a local listener —
+  PKCE alone does not defend against this, it proves possession of the
+  verifier, not the identity of a legitimate client. Approval tickets are
+  AES-GCM sealed (`sealed.ts`), single-use, and re-checked against the
+  resolved user at redemption.
+- **DCR `client_id` is bound to its own `redirect_uris`**, zero storage — the
+  id issued by `/register` is a sealed, self-verifying assertion of the list
+  it registered. Stops a substituted `redirect_uri` on a legitimate
+  connector's id (not impersonation via self-registration — the consent step
+  above is what stops that). `requireRegisteredClients` (default `true`
+  since 1.0) is the stricter default, and a direct stepping stone to CIMD below.
+- **`codeSecret` is validated** — minimum 32 characters, and the literal
+  values this package's own docs/examples publish are denylisted by name.
+  It is the single key that can forge an auth code, consent ticket, or DCR
+  client assertion for any userId/scope/resource, and had no validation at
+  all before this.
+- **Loopback redirect allowlist narrowed** — `localhost` and `https:`
+  loopback are no longer accepted (RFC 8252 §8.3); a `redirect_uri` carrying
+  a fragment or embedded credentials is rejected for every predicate, not
+  only loopback.
+- **`defaultScopes` required for multi-scope servers.** `createOAuthRouter`
+  now throws at construction when `scopes` has more than one entry and
+  `defaultScopes` is unset, instead of silently granting the full advertised
+  set to a client that asked for nothing.
+- **`timingSafeEqual("", "")` now returns `false`**, not `true` — a public
+  export, so a host comparing a presented secret against an unset stored one
+  no longer authenticates.
+- **Request body size limits** on `/mcp`, `/token`, `/revoke`, and
+  `/register` — previously unbounded on every one of them.
+
+**Phase 3 — credentials and correctness (0.4.0).**
+
+- **Auth codes sealed (AES-GCM), not signed-only.** v1 (HMAC) codes were
+  readable by anyone who saw one; v2 codes are encrypted too. Soft
+  migration in 0.4.0 / 0.5.0 (read both, write v2); **1.0.0 drops v1 reading**.
+- **`ClientStore.secretHash`**, preferred over `verifySecret`: return a
+  stored hash from the new `hashClientSecret` and the library does the
+  comparison with the same constant-time primitive it uses everywhere
+  else. Keyed by `codeSecret` — no second secret to manage.
+- **Client-auth enumeration oracle closed.** `/token` and `/revoke`
+  collapsed five distinguishable error messages into one; a locked-down
+  server also pays a fixed-cost dummy comparison for an unknown
+  `client_id`, so response timing can't distinguish "unknown" from
+  "known, wrong secret" either. Unaffected: public-client traffic, and
+  `/authorize`'s deliberately-still-descriptive `unauthorized_client`.
+- **`/revoke` accepts JSON**, matching `/token` — previously form-only,
+  so a JSON revoke silently failed while the caller believed it worked.
+- **`apiTool` no longer forwards the upstream error body by default** —
+  status only; opt in via the new `onError`.
+- **`missingObjectType`** — a schema using `properties`/`required`
+  without `type: "object"` now throws at construction under
+  `validateArgs: true`, and is enforced at runtime by dispatching on the
+  value's actual shape rather than trusting a schema author remembered to
+  declare `type`.
+- **Union `type` arrays** (`type: ["string", "null"]`) now evaluate
+  correctly — previously always failed.
+- **`/authorize` errors redirect to the client's callback** (RFC 6749
+  §4.1.2.1) once `redirect_uri` is validated, instead of a bare JSON body
+  the connector never parses — this was silently connector-breaking.
+
+**Phase 4 — protocol correctness and observability (0.5.0).**
+
+- **`jsonrpc` validated on every `/mcp` request** — `-32600` on anything
+  but exactly `"2.0"`, including a missing field. Previously accepted
+  silently.
+- **`MCP-Protocol-Version` header read and validated**, per the
+  2025-06-18 spec — unsupported → 400, missing → assumed `2025-03-26`
+  (the spec's own compatibility default), not checked on `initialize`
+  (which is what negotiates the version). Previously only appeared in the
+  CORS allow-list, never actually read.
+- **`initialize` defaults to the newest supported protocol version**
+  (`2025-06-18`) for a missing/unrecognized request, not the oldest.
+- **401 responses echo the real request id** instead of hardcoding `null`.
+- **`/mcp/` routes identically to `/mcp`.** `canonicalResource` normalizes
+  its `resourcePath` argument internally, so route matching, `/authorize`,
+  and `/token` all agree — previously only some call sites normalized a
+  trailing slash and others read a raw, unnormalized value.
+- **`createOAuthRouter` refuses to construct** if `oauthPath` would equal
+  `resourcePath` (they'd shadow each other) or if `resourcePath` starts
+  with `/.well-known` (reserved for discovery documents).
+- **`auditTimeoutMs`** (default 1000ms) — a hanging `ports.audit` can no
+  longer stall a response indefinitely; it already couldn't fail one.
+- **`OAuthPorts.audit` / `McpAppAuth.audit`** — the OAuth-side twin of the
+  MCP audit hook. Sees the real reason behind a collapsed `invalid_client`
+  or a rejected `codeSecret`, which the caller never does.
+
 ---
 
 ## Next
@@ -181,7 +275,10 @@ Backed by the spec, not just by our own scoping:
 - **No sessions** — removed from the protocol
 - **No SSE resumability** — removed from the transport
 - **No HTTP+SSE transport** — deprecated; Gemini Enterprise refuses it outright
-- **No embedded login UI, token store, or IdP** — the ports stay the product
+- **No login UI, token store, or IdP** — the ports stay the product. The
+  `/authorize` consent/approval screen is shipped (built in, overridable),
+  since it's a security control determined by protocol data the library
+  already holds, not by your IdP or branding; login itself stays yours
 - **No resources / prompts** — a real limitation; revisit on demand
 - **No DPoP** — sender-constrained tokens; connectors use bearer + PKCE
 - **No PAR (RFC 9126)** — pushed authorization requests

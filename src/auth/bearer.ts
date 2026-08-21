@@ -17,6 +17,10 @@ export const parseBearer = (authorization: string | null): string | null => {
  * so unequal lengths do not short-circuit. Rejects over-long inputs.
  */
 export const timingSafeEqual = (a: string, b: string): boolean => {
+  // Both empty: the reduce below never runs and the seed 0 ^ 0 is 0 — "equal"
+  // by the accumulator's math, but never the right semantics for a secret
+  // comparison. An empty presented value must never authenticate.
+  if (a.length === 0 || b.length === 0) return false;
   if (a.length > MAX_COMPARE_LENGTH || b.length > MAX_COMPARE_LENGTH) {
     return false;
   }
@@ -30,9 +34,7 @@ export const timingSafeEqual = (a: string, b: string): boolean => {
 };
 
 export const matchesAny = (presented: string, accepted: string[]): boolean =>
-  accepted.some(
-    (token) => token.length > 0 && timingSafeEqual(presented, token),
-  );
+  accepted.some((token) => timingSafeEqual(presented, token));
 
 export type WwwAuthenticateOptions = {
   realm: string;
@@ -40,9 +42,7 @@ export type WwwAuthenticateOptions = {
   resourceMetadataUrl: string;
 };
 
-export const wwwAuthenticateHeader = (
-  options: WwwAuthenticateOptions,
-): string =>
+export const wwwAuthenticateHeader = (options: WwwAuthenticateOptions): string =>
   `${BEARER_PREFIX}realm="${options.realm}", resource_metadata="${options.resourceMetadataUrl}"`;
 
 /** RFC 6750 §2.3 uses `access_token`; also reject legacy `token`. */

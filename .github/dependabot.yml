@@ -1,0 +1,13 @@
+version: 2
+updates:
+  # CI/publish workflows pin actions to full commit SHAs — those pins rot
+  # without something to bump them back up to date.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"

@@ -18,9 +18,7 @@ const echo: ToolDef<Ctx> = {
   },
   scope: "mcp",
   handler: (ctx, args) =>
-    ctx.tenantId
-      ? `${ctx.tenantId}:${String(args.text ?? "")}`
-      : String(args.text ?? ""),
+    ctx.tenantId ? `${ctx.tenantId}:${String(args.text ?? "")}` : String(args.text ?? ""),
 };
 
 /** Opaque test token: the app must still enforce the audience itself. */
@@ -42,8 +40,10 @@ const makeApp = (
     tools: [echo],
     clients: ["claude"],
     extraRedirectUris: ["https://client.test/cb"],
+    // Invented client_id in the PKCE walk — opt out of 1.0's default lock-down.
+    requireRegisteredClients: false,
     auth: {
-      codeSecret: "test-secret-value",
+      codeSecret: "app-test-code-secret-value-32-characters-long",
       resolveUser: async () => ({ id: "u1" }),
       loginUrl: (_req, next) => `/login?next=${encodeURIComponent(next)}`,
       mintAccessToken: async ({ userId, scope, resource }) => ({
@@ -58,9 +58,7 @@ const makeApp = (
       // Deliberately does NOT check the audience — the library must.
       verifyToken: async (token) => {
         try {
-          return JSON.parse(
-            Buffer.from(token, "base64url").toString("utf8"),
-          ) as {
+          return JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as {
             userId: string;
             scopes: string[];
             audience: string;
@@ -71,13 +69,14 @@ const makeApp = (
         }
       },
     },
-    context: async (_req, principal) => ({
-      userId: principal?.id ?? "",
-      tenantId:
-        typeof principal?.claims?.tenant_id === "string"
-          ? principal.claims.tenant_id
-          : undefined,
-    }),
+    context: async (_req, principal) => {
+      const tenantId =
+        typeof principal?.claims?.tenant_id === "string" ? principal.claims.tenant_id : undefined;
+      return {
+        userId: principal?.id ?? "",
+        ...(tenantId !== undefined ? { tenantId } : {}),
+      };
+    },
   });
 
 const rpc = (app: McpApp, body: unknown, token?: string) =>
@@ -108,12 +107,25 @@ const getAccessToken = async (app: McpApp): Promise<string> => {
     resource: RESOURCE,
   }).toString();
 
-  const authorized = await app.fetch(
-    new Request(authorizeUrl, { method: "GET" }),
+  const authorized = await app.fetch(new Request(authorizeUrl, { method: "GET" }));
+  assert.equal(authorized.status, 200, "authorize must render the consent interstitial");
+  const html = await authorized.text();
+  const ticketMatch = html.match(/name="consent_ticket"\s+value="([^"]+)"/);
+  assert.ok(ticketMatch?.[1], "consent page must carry a well-formed consent_ticket");
+
+  const approved = await app.fetch(
+    new Request(`${ORIGIN}/mcp/oauth/consent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        consent_ticket: ticketMatch[1],
+        approved: "true",
+      }).toString(),
+    }),
   );
-  assert.equal(authorized.status, 302);
-  const location = authorized.headers.get("location");
-  assert.ok(location, "authorize must redirect");
+  assert.equal(approved.status, 302);
+  const location = approved.headers.get("location");
+  assert.ok(location, "consent approval must redirect");
   const code = new URL(location).searchParams.get("code");
   assert.ok(code, "redirect must carry a code");
 
@@ -144,27 +156,17 @@ describe("createMcpApp", () => {
   it("serves both discovery documents", async () => {
     const app = makeApp();
 
-    const prm = await app.fetch(
-      new Request(`${ORIGIN}/.well-known/oauth-protected-resource/mcp`),
-    );
+    const prm = await app.fetch(new Request(`${ORIGIN}/.well-known/oauth-protected-resource/mcp`));
     assert.equal(prm.status, 200);
-    assert.equal(
-      ((await prm.json()) as { resource: string }).resource,
-      RESOURCE,
-    );
+    assert.equal(((await prm.json()) as { resource: string }).resource, RESOURCE);
 
-    const as = await app.fetch(
-      new Request(`${ORIGIN}/.well-known/oauth-authorization-server`),
-    );
+    const as = await app.fetch(new Request(`${ORIGIN}/.well-known/oauth-authorization-server`));
     assert.equal(as.status, 200);
     const meta = (await as.json()) as {
       authorization_endpoint: string;
       token_endpoint_auth_methods_supported: string[];
     };
-    assert.equal(
-      meta.authorization_endpoint,
-      `${ORIGIN}/mcp/oauth/authorize`,
-    );
+    assert.equal(meta.authorization_endpoint, `${ORIGIN}/mcp/oauth/authorize`);
     assert.deepEqual(meta.token_endpoint_auth_methods_supported, ["none"]);
   });
 
@@ -283,13 +285,47 @@ describe("createMcpApp", () => {
     assert.equal(res.status, 404);
   });
 
+  it("routes /mcp/ (trailing slash) the same as /mcp, instead of 404ing", async () => {
+    const app = makeApp();
+    // Unauthenticated on purpose — the point is that this reaches the MCP
+    // handler (401, "no bearer") rather than app.ts's own route-miss (404).
+    const withSlash = await app.fetch(
+      new Request(`${ORIGIN}/mcp/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+      }),
+    );
+    const withoutSlash = await rpc(app, { jsonrpc: "2.0", id: 1, method: "tools/list" });
+    assert.equal(withSlash.status, withoutSlash.status);
+    assert.notEqual(withSlash.status, 404);
+  });
+
+  it("completes a full authorize → token → tools/call walk against /mcp/ end to end", async () => {
+    const app = makeApp();
+    const token = await getAccessToken(app);
+    const res = await app.fetch(
+      new Request(`${ORIGIN}/mcp/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "echo", arguments: { text: "hi" } },
+        }),
+      }),
+    );
+    assert.equal(res.status, 200);
+  });
+
   it("locks down to pre-registered clients when only gemini is configured", async () => {
     const app = createMcpApp<Ctx>({
       serverInfo: { name: "gemini-only", version: "1.0.0" },
       tools: [echo],
       clients: ["gemini"],
       auth: {
-        codeSecret: "test-secret-value",
+        codeSecret: "app-test-code-secret-value-32-characters-long",
         resolveUser: async () => ({ id: "u1" }),
         loginUrl: () => "/login",
         mintAccessToken: async ({ userId, scope }) => ({
@@ -334,10 +370,7 @@ describe("createMcpApp", () => {
     }).toString();
     const authorize = await app.fetch(new Request(url, { method: "GET" }));
     assert.equal(authorize.status, 400);
-    assert.equal(
-      ((await authorize.json()) as { error: string }).error,
-      "unauthorized_client",
-    );
+    assert.equal(((await authorize.json()) as { error: string }).error, "unauthorized_client");
   });
 
   it("refuses to construct a pre-registered client without a clientStore", () => {

@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import {
-  sha256Base64Url,
-  verifyPkceS256,
-} from "../src/oauth/pkce.js";
+import { sha256Base64Url, verifyPkceS256 } from "../src/oauth/pkce.js";
 
 describe("PKCE", () => {
   it("verifies S256 challenge", async () => {

@@ -1,3 +1,5 @@
+import { type WwwAuthenticateOptions, wwwAuthenticateHeader } from "./auth/bearer.js";
+import { emptyResponse, jsonResponse } from "./http.js";
 import {
   JSONRPC_METHOD_NOT_FOUND,
   JSONRPC_UNAUTHORIZED,
@@ -6,46 +8,38 @@ import {
   rpcError,
   rpcResult,
 } from "./jsonrpc.js";
-import { emptyResponse, jsonResponse } from "./http.js";
 import { pickProtocolVersion } from "./protocol.js";
 import type { ToolRegistry } from "./registry.js";
-import {
-  wwwAuthenticateHeader,
-  type WwwAuthenticateOptions,
-} from "./auth/bearer.js";
 
 export type Principal = {
   id: string;
   scopes: string[];
   /** Optional host claims from `verifyToken` (tenant, plan, role, …). */
-  claims?: Record<string, unknown>;
+  claims?: Record<string, unknown> | undefined;
 };
 
 /** Per-request metrics emitted through the optional `audit` port. */
 export type AuditEntry = {
   /** JSON-RPC method, or `""` for transport-level rejections made before parsing. */
   method: string;
-  tool?: string;
-  principalId?: string;
+  tool?: string | undefined;
+  principalId?: string | undefined;
   ok: boolean;
-  error?: string;
+  error?: string | undefined;
   durationMs: number;
 };
 
 export type McpPorts<TCtx> = {
-  authenticate: (
-    req: Request,
-    method: string,
-    tool?: string,
-  ) => Promise<Principal | null>;
+  authenticate: (req: Request, method: string, tool?: string) => Promise<Principal | null>;
   context: (req: Request, principal: Principal | null) => TCtx | Promise<TCtx>;
   /**
    * Opt-in metrics hook. Pass any function to receive each tool result and
    * every denial (bad token, missing scope, query-string token). Omit it and
    * the library stays silent — no stdout, no store. Do what you want with
-   * `entry` (DB, APM, admin UI). Throwing never fails the request.
+   * `entry` (DB, APM, admin UI). Throwing never fails the request, and
+   * neither does hanging — see `McpHandlerOptions.auditTimeoutMs`.
    */
-  audit?: (entry: AuditEntry) => void | Promise<void>;
+  audit?: ((entry: AuditEntry) => void | Promise<void>) | undefined;
 };
 
 export type ServerInfo = {
@@ -58,12 +52,19 @@ export type McpHandlerOptions<TCtx> = {
   ports: McpPorts<TCtx>;
   serverInfo: ServerInfo;
   instructions?: string;
-  wwwAuthenticate:
-    | WwwAuthenticateOptions
-    | ((req: Request) => WwwAuthenticateOptions);
+  wwwAuthenticate: WwwAuthenticateOptions | ((req: Request) => WwwAuthenticateOptions);
   /** Methods that skip auth (default: initialize, ping, notifications/*). */
   publicMethods?: Set<string>;
+  /**
+   * Max time to wait for `ports.audit` before giving up on it and
+   * responding anyway. Default 1000ms. A hanging audit sink can't fail a
+   * request (see `safeAudit`), but without this it could stall one
+   * indefinitely — "can't fail" isn't "can't delay."
+   */
+  auditTimeoutMs?: number;
 };
+
+const DEFAULT_AUDIT_TIMEOUT_MS = 1000;
 
 export const DEFAULT_PUBLIC_METHODS = new Set([
   "initialize",
@@ -73,11 +74,9 @@ export const DEFAULT_PUBLIC_METHODS = new Set([
 ]);
 
 const NOTIFICATION_PREDICATES: Array<(body: JsonRpcRequest) => boolean> = [
-  (body) =>
-    typeof body.method === "string" && body.method.startsWith("notifications/"),
+  (body) => typeof body.method === "string" && body.method.startsWith("notifications/"),
   (body) => body.method === "initialized",
-  (body) =>
-    body.id === undefined && body.method === undefined && "result" in body,
+  (body) => body.id === undefined && body.method === undefined && "result" in body,
 ];
 
 export const isNotification = (body: JsonRpcRequest): boolean =>
@@ -91,34 +90,50 @@ export const resolveWww = <TCtx>(
     ? options.wwwAuthenticate(req)
     : options.wwwAuthenticate;
 
+/**
+ * `id` defaults to `null` for the transport-level call sites in
+ * `dispatch.ts` — a body hasn't been parsed yet there, so there's no real
+ * id to echo. Call sites past that point (inside `dispatchRpc` and the
+ * method handlers) have one and must pass it, or a client correlating
+ * responses by id sees `null` on every 401 regardless of what it sent.
+ */
 export const unauthorized = (
   www: WwwAuthenticateOptions,
   message = "Unauthorized",
+  id: JsonRpcId = null,
 ): Response =>
-  jsonResponse(rpcError(null, JSONRPC_UNAUTHORIZED, message), 401, {
+  jsonResponse(rpcError(id, JSONRPC_UNAUTHORIZED, message), 401, {
     "WWW-Authenticate": wwwAuthenticateHeader(www),
   });
 
 /**
- * Invoke the audit metrics hook, swallowing any failure.
- * Telemetry must never turn a served response into a transport error —
- * this is the only call path to `ports.audit`.
+ * Invoke the audit metrics hook, swallowing any failure and racing it
+ * against `auditTimeoutMs` so a hanging sink can't stall the response
+ * either — "can't fail a request" was already true; this adds "can't
+ * delay one" past a bound. The audit call keeps running in the background
+ * if the timer wins; its own `catch` below means it can never surface as
+ * an unhandled rejection whenever it does finish.
  */
 export const safeAudit = async <TCtx>(
   options: McpHandlerOptions<TCtx>,
   entry: AuditEntry,
 ): Promise<void> => {
-  try {
-    await options.ports.audit?.(entry);
-  } catch {
-    // Intentionally ignored.
-  }
+  const audit = options.ports.audit;
+  if (!audit) return;
+
+  const settled = (async () => {
+    try {
+      await audit(entry);
+    } catch {
+      // Intentionally ignored.
+    }
+  })();
+
+  const timeoutMs = options.auditTimeoutMs ?? DEFAULT_AUDIT_TIMEOUT_MS;
+  await Promise.race([settled, new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))]);
 };
 
-export const hasScope = (
-  principal: Principal,
-  scope: string | undefined,
-): boolean => {
+export const hasScope = (principal: Principal, scope: string | undefined): boolean => {
   if (!scope) return true;
   return principal.scopes.includes(scope) || principal.scopes.includes("*");
 };
@@ -130,6 +145,8 @@ type MethodFn<TCtx> = (input: {
   principal: Principal | null;
   ctx: TCtx;
   options: McpHandlerOptions<TCtx>;
+  /** Request start, for denial-path audit timing — see `dispatchRpc`. */
+  startedAt: number;
 }) => Promise<Response>;
 
 const METHODS = {
@@ -148,14 +165,12 @@ const METHODS = {
   "tools/list": async ({ id, options }) =>
     jsonResponse(rpcResult(id, { tools: options.registry.list() })),
 
-  "tools/call": async ({ req, body, id, principal, ctx, options }) => {
+  "tools/call": async ({ req, body, id, principal, ctx, options, startedAt }) => {
     const params = body.params ?? {};
     const name = String(params.name ?? "");
     const rawArgs = params.arguments;
     const args =
-      rawArgs !== null &&
-      typeof rawArgs === "object" &&
-      !Array.isArray(rawArgs)
+      rawArgs !== null && typeof rawArgs === "object" && !Array.isArray(rawArgs)
         ? (rawArgs as Record<string, unknown>)
         : {};
 
@@ -167,12 +182,9 @@ const METHODS = {
         principalId: principal?.id,
         ok: false,
         error: "missing_scope",
-        durationMs: 0,
+        durationMs: Date.now() - startedAt,
       });
-      return unauthorized(
-        resolveWww(options, req),
-        `Missing scope: ${tool.scope}`,
-      );
+      return unauthorized(resolveWww(options, req), `Missing scope: ${tool.scope}`, id);
     }
 
     const started = Date.now();
@@ -194,16 +206,16 @@ export const dispatchRpc = async <TCtx>(input: {
   body: JsonRpcRequest;
   options: McpHandlerOptions<TCtx>;
   publicMethods: Set<string>;
+  /** Request start (captured in `createMcpHandler.fetch`), for denial-path audit timing. */
+  startedAt: number;
 }): Promise<Response> => {
-  const { req, body, options, publicMethods } = input;
+  const { req, body, options, publicMethods, startedAt } = input;
   const method = body.method ?? "";
   // Notifications omit `id`; explicit null is a valid request id (JSON-RPC).
   const id = body.id === undefined ? null : body.id;
-  const toolName =
-    method === "tools/call" ? String(body.params?.name ?? "") : undefined;
+  const toolName = method === "tools/call" ? String(body.params?.name ?? "") : undefined;
 
-  const isPublic =
-    publicMethods.has(method) || method.startsWith("notifications/");
+  const isPublic = publicMethods.has(method) || method.startsWith("notifications/");
   let principal: Principal | null = null;
 
   if (!isPublic) {
@@ -214,22 +226,18 @@ export const dispatchRpc = async <TCtx>(input: {
         tool: toolName,
         ok: false,
         error: "unauthorized",
-        durationMs: 0,
+        durationMs: Date.now() - startedAt,
       });
-      return unauthorized(resolveWww(options, req));
+      return unauthorized(resolveWww(options, req), undefined, id);
     }
   }
 
-  const handler = (METHODS as Record<string, MethodFn<TCtx> | undefined>)[
-    method
-  ];
+  const handler = (METHODS as Record<string, MethodFn<TCtx> | undefined>)[method];
   if (!handler) {
     if (body.id === undefined) return emptyResponse(202);
-    return jsonResponse(
-      rpcError(body.id, JSONRPC_METHOD_NOT_FOUND, `Method not found: ${method}`),
-    );
+    return jsonResponse(rpcError(body.id, JSONRPC_METHOD_NOT_FOUND, `Method not found: ${method}`));
   }
 
   const ctx = await options.ports.context(req, principal);
-  return handler({ req, body, id, principal, ctx, options });
+  return handler({ req, body, id, principal, ctx, options, startedAt });
 };

@@ -3,25 +3,33 @@
  * Bridges duck-typed Node request/response objects to Web `Request`/`Response`.
  */
 
-import { INTERNAL_ERROR } from "../http.js";
 import {
-  isAllowedOrigin,
-  type OriginAllowlistOptions,
-} from "./origins.js";
+  BodyTooLargeError,
+  DEFAULT_MCP_BODY_LIMIT,
+  DEFAULT_OAUTH_BODY_LIMIT,
+  isNodeReadable,
+  readBoundedNodeBody,
+} from "../body.js";
+import { INTERNAL_ERROR } from "../http.js";
+import { JSONRPC_PAYLOAD_TOO_LARGE, rpcError } from "../jsonrpc.js";
+import { isAllowedOrigin, type OriginAllowlistOptions } from "./origins.js";
 
 export { isAllowedOrigin, type OriginAllowlistOptions };
 
 export type NodeRequestLike = {
-  method?: string;
-  url?: string;
+  method?: string | undefined;
+  url?: string | undefined;
   headers: Record<string, string | string[] | undefined>;
   body?: unknown;
+  /** Destroy the underlying socket — called only after a 413 has flushed. */
+  destroy?: (() => void) | undefined;
+  [Symbol.asyncIterator]?: () => AsyncIterator<Uint8Array | string>;
 };
 
 export type NodeResponseLike = {
   statusCode: number;
   setHeader: (name: string, value: string | number | readonly string[]) => void;
-  end: (chunk?: string | Uint8Array) => void;
+  end: (chunk?: string | Uint8Array, callback?: () => void) => void;
 };
 
 export type ToWebRequestOptions = {
@@ -46,25 +54,20 @@ export type AsNodeHandlerOptions = OriginAllowlistOptions & {
   trustProxy?: boolean;
 };
 
-const headerValue = (
-  value: string | string[] | undefined,
-): string | undefined => (Array.isArray(value) ? value[0] : value);
+const headerValue = (value: string | string[] | undefined): string | undefined =>
+  Array.isArray(value) ? value[0] : value;
 
 const lastForwarded = (value: string | undefined): string | undefined =>
   value?.split(",").pop()?.trim();
 
 /** Derive origin from Host, or from forwarded headers when trustProxy. */
-export const resolveOrigin = (
-  req: NodeRequestLike,
-  options: ResolveOriginOptions = {},
-): string => {
+export const resolveOrigin = (req: NodeRequestLike, options: ResolveOriginOptions = {}): string => {
   const trustProxy = options.trustProxy === true;
   const proto = trustProxy
     ? lastForwarded(headerValue(req.headers["x-forwarded-proto"])) || "https"
     : "https";
   const host = trustProxy
-    ? lastForwarded(headerValue(req.headers["x-forwarded-host"])) ||
-      headerValue(req.headers.host)
+    ? lastForwarded(headerValue(req.headers["x-forwarded-host"])) || headerValue(req.headers.host)
     : headerValue(req.headers.host);
   if (!host) {
     throw new Error(
@@ -79,18 +82,12 @@ const toBodyInit = (body: unknown): BodyInit | undefined => {
   if (body === undefined || body === null) return undefined;
   if (typeof body === "string") return body;
   if (body instanceof Uint8Array) {
-    return body.buffer.slice(
-      body.byteOffset,
-      body.byteOffset + body.byteLength,
-    ) as ArrayBuffer;
+    return body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer;
   }
   return JSON.stringify(body);
 };
 
-export const toWebRequest = (
-  req: NodeRequestLike,
-  options: ToWebRequestOptions,
-): Request => {
+export const toWebRequest = (req: NodeRequestLike, options: ToWebRequestOptions): Request => {
   // Never trust an absolute-form request target — rebase onto the validated origin.
   const target = new URL(req.url ?? "/", options.origin);
   const url = `${options.origin}${target.pathname}${target.search}`;
@@ -109,50 +106,67 @@ export const toWebRequest = (
   }
 
   const body = options.body !== undefined ? options.body : req.body;
+  const bodyInit = toBodyInit(body);
   return new Request(url, {
     method,
     headers,
-    body: toBodyInit(body),
+    ...(bodyInit !== undefined ? { body: bodyInit } : {}),
   });
 };
 
 const isAsyncIterable = (value: unknown): value is AsyncIterable<unknown> =>
-  typeof (value as { [Symbol.asyncIterator]?: unknown } | null)?.[
-    Symbol.asyncIterator
-  ] === "function";
+  typeof (value as { [Symbol.asyncIterator]?: unknown } | null)?.[Symbol.asyncIterator] ===
+  "function";
 
-const concatChunks = (chunks: Uint8Array[]): Uint8Array => {
-  const total = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
-  const out = new Uint8Array(total);
-  chunks.reduce((offset, chunk) => {
-    out.set(chunk, offset);
-    return offset + chunk.byteLength;
-  }, 0);
-  return out;
+const requestPath = (req: NodeRequestLike): string => (req.url ?? "/").split("?")[0] ?? "/";
+
+/** OAuth routes under `…/oauth/…` get the 64 KiB cap; everything else gets 1 MiB. */
+export const bodyLimitForPath = (path: string): number =>
+  /\/oauth(?:\/|$)/.test(path) ? DEFAULT_OAUTH_BODY_LIMIT : DEFAULT_MCP_BODY_LIMIT;
+
+const enforcePresetBodySize = (body: unknown, maxBytes: number): void => {
+  if (typeof body === "string" && new TextEncoder().encode(body).byteLength > maxBytes) {
+    throw new BodyTooLargeError(maxBytes);
+  }
+  if (body instanceof Uint8Array && body.byteLength > maxBytes) {
+    throw new BodyTooLargeError(maxBytes);
+  }
 };
 
-/** Prefer `req.body`; else drain the stream (raw `http.createServer`). */
+/**
+ * Prefer `req.body`; else drain the stream (raw `http.createServer`), capped
+ * at `maxBytes`. Throws `BodyTooLargeError` past the cap without destroying
+ * the socket — `asNodeHandler` writes 413 first, then destroys after flush.
+ */
 export const readNodeBody = async (
   req: NodeRequestLike,
+  maxBytes: number = DEFAULT_MCP_BODY_LIMIT,
 ): Promise<unknown> => {
-  if (req.body !== undefined && req.body !== null) return req.body;
+  if (req.body !== undefined && req.body !== null) {
+    enforcePresetBodySize(req.body, maxBytes);
+    return req.body;
+  }
+
+  const opts = { contentLength: headerValue(req.headers["content-length"]) };
+  if (isNodeReadable(req)) {
+    const bytes = await readBoundedNodeBody(req, maxBytes, opts);
+    return bytes.byteLength > 0 ? bytes : undefined;
+  }
   if (!isAsyncIterable(req)) return undefined;
 
-  const chunks: Uint8Array[] = [];
-  for await (const chunk of req as AsyncIterable<Uint8Array | string>) {
-    chunks.push(
-      typeof chunk === "string" ? new TextEncoder().encode(chunk) : chunk,
-    );
-  }
-  return chunks.length > 0 ? concatChunks(chunks) : undefined;
+  const bytes = await readBoundedNodeBody(
+    req as AsyncIterable<Uint8Array | string>,
+    maxBytes,
+    opts,
+  );
+  return bytes.byteLength > 0 ? bytes : undefined;
 };
 
-export const sendWebResponse = async (
-  res: NodeResponseLike,
-  response: Response,
-): Promise<void> => {
+export const sendWebResponse = async (res: NodeResponseLike, response: Response): Promise<void> => {
   res.statusCode = response.status;
-  response.headers.forEach((value, key) => res.setHeader(key, value));
+  response.headers.forEach((value, key) => {
+    res.setHeader(key, value);
+  });
   res.end(new Uint8Array(await response.arrayBuffer()));
 };
 
@@ -160,12 +174,19 @@ export const sendWebResponse = async (
 const sendJsonError = (
   res: NodeResponseLike,
   status: number,
-  error: string,
+  body: string,
+  after?: () => void,
 ): void => {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
-  res.end(JSON.stringify({ error }));
+  if (after) res.setHeader("Connection", "close");
+  res.end(body, after);
 };
+
+const payloadTooLargeBody = (path: string): string =>
+  /\/oauth(?:\/|$)/.test(path)
+    ? JSON.stringify({ error: "request body too large" })
+    : JSON.stringify(rpcError(null, JSONRPC_PAYLOAD_TOO_LARGE, "Payload too large"));
 
 /** One-liner: Node `(req, res)` → MCP / OAuth Web handler. */
 export const asNodeHandler = (
@@ -174,9 +195,7 @@ export const asNodeHandler = (
 ) => {
   const hostDerived = !options?.origin;
   if (hostDerived && options?.trustProxy !== true) {
-    throw new Error(
-      "asNodeHandler requires options.origin or options.trustProxy: true",
-    );
+    throw new Error("asNodeHandler requires options.origin or options.trustProxy: true");
   }
   // Forgettable Host spoof → AS issuer / PRM / WWW-Authenticate. Require an
   // explicit allowlist whenever origin comes from the request.
@@ -190,24 +209,28 @@ export const asNodeHandler = (
     options.allowedOrigins?.length &&
     !isAllowedOrigin(options.origin, options)
   ) {
-    throw new Error(
-      "asNodeHandler: options.origin is not in options.allowedOrigins",
-    );
+    throw new Error("asNodeHandler: options.origin is not in options.allowedOrigins");
   }
 
   return async (req: NodeRequestLike, res: NodeResponseLike): Promise<void> => {
+    const path = requestPath(req);
     try {
-      const origin =
-        options?.origin ?? resolveOrigin(req, { trustProxy: true });
+      const origin = options?.origin ?? resolveOrigin(req, { trustProxy: true });
       if (!isAllowedOrigin(origin, options)) {
-        sendJsonError(res, 400, "origin not allowed");
+        sendJsonError(res, 400, JSON.stringify({ error: "origin not allowed" }));
         return;
       }
-      const body = await readNodeBody(req);
+      const body = await readNodeBody(req, bodyLimitForPath(path));
       const request = toWebRequest(req, { origin, body });
       await sendWebResponse(res, await mcp.fetch(request));
-    } catch {
-      sendJsonError(res, 500, INTERNAL_ERROR);
+    } catch (exc) {
+      if (exc instanceof BodyTooLargeError) {
+        sendJsonError(res, 413, payloadTooLargeBody(path), () => {
+          req.destroy?.();
+        });
+        return;
+      }
+      sendJsonError(res, 500, JSON.stringify({ error: INTERNAL_ERROR }));
     }
   };
 };

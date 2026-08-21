@@ -20,11 +20,7 @@ export type Kv = {
    * Required for single-use auth codes (Redis `SET NX EX`, Postgres
    * `INSERT … ON CONFLICT DO NOTHING`).
    */
-  setIfAbsent: (
-    key: string,
-    value: string,
-    ttlSeconds: number,
-  ) => Promise<boolean>;
+  setIfAbsent: (key: string, value: string, ttlSeconds: number) => Promise<boolean>;
   delete: (key: string) => Promise<void>;
 };
 
@@ -69,6 +65,5 @@ export const kvRevocation = (kv: Kv) => ({
   revoke: async (token: string, ttlSeconds = 86_400) => {
     await kv.set(`revoked:${token}`, "1", ttlSeconds);
   },
-  isRevoked: async (token: string) =>
-    (await kv.get(`revoked:${token}`)) !== null,
+  isRevoked: async (token: string) => (await kv.get(`revoked:${token}`)) !== null,
 });

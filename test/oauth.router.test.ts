@@ -1,13 +1,36 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { sha256Base64Url } from "../src/oauth/pkce.js";
-import { createOAuthRouter } from "../src/oauth/router.js";
 import { CLAUDE_CALLBACK } from "../src/oauth/redirect.js";
+import { createOAuthRouter } from "./helpers/router.js";
 
 const RESOURCE = "https://example.test/mcp";
 
+/** Walks the consent interstitial that /authorize now renders instead of redirecting directly. */
+const approveConsent = async (
+  router: ReturnType<typeof createOAuthRouter>,
+  consentResponse: Response,
+): Promise<Response> => {
+  assert.equal(consentResponse.status, 200, "authorize must render the consent interstitial");
+  const html = await consentResponse.text();
+  const ticketMatch = html.match(/name="consent_ticket"\s+value="([^"]+)"/);
+  assert.ok(ticketMatch?.[1], "consent page must carry a well-formed consent_ticket");
+  const approved = await router.tryHandle(
+    new Request("https://example.test/mcp/oauth/consent", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        consent_ticket: ticketMatch[1],
+        approved: "true",
+      }).toString(),
+    }),
+  );
+  assert.ok(approved);
+  return approved;
+};
+
 const basePorts = {
-  codeSecret: "secret",
+  codeSecret: "router-test-code-secret-value-32-characters",
   resolveUser: async () => ({ id: "u1" }),
   loginUrl: () => "https://example.test/login",
   mintAccessToken: async () => ({
@@ -20,9 +43,7 @@ describe("oauth router grant advertisement", () => {
   it("omits refresh_token when handler not provided", async () => {
     const router = createOAuthRouter({ ports: basePorts });
     const res = await router.tryHandle(
-      new Request(
-        "https://example.test/.well-known/oauth-authorization-server/mcp",
-      ),
+      new Request("https://example.test/.well-known/oauth-authorization-server/mcp"),
     );
     assert.ok(res);
     const body = (await res.json()) as {
@@ -44,18 +65,13 @@ describe("oauth router grant advertisement", () => {
       },
     });
     const res = await router.tryHandle(
-      new Request(
-        "https://example.test/.well-known/oauth-authorization-server",
-      ),
+      new Request("https://example.test/.well-known/oauth-authorization-server"),
     );
     assert.ok(res);
     const body = (await res.json()) as {
       grant_types_supported: string[];
     };
-    assert.deepEqual(body.grant_types_supported, [
-      "authorization_code",
-      "refresh_token",
-    ]);
+    assert.deepEqual(body.grant_types_supported, ["authorization_code", "refresh_token"]);
   });
 
   it("authorize → token mints user-bound access token with resource", async () => {
@@ -66,7 +82,7 @@ describe("oauth router grant advertisement", () => {
 
     const router = createOAuthRouter({
       ports: {
-        codeSecret: "flow-secret",
+        codeSecret: "flow-test-code-secret-value-32-characters",
         resolveUser: async () => ({ id: "admin" }),
         loginUrl: () => "https://example.test/login",
         mintAccessToken: async ({ userId, clientId, resource }) => {
@@ -91,8 +107,9 @@ describe("oauth router grant advertisement", () => {
 
     const authRes = await router.tryHandle(new Request(authUrl.toString()));
     assert.ok(authRes);
-    assert.equal(authRes.status, 302);
-    const location = authRes.headers.get("Location");
+    const approved = await approveConsent(router, authRes);
+    assert.equal(approved.status, 302);
+    const location = approved.headers.get("Location");
     assert.ok(location);
     const redirected = new URL(location);
     const code = redirected.searchParams.get("code");
@@ -125,7 +142,7 @@ describe("oauth router grant advertisement", () => {
     assert.equal(tokenBody.token_type, "bearer");
   });
 
-  it("rejects authorize without resource", async () => {
+  it("redirects authorize without resource to the callback with invalid_request (RFC 6749 §4.1.2.1)", async () => {
     const router = createOAuthRouter({ ports: basePorts });
     const authUrl = new URL("https://example.test/mcp/oauth/authorize");
     authUrl.searchParams.set("response_type", "code");
@@ -133,14 +150,17 @@ describe("oauth router grant advertisement", () => {
     authUrl.searchParams.set("redirect_uri", CLAUDE_CALLBACK);
     authUrl.searchParams.set("code_challenge", "abc");
     authUrl.searchParams.set("code_challenge_method", "S256");
+    authUrl.searchParams.set("state", "xyz");
     const res = await router.tryHandle(new Request(authUrl.toString()));
     assert.ok(res);
-    assert.equal(res.status, 400);
-    const body = (await res.json()) as { error: string };
-    assert.equal(body.error, "invalid_request");
+    assert.equal(res.status, 302);
+    const location = new URL(res.headers.get("location") ?? "");
+    assert.equal(location.origin + location.pathname, CLAUDE_CALLBACK);
+    assert.equal(location.searchParams.get("error"), "invalid_request");
+    assert.equal(location.searchParams.get("state"), "xyz");
   });
 
-  it("rejects authorize with wrong resource", async () => {
+  it("redirects authorize with wrong resource to the callback with invalid_target", async () => {
     const router = createOAuthRouter({ ports: basePorts });
     const authUrl = new URL("https://example.test/mcp/oauth/authorize");
     authUrl.searchParams.set("response_type", "code");
@@ -151,9 +171,26 @@ describe("oauth router grant advertisement", () => {
     authUrl.searchParams.set("resource", "https://evil.test/mcp");
     const res = await router.tryHandle(new Request(authUrl.toString()));
     assert.ok(res);
+    assert.equal(res.status, 302);
+    const location = new URL(res.headers.get("location") ?? "");
+    assert.equal(location.searchParams.get("error"), "invalid_target");
+  });
+
+  it("keeps a bad redirect_uri itself as a direct 400 — never redirected, that's the untrusted input", async () => {
+    const router = createOAuthRouter({ ports: basePorts });
+    const authUrl = new URL("https://example.test/mcp/oauth/authorize");
+    authUrl.searchParams.set("response_type", "code");
+    authUrl.searchParams.set("client_id", "c");
+    authUrl.searchParams.set("redirect_uri", "https://not-allowed.test/cb");
+    authUrl.searchParams.set("code_challenge", "abc");
+    authUrl.searchParams.set("code_challenge_method", "S256");
+    authUrl.searchParams.set("resource", RESOURCE);
+    const res = await router.tryHandle(new Request(authUrl.toString()));
+    assert.ok(res);
     assert.equal(res.status, 400);
+    assert.equal(res.headers.get("location"), null);
     const body = (await res.json()) as { error: string };
-    assert.equal(body.error, "invalid_target");
+    assert.equal(body.error, "invalid_request");
   });
 
   it("rejects token with wrong resource", async () => {
@@ -162,7 +199,7 @@ describe("oauth router grant advertisement", () => {
     const router = createOAuthRouter({
       ports: {
         ...basePorts,
-        codeSecret: "flow-secret",
+        codeSecret: "flow-test-code-secret-value-32-characters",
         resolveUser: async () => ({ id: "admin" }),
       },
     });
@@ -176,9 +213,10 @@ describe("oauth router grant advertisement", () => {
     authUrl.searchParams.set("resource", RESOURCE);
     const authRes = await router.tryHandle(new Request(authUrl.toString()));
     assert.ok(authRes);
-    const code = new URL(authRes.headers.get("Location")!).searchParams.get(
-      "code",
-    );
+    const approved = await approveConsent(router, authRes);
+    const location = approved.headers.get("Location");
+    assert.ok(location);
+    const code = new URL(location).searchParams.get("code");
     assert.ok(code);
 
     const tokenRes = await router.tryHandle(
@@ -255,8 +293,7 @@ describe("oauth router grant advertisement", () => {
       ports: {
         ...basePorts,
         resolveUser: async () => null,
-        loginUrl: (_req, next) =>
-          `https://example.test/login?next=${encodeURIComponent(next)}`,
+        loginUrl: (_req, next) => `https://example.test/login?next=${encodeURIComponent(next)}`,
       },
     });
     const authUrl = new URL("https://example.test/mcp/oauth/authorize");
@@ -277,8 +314,7 @@ describe("oauth router grant advertisement", () => {
       ports: {
         ...basePorts,
         resolveUser: async () => null,
-        loginUrl: (_req, next) =>
-          `/login?next=${encodeURIComponent(next)}`,
+        loginUrl: (_req, next) => `/login?next=${encodeURIComponent(next)}`,
       },
     });
     const authUrl = new URL("https://example.test/mcp/oauth/authorize");
@@ -291,9 +327,7 @@ describe("oauth router grant advertisement", () => {
     const res = await router.tryHandle(new Request(authUrl.toString()));
     assert.ok(res);
     assert.equal(res.status, 302);
-    assert.ok(
-      res.headers.get("Location")?.startsWith("https://example.test/login?"),
-    );
+    assert.ok(res.headers.get("Location")?.startsWith("https://example.test/login?"));
   });
 
   it("rejects unknown grant_type with supported list", async () => {
@@ -342,10 +376,7 @@ describe("oauth router grant advertisement", () => {
     );
     assert.ok(res);
     const body = (await res.json()) as { error_description: string };
-    assert.equal(
-      body.error_description,
-      "supported: authorization_code, refresh_token",
-    );
+    assert.equal(body.error_description, "supported: authorization_code, refresh_token");
   });
 
   it("rejects malformed token JSON with 400", async () => {
@@ -501,13 +532,12 @@ describe("tryHandle survives a throwing port", () => {
       code_challenge_method: "S256",
       resource: RESOURCE,
     }).toString();
-    const authorized = await router.tryHandle(
-      new Request(authUrl, { method: "GET" }),
-    );
+    const authorized = await router.tryHandle(new Request(authUrl, { method: "GET" }));
     assert.ok(authorized);
-    const code = new URL(authorized.headers.get("location")!).searchParams.get(
-      "code",
-    );
+    const approved = await approveConsent(router, authorized);
+    const location = approved.headers.get("location");
+    assert.ok(location);
+    const code = new URL(location).searchParams.get("code");
     assert.ok(code);
 
     const res = await router.tryHandle(
@@ -528,5 +558,57 @@ describe("tryHandle survives a throwing port", () => {
     assert.equal(res.status, 500);
     const body = (await res.json()) as { error: string };
     assert.equal(body.error, "server_error");
+  });
+});
+
+describe("resourcePath / oauthPath construction guards", () => {
+  it("throws when oauthPath equals resourcePath — they would shadow each other", () => {
+    assert.throws(
+      () =>
+        createOAuthRouter({
+          resourcePath: "/mcp",
+          oauthPath: "/mcp",
+          ports: basePorts,
+        }),
+      /oauthPath.*must not equal resourcePath/,
+    );
+  });
+
+  it("throws when resourcePath starts with /.well-known — reserved for discovery documents", () => {
+    assert.throws(
+      () =>
+        createOAuthRouter({
+          resourcePath: "/.well-known/oauth-authorization-server",
+          ports: basePorts,
+        }),
+      /must not start with \/\.well-known/,
+    );
+  });
+
+  it("normalizes a trailing slash in resourcePath so well-known paths and routes stay consistent", async () => {
+    const router = createOAuthRouter({ resourcePath: "/mcp/", ports: basePorts });
+
+    const prm = await router.tryHandle(
+      new Request("https://example.test/.well-known/oauth-protected-resource/mcp"),
+    );
+    assert.ok(prm);
+    assert.equal(prm.status, 200);
+    const prmBody = (await prm.json()) as { resource: string };
+    assert.equal(prmBody.resource, "https://example.test/mcp");
+
+    // oauthPath defaults from the *normalized* resourcePath, so it's
+    // "/mcp/oauth", not "/mcp//oauth".
+    const authorizeUrl = new URL("https://example.test/mcp/oauth/authorize");
+    authorizeUrl.search = new URLSearchParams({
+      response_type: "code",
+      client_id: "c1",
+      redirect_uri: CLAUDE_CALLBACK,
+      code_challenge: await sha256Base64Url("verifier-value-long-enough-here"),
+      code_challenge_method: "S256",
+      resource: RESOURCE,
+    }).toString();
+    const authorized = await router.tryHandle(new Request(authorizeUrl, { method: "GET" }));
+    assert.ok(authorized);
+    assert.equal(authorized.status, 200, "must reach the consent interstitial, not 404");
   });
 });

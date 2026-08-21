@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { apiTool, defineTool, type StandardSchemaV1 } from "../src/tools.js";
 import { createToolRegistry } from "../src/registry.js";
+import { apiTool, defineTool, type StandardSchemaV1 } from "../src/tools.js";
 
 type Ctx = Record<string, never>;
 type WeatherArgs = { city: string };
@@ -151,19 +151,46 @@ describe("apiTool", () => {
     assert.equal(result.content[0]?.text, "19°C");
   });
 
-  it("turns a non-2xx response into isError with status", async () => {
+  it("turns a non-2xx response into isError with status only, never the upstream body", async () => {
     const tool = apiTool<Ctx, WeatherArgs>({
       name: "get_weather",
       description: "weather",
       inputSchema: { type: "object", properties: {} },
       input: weatherSchema,
       request: (_ctx, args) => `https://api.example.test/weather?city=${args.city}`,
-      fetch: fakeFetch(new Response("not found", { status: 404, statusText: "Not Found" })),
+      fetch: fakeFetch(
+        new Response("internal error: user secret-token-abc leaked in this body", {
+          status: 404,
+          statusText: "Not Found",
+        }),
+      ),
     });
     const registry = createToolRegistry<Ctx>([tool]);
     const result = await registry.call("get_weather", {}, { city: "Nowhere" });
     assert.equal(result.isError, true);
-    assert.equal(result.content[0]?.text, "Request failed: 404 Not Found: not found");
+    assert.equal(result.content[0]?.text, "Request failed: 404 Not Found");
+    assert.doesNotMatch(result.content[0]?.text ?? "", /secret-token/);
+  });
+
+  it("routes a non-2xx response through onError when supplied, instead of the default", async () => {
+    const seen: number[] = [];
+    const tool = apiTool<Ctx, WeatherArgs>({
+      name: "get_weather",
+      description: "weather",
+      inputSchema: { type: "object", properties: {} },
+      input: weatherSchema,
+      request: (_ctx, args) => `https://api.example.test/weather?city=${args.city}`,
+      fetch: fakeFetch(new Response("upstream detail", { status: 503, statusText: "Unavailable" })),
+      onError: async (res) => {
+        seen.push(res.status);
+        return { content: [{ type: "text", text: `custom: ${await res.text()}` }], isError: true };
+      },
+    });
+    const registry = createToolRegistry<Ctx>([tool]);
+    const result = await registry.call("get_weather", {}, { city: "Nowhere" });
+    assert.deepEqual(seen, [503]);
+    assert.equal(result.isError, true);
+    assert.equal(result.content[0]?.text, "custom: upstream detail");
   });
 
   it("never calls fetch when input validation fails", async () => {

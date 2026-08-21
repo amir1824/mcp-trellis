@@ -1,107 +1,102 @@
 export {
   createMcpApp,
   type McpApp,
-  type McpAppOptions,
   type McpAppAuth,
+  type McpAppOptions,
   type VerifiedToken,
 } from "./app.js";
-
-/** Auth-port types used by `McpAppAuth` — annotate extracted stores/callbacks. */
-export type {
-  ClientStore,
-  RegisteredClient,
-  MintAccessTokenInput,
-  RefreshAccessTokenInput,
-  RevokeTokenInput,
-  MintedToken,
-  OAuthUser,
-} from "./oauth/types.js";
-export type { CodeStore } from "./oauth/codes.js";
+export { consoleAudit } from "./audit.js";
+export {
+  matchesAny,
+  parseBearer,
+  rejectQueryToken,
+  timingSafeEqual,
+  type WwwAuthenticateOptions,
+  wwwAuthenticateHeader,
+} from "./auth/bearer.js";
 
 export {
-  CLIENT_PROFILES,
-  DEFAULT_CLIENTS,
   authMethodsFor,
-  redirectUrisFor,
-  preRegisteredClients,
-  hasDynamicClient,
+  CLIENT_PROFILES,
   type ClientName,
   type ClientProfile,
+  DEFAULT_CLIENTS,
+  hasDynamicClient,
+  preRegisteredClients,
+  redirectUrisFor,
 } from "./clients.js";
 
 export {
+  type AuditEntry,
   createMcpHandler,
   type McpHandler,
   type McpHandlerOptions,
   type McpPorts,
   type Principal,
-  type AuditEntry,
   type ServerInfo,
 } from "./dispatch.js";
-
-export { consoleAudit } from "./audit.js";
-
 export {
-  createToolRegistry,
-  type ToolDef,
-  type ToolHandler,
-  type ToolResult,
-  type ToolRegistry,
-  type ToolListEntry,
-  type RegistryOptions,
-} from "./registry.js";
-
+  corsHeaders,
+  emptyResponse,
+  jsonResponse,
+  methodNotAllowed,
+  optionsResponse,
+} from "./http.js";
 export {
-  defineTool,
-  apiTool,
-  type StandardSchemaV1,
-  type DefineToolOptions,
-  type ApiToolOptions,
-  type ApiRequest,
-} from "./tools.js";
-
-export {
-  rpcResult,
-  rpcError,
-  JSONRPC_PARSE_ERROR,
+  JSONRPC_INTERNAL_ERROR,
+  JSONRPC_INVALID_PARAMS,
   JSONRPC_INVALID_REQUEST,
   JSONRPC_METHOD_NOT_FOUND,
-  JSONRPC_INVALID_PARAMS,
-  JSONRPC_INTERNAL_ERROR,
+  JSONRPC_PARSE_ERROR,
   JSONRPC_UNAUTHORIZED,
   type JsonRpcId,
   type JsonRpcRequest,
   type JsonRpcResponse,
+  rpcError,
+  rpcResult,
 } from "./jsonrpc.js";
+export type { CodeStore } from "./oauth/codes.js";
+export type { ConsentOptions, ConsentRequest } from "./oauth/consent.js";
+/** Auth-port types used by `McpAppAuth` — annotate extracted stores/callbacks. */
+export type {
+  ClientStore,
+  MintAccessTokenInput,
+  MintedToken,
+  OAuthUser,
+  RefreshAccessTokenInput,
+  RegisteredClient,
+  RevokeTokenInput,
+} from "./oauth/types.js";
 
 export {
-  pickProtocolVersion,
-  PROTOCOL_VERSIONS,
+  ASSUMED_HEADER_PROTOCOL_VERSION,
   DEFAULT_PROTOCOL_VERSION,
+  PROTOCOL_VERSIONS,
+  pickProtocolVersion,
 } from "./protocol.js";
-
 export {
-  parseBearer,
-  timingSafeEqual,
-  matchesAny,
-  wwwAuthenticateHeader,
-  rejectQueryToken,
-  type WwwAuthenticateOptions,
-} from "./auth/bearer.js";
-
+  createToolRegistry,
+  type RegistryOptions,
+  type ToolDef,
+  type ToolHandler,
+  type ToolListEntry,
+  type ToolRegistry,
+  type ToolResult,
+} from "./registry.js";
 export {
-  validateAgainstSchema,
-  JSON_SCHEMA_TYPES,
-  SUPPORTED_SCHEMA_KEYWORDS,
+  type ApiRequest,
+  type ApiToolOptions,
+  apiTool,
+  type DefineToolOptions,
+  defineTool,
+  type StandardSchemaV1,
+} from "./tools.js";
+export {
   IGNORED_SCHEMA_KEYWORDS,
-  unsupportedKeywords,
+  JSON_SCHEMA_TYPES,
   type JsonSchema,
+  missingObjectType,
+  SUPPORTED_SCHEMA_KEYWORDS,
+  unsupportedKeywords,
+  validateAgainstSchema,
 } from "./validate.js";
-
-export {
-  jsonResponse,
-  emptyResponse,
-  optionsResponse,
-  corsHeaders,
-  methodNotAllowed,
-} from "./http.js";

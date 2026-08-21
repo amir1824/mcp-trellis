@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createOAuthRouter } from "../src/oauth/router.js";
 import type { ClientStore, RevokeTokenInput } from "../src/oauth/types.js";
+import { createOAuthRouter } from "./helpers/router.js";
 
 const ORIGIN = "https://example.test";
 
 const basePorts = {
-  codeSecret: "secret",
+  codeSecret: "revoke-test-code-secret-value-32-characters",
   resolveUser: async () => ({ id: "u1" }),
   loginUrl: () => `${ORIGIN}/login`,
   mintAccessToken: async () => ({
@@ -15,10 +15,7 @@ const basePorts = {
   }),
 };
 
-const revokePost = (
-  router: ReturnType<typeof createOAuthRouter>,
-  body: string,
-) =>
+const revokePost = (router: ReturnType<typeof createOAuthRouter>, body: string) =>
   router.tryHandle(
     new Request(`${ORIGIN}/mcp/oauth/revoke`, {
       method: "POST",
@@ -69,10 +66,7 @@ describe("token revocation (RFC 7009)", () => {
         },
       },
     });
-    const res = await revokePost(
-      router,
-      "token=stolen&client_id=c1&token_type_hint=access_token",
-    );
+    const res = await revokePost(router, "token=stolen&client_id=c1&token_type_hint=access_token");
     assert.ok(res);
     assert.equal(res.status, 200);
     assert.equal(await res.text(), "");
@@ -83,6 +77,49 @@ describe("token revocation (RFC 7009)", () => {
         tokenTypeHint: "access_token",
       },
     ]);
+  });
+
+  it("calls the port and returns 200 empty on a well-formed JSON POST", async () => {
+    const seen: RevokeTokenInput[] = [];
+    const router = createOAuthRouter({
+      ports: {
+        ...basePorts,
+        revokeToken: async (input) => {
+          seen.push(input);
+        },
+      },
+    });
+    const res = await router.tryHandle(
+      new Request(`${ORIGIN}/mcp/oauth/revoke`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: "stolen",
+          client_id: "c1",
+          token_type_hint: "refresh_token",
+        }),
+      }),
+    );
+    assert.ok(res);
+    assert.equal(res.status, 200);
+    assert.equal(await res.text(), "");
+    assert.deepEqual(seen, [{ token: "stolen", clientId: "c1", tokenTypeHint: "refresh_token" }]);
+  });
+
+  it("rejects malformed JSON with invalid_request, not a silent no-op", async () => {
+    const router = createOAuthRouter({
+      ports: { ...basePorts, revokeToken: async () => undefined },
+    });
+    const res = await router.tryHandle(
+      new Request(`${ORIGIN}/mcp/oauth/revoke`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{not json",
+      }),
+    );
+    assert.ok(res);
+    assert.equal(res.status, 400);
+    assert.equal(((await res.json()) as { error: string }).error, "invalid_request");
   });
 
   it("omits CORS on revoke OPTIONS, GET, and POST", async () => {
@@ -116,10 +153,7 @@ describe("token revocation (RFC 7009)", () => {
     const res = await revokePost(router, "client_id=c1");
     assert.ok(res);
     assert.equal(res.status, 400);
-    assert.equal(
-      ((await res.json()) as { error: string }).error,
-      "invalid_request",
-    );
+    assert.equal(((await res.json()) as { error: string }).error, "invalid_request");
   });
 
   it("rejects an unregistered client_id when locked down", async () => {
@@ -134,15 +168,9 @@ describe("token revocation (RFC 7009)", () => {
         revokeToken: async () => undefined,
       },
     });
-    const res = await revokePost(
-      router,
-      "token=stolen&client_id=self-issued",
-    );
+    const res = await revokePost(router, "token=stolen&client_id=self-issued");
     assert.ok(res);
     assert.equal(res.status, 401);
-    assert.equal(
-      ((await res.json()) as { error: string }).error,
-      "invalid_client",
-    );
+    assert.equal(((await res.json()) as { error: string }).error, "invalid_client");
   });
 });

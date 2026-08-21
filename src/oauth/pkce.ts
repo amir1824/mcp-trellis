@@ -1,18 +1,12 @@
-import { bytesToBase64Url } from "./base64url.js";
 import { timingSafeEqual } from "../auth/bearer.js";
+import { bytesToBase64Url } from "./base64url.js";
 
 export const sha256Base64Url = async (input: string): Promise<string> => {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(input),
-  );
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
   return bytesToBase64Url(digest);
 };
 
-export const verifyPkceS256 = async (
-  verifier: string,
-  challenge: string,
-): Promise<boolean> => {
+export const verifyPkceS256 = async (verifier: string, challenge: string): Promise<boolean> => {
   if (!verifier || !challenge) return false;
   const computed = await sha256Base64Url(verifier);
   return timingSafeEqual(computed, challenge);

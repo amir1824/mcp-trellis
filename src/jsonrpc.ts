@@ -29,21 +29,15 @@ export const JSONRPC_METHOD_NOT_FOUND = -32601;
 export const JSONRPC_INVALID_PARAMS = -32602;
 export const JSONRPC_INTERNAL_ERROR = -32603;
 export const JSONRPC_UNAUTHORIZED = -32001;
+export const JSONRPC_PAYLOAD_TOO_LARGE = -32002;
 
-export const rpcResult = (
-  id: JsonRpcId,
-  result: unknown,
-): JsonRpcSuccess => ({
+export const rpcResult = (id: JsonRpcId, result: unknown): JsonRpcSuccess => ({
   jsonrpc: "2.0",
   id,
   result,
 });
 
-export const rpcError = (
-  id: JsonRpcId,
-  code: number,
-  message: string,
-): JsonRpcFailure => ({
+export const rpcError = (id: JsonRpcId, code: number, message: string): JsonRpcFailure => ({
   jsonrpc: "2.0",
   id,
   error: { code, message },

@@ -14,12 +14,16 @@ export const OAUTH_ERRORS = {
   invalidClient: "invalid_client",
   /** Authorization endpoint — this client may not use this method. RFC 6749 §4.1.2.1. */
   unauthorizedClient: "unauthorized_client",
+  /** Authorization endpoint — `response_type` isn't one this server supports. RFC 6749 §4.1.2.1. */
+  unsupportedResponseType: "unsupported_response_type",
   /** Requested scope exceeds what this server advertises. */
   invalidScope: "invalid_scope",
   /** RFC 8707 — requested resource is not acceptable. */
   invalidTarget: "invalid_target",
   /** A host port threw. RFC 6749 §4.1.2.1 / §5.2 — our fault, not the client's. */
   serverError: "server_error",
+  /** RFC 6749 §4.1.2.1 — the resource owner denied consent. */
+  accessDenied: "access_denied",
 } as const;
 
 export const TOKEN_ENDPOINT_AUTH_METHODS = {
