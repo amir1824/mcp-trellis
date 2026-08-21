@@ -26,7 +26,7 @@ jobs:
     #   Allowed actions:     npm publish
     # npm does NOT validate that form on save — mismatches only show at publish.
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Do NOT set registry-url: setup-node then writes
       # //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN} into NPM_CONFIG_USERCONFIG.
