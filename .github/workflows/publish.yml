@@ -23,11 +23,14 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org
+          # Node 24 ships npm new enough for trusted publishing; also upgrade
+          # explicitly below. Do NOT set registry-url here — setup-node would
+          # write an .npmrc with an empty _authToken and OIDC then 404s the PUT
+          # after still signing provenance.
+          node-version: 24
 
-      # Trusted publishing (OIDC) needs npm >= 11.5.1; Node 22 ships an older npm.
-      - run: npm install -g npm@^11.5.1
+      # Trusted publishing needs a current npm CLI (11.5.1+).
+      - run: npm install -g npm@latest
 
       - name: Resolve version
         id: ver
@@ -54,8 +57,7 @@ jobs:
       - run: npm run test:e2e
       - run: npm run build
 
-      # No NODE_AUTH_TOKEN — npm uses the OIDC token from `id-token: write`
-      # and publishes with provenance automatically.
+      # OIDC from `id-token: write` — no NODE_AUTH_TOKEN, no .npmrc auth line.
       - name: Publish to npm
         run: npm publish --provenance --access public
 

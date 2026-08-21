@@ -98,9 +98,11 @@ no long-lived `NPM_TOKEN`. Provenance is attached automatically
    Actions → **Release** → **Run workflow** (publishes the version currently
    in `package.json` on the branch you pick).
 
-If publish fails with `ENEEDAUTH` or a 404 on `PUT …/mcp-trellis`, the
-trusted-publisher config on npmjs.com is missing or does not match the
-repo/workflow above — fix that first. Do not fall back to a long-lived token.
+If publish fails with `ENEEDAUTH` or a 404 on `PUT …/mcp-trellis`, check in
+order: (1) trusted publisher on npmjs.com matches repo + `publish.yml` with
+Environment blank; (2) the Release workflow must not write an `.npmrc` auth
+token (`setup-node` `registry-url` does that — leave it unset). Do not fall
+back to a long-lived token.
 
 `prepublishOnly` still runs build + test inside `npm publish` as a last guard.
 
