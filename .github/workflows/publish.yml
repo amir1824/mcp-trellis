@@ -14,11 +14,10 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # Gate: Settings → Environments → npm-publish → Required reviewers = you
-    # Manual prerequisite: configure a trusted publisher on npmjs.com for
-    # amir1824/mcp-trellis + this workflow filename before merging, or the
-    # publish step below fails with ENEEDAUTH.
-    environment: npm-publish
+    # Trusted publisher on npmjs.com must match: repo amir1824/mcp-trellis +
+    # this workflow filename. Do not set an Environment on the npm trusted
+    # publisher unless you also set `environment:` here — a mismatch signs
+    # provenance then 404s the PUT.
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 

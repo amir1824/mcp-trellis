@@ -68,8 +68,7 @@ npm run test:e2e
 ## Releasing (maintainers)
 
 Publishes to npm from GitHub Actions via **trusted publishing (OIDC)** —
-no long-lived `NPM_TOKEN`. The `npm-publish` environment is gated so only
-you approve the deployment. Provenance is attached automatically
+no long-lived `NPM_TOKEN`. Provenance is attached automatically
 (`npm publish --provenance`).
 
 ### One-time setup
@@ -78,13 +77,10 @@ you approve the deployment. Provenance is attached automatically
    **Trusted Publisher** → configure GitHub Actions:
    - Repository: `amir1824/mcp-trellis`
    - Workflow filename: `publish.yml`
-   - Environment name: `npm-publish` (must match the job's
-     `environment:` in `.github/workflows/publish.yml` — omit it and
-     OIDC may sign provenance but still get a 404 on `npm publish`)
-2. Repo → **Settings** → **Environments** → **New environment** → `npm-publish`
-3. On that environment: **Required reviewers** → add yourself (and only yourself).
-   Do **not** add an `NPM_TOKEN` secret — OIDC replaces it.
-4. Optional hardening: **Settings** → **Tags** → restrict who can create `v*`
+   - Environment name: **leave blank** (the Release workflow does not use a
+     GitHub Environment — filling one in here causes provenance to sign and
+     then a 404 on `npm publish`)
+2. Optional hardening: **Settings** → **Tags** → restrict who can create `v*`
    tags to yourself.
 
 ### Each release
@@ -102,11 +98,9 @@ you approve the deployment. Provenance is attached automatically
    Actions → **Release** → **Run workflow** (publishes the version currently
    in `package.json` on the branch you pick).
 
-3. GitHub asks you to **Approve** the `npm-publish` deployment — only then
-   does it publish to npm and create the GitHub Release.
-
-If publish fails with `ENEEDAUTH`, the trusted-publisher config on npmjs.com
-was never finished — fix that first. Do not fall back to a long-lived token.
+If publish fails with `ENEEDAUTH` or a 404 on `PUT …/mcp-trellis`, the
+trusted-publisher config on npmjs.com is missing or does not match the
+repo/workflow above — fix that first. Do not fall back to a long-lived token.
 
 `prepublishOnly` still runs build + test inside `npm publish` as a last guard.
 
