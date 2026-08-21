@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { pickProtocolVersion } from "../src/protocol.js";
+import { pickProtocolVersion } from "../../src/protocol.js";
 
 describe("protocol negotiation", () => {
   it("accepts known versions", () => {

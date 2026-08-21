@@ -73,6 +73,12 @@ Anything else → JSON-RPC `-32601`. Capabilities advertise **tools only**.
 | `publicMethods` | no | Default: `initialize`, `ping`, notifications |
 | `auditTimeoutMs` | no | Max time to wait for `ports.audit` before responding anyway. Default 1000ms — see [security.md](security.md) |
 
+`ports.audit` fires on tool results and on auth denials (bad token, missing
+scope, query-string token), plus the 500 path when a host port throws.
+Malformed JSON, bad `jsonrpc`, unsupported `MCP-Protocol-Version`, oversized
+bodies, and batch requests return JSON-RPC client errors without an audit
+entry — those are protocol errors, not auth denials.
+
 ## `createOAuthRouter` options
 
 | Option | Default | Description |
@@ -85,7 +91,7 @@ Anything else → JSON-RPC `-32601`. Capabilities advertise **tools only**.
 | `defaultScopes` | full `scopes` | Scopes granted when a client omits `scope` entirely. **Required at construction** once `scopes` has more than one entry — the router throws rather than silently granting everything advertised. Must be a subset of `scopes` |
 | `tokenEndpointAuthMethods` | `["none"]` | Advertised client auth methods |
 | `allowUnregisteredClients` | `true` | `false` requires `clientStore`, unmounts DCR, and rejects unknown `client_id`s (`unauthorized_client` / `invalid_client`) |
-| `requireRegisteredClients` | `false` | Reject any `client_id` that isn't `clientStore`-resolved or self-sealed via this server's own `/register` (see [security.md](security.md)). DCR stays mounted, unlike `allowUnregisteredClients: false` — a client just can't invent an id out of thin air |
+| `requireRegisteredClients` | `true` | Reject any `client_id` that isn't `clientStore`-resolved or self-sealed via this server's own `/register` (see [security.md](security.md)). DCR stays mounted, unlike `allowUnregisteredClients: false` — a client just can't invent an id out of thin air |
 | `redirect` | see below | Redirect URI allowlist |
 | `consent` | see below | Consent/approval policy for `/authorize` |
 
@@ -122,12 +128,8 @@ validated against their own bound `redirectUris`.
 | `extraRedirectUris` | `[]` | Callbacks beyond the client profiles |
 | `allowLoopback` | `true` | Allow loopback redirects — see the narrowed `http:`-only, no-`localhost` behavior in [security.md](security.md) |
 | `consent` | built-in interstitial | Same as `OAuthRouterOptions.consent` — override the approval page or pre-approve specific client ids |
+| `requireRegisteredClients` | `true` | Same as `OAuthRouterOptions.requireRegisteredClients` — inventing a public `client_id` is rejected unless it comes from `clientStore` or this server's own `/register` |
 | `instructions`, `validateArgs`, `onToolError`, `context`, `audit`, `auditTimeoutMs` | — | Passed through. `audit`/`auditTimeoutMs` are the MCP-side (tool-call) hook — the OAuth side has its own, separate `auth.audit` (see [Ports](guide.md#ports--what-you-implement)) |
-
-`requireRegisteredClients` is not currently exposed at the `createMcpApp`
-level — use `createOAuthRouter` directly (see
-[compose the primitives](guide.md#advanced-compose-the-primitives)) if you
-need it.
 
 ## Exports
 

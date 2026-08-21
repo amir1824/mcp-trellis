@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { seal, unseal } from "../src/oauth/sealed.js";
+import { seal, unseal } from "../../src/oauth/sealed.js";
 
 const SECRET = "sealed-test-secret-value-32-characters-long";
 

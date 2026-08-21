@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { BodyTooLargeError, readBoundedNodeBody, readBoundedText } from "../src/body.js";
+import { BodyTooLargeError, readBoundedNodeBody, readBoundedText } from "../../src/body.js";
 
 /** A ReadableStream body with no Content-Length — the chunked-transfer case. */
 const chunkedRequest = (chunks: string[]): Request =>

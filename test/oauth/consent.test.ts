@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { expectOAuthError } from "./helpers/http.js";
-import { memoryClientStore, recordingPorts, stubPorts } from "./helpers/ports.js";
-import { createOAuthRouter, type OAuthRouterOptions } from "./helpers/router.js";
-import { DEFAULT_ORIGIN } from "./helpers/target.js";
+import { expectOAuthError } from "../helpers/http.js";
+import { memoryClientStore, recordingPorts, stubPorts } from "../helpers/ports.js";
+import { createOAuthRouter, type OAuthRouterOptions } from "../helpers/router.js";
+import { DEFAULT_ORIGIN } from "../helpers/target.js";
 
 const ORIGIN = DEFAULT_ORIGIN;
 const RESOURCE = `${ORIGIN}/mcp`;

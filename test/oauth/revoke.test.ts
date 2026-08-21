@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { ClientStore, RevokeTokenInput } from "../src/oauth/types.js";
-import { createOAuthRouter } from "./helpers/router.js";
+import type { ClientStore, RevokeTokenInput } from "../../src/oauth/types.js";
+import { createOAuthRouter } from "../helpers/router.js";
 
 const ORIGIN = "https://example.test";
 

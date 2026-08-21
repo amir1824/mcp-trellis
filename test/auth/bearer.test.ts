@@ -6,7 +6,7 @@ import {
   parseBearer,
   rejectQueryToken,
   timingSafeEqual,
-} from "../src/auth/bearer.js";
+} from "../../src/auth/bearer.js";
 
 describe("timingSafeEqual", () => {
   it("matches equal strings", () => {

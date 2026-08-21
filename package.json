@@ -53,9 +53,9 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "test": "tsx --test test/*.test.ts",
+    "test": "tsx --test test/oauth/*.test.ts test/mcp/*.test.ts test/adapters/*.test.ts test/auth/*.test.ts",
     "test:e2e": "tsx --test test/e2e/*.test.ts",
-    "test:coverage": "node --import tsx --test --experimental-test-coverage --test-coverage-lines=85 --test-coverage-branches=75 --enable-source-maps test/*.test.ts",
+    "test:coverage": "node --import tsx --test --experimental-test-coverage --test-coverage-lines=85 --test-coverage-branches=75 --enable-source-maps test/oauth/*.test.ts test/mcp/*.test.ts test/adapters/*.test.ts test/auth/*.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "prepublishOnly": "npm run build && npm test"

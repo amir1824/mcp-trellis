@@ -5,3 +5,5 @@ dist/
 *.log
 .env
 .env.*
+# Working doc — not part of the published package
+docs/GAP-ROADMAP.md

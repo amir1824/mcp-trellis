@@ -6,9 +6,9 @@ import {
   type NodeResponseLike,
   resolveOrigin,
   toWebRequest,
-} from "../src/adapters/node.js";
-import { createMcpHandler } from "../src/dispatch.js";
-import { createToolRegistry } from "../src/registry.js";
+} from "../../src/adapters/node.js";
+import { createMcpHandler } from "../../src/dispatch.js";
+import { createToolRegistry } from "../../src/registry.js";
 
 type MockRes = NodeResponseLike & {
   headers: Record<string, string>;

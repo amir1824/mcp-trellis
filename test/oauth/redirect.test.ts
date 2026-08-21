@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { CLAUDE_CALLBACK, isAllowedRedirectUri } from "../src/oauth/redirect.js";
+import { CLAUDE_CALLBACK, isAllowedRedirectUri } from "../../src/oauth/redirect.js";
 
 describe("redirect allowlist — baseline", () => {
   it("allows Claude callback and loopback", () => {

@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { sha256Base64Url } from "../src/oauth/pkce.js";
-import { stubPorts } from "./helpers/ports.js";
-import { createOAuthRouter } from "./helpers/router.js";
-import { DEFAULT_ORIGIN } from "./helpers/target.js";
+import { sha256Base64Url } from "../../src/oauth/pkce.js";
+import { stubPorts } from "../helpers/ports.js";
+import { createOAuthRouter } from "../helpers/router.js";
+import { DEFAULT_ORIGIN } from "../helpers/target.js";
 
 const ORIGIN = DEFAULT_ORIGIN;
 const RESOURCE = `${ORIGIN}/mcp`;

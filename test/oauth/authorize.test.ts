@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { CLAUDE_CALLBACK } from "../src/oauth/redirect.js";
-import { expectOAuthError, expectOAuthRedirectError } from "./helpers/http.js";
-import { stubPorts } from "./helpers/ports.js";
-import { createOAuthRouter } from "./helpers/router.js";
+import { CLAUDE_CALLBACK } from "../../src/oauth/redirect.js";
+import { expectOAuthError, expectOAuthRedirectError } from "../helpers/http.js";
+import { stubPorts } from "../helpers/ports.js";
+import { createOAuthRouter } from "../helpers/router.js";
 
 const ORIGIN = "https://example.test";
 const RESOURCE = `${ORIGIN}/mcp`;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createToolRegistry } from "../src/registry.js";
-import { apiTool, defineTool, type StandardSchemaV1 } from "../src/tools.js";
+import { createToolRegistry } from "../../src/registry.js";
+import { apiTool, defineTool, type StandardSchemaV1 } from "../../src/tools.js";
 
 type Ctx = Record<string, never>;
 type WeatherArgs = { city: string };

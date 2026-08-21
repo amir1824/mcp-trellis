@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createToolRegistry } from "../src/registry.js";
-import { missingObjectType, unsupportedKeywords, validateAgainstSchema } from "../src/validate.js";
+import { createToolRegistry } from "../../src/registry.js";
+import {
+  missingObjectType,
+  unsupportedKeywords,
+  validateAgainstSchema,
+} from "../../src/validate.js";
 
 describe("schema validation", () => {
   const schema = {

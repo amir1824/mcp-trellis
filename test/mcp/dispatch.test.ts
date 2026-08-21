@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { DEFAULT_MCP_BODY_LIMIT } from "../src/body.js";
-import { createMcpHandler } from "../src/dispatch.js";
-import { createToolRegistry } from "../src/registry.js";
+import { DEFAULT_MCP_BODY_LIMIT } from "../../src/body.js";
+import { createMcpHandler } from "../../src/dispatch.js";
+import { createToolRegistry } from "../../src/registry.js";
 
 describe("dispatch", () => {
   type Ctx = { who: string };

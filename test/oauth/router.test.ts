@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { sha256Base64Url } from "../src/oauth/pkce.js";
-import { CLAUDE_CALLBACK } from "../src/oauth/redirect.js";
-import { createOAuthRouter } from "./helpers/router.js";
+import { sha256Base64Url } from "../../src/oauth/pkce.js";
+import { CLAUDE_CALLBACK } from "../../src/oauth/redirect.js";
+import { createOAuthRouter } from "../helpers/router.js";
 
 const RESOURCE = "https://example.test/mcp";
 

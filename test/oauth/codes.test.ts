@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { consumeAuthCode, issueAuthCode } from "../src/oauth/codes.js";
-import { CLAUDE_CALLBACK } from "../src/oauth/redirect.js";
+import { consumeAuthCode, issueAuthCode } from "../../src/oauth/codes.js";
+import { CLAUDE_CALLBACK } from "../../src/oauth/redirect.js";
 
 const RESOURCE = "https://example.test/mcp";
 

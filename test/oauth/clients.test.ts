@@ -5,12 +5,12 @@ import {
   hasDynamicClient,
   preRegisteredClients,
   redirectUrisFor,
-} from "../src/clients.js";
-import { sha256Base64Url } from "../src/oauth/pkce.js";
-import { CLAUDE_CALLBACK } from "../src/oauth/redirect.js";
-import { hashClientSecret } from "../src/oauth/router.js";
-import type { ClientStore } from "../src/oauth/types.js";
-import { createOAuthRouter } from "./helpers/router.js";
+} from "../../src/clients.js";
+import { sha256Base64Url } from "../../src/oauth/pkce.js";
+import { CLAUDE_CALLBACK } from "../../src/oauth/redirect.js";
+import { hashClientSecret } from "../../src/oauth/router.js";
+import type { ClientStore } from "../../src/oauth/types.js";
+import { createOAuthRouter } from "../helpers/router.js";
 
 const ORIGIN = "https://app.test";
 const RESOURCE = `${ORIGIN}/mcp`;

@@ -28,7 +28,7 @@ npm run build
 
 1. Branch from `main`.
 2. Keep the change focused — one concern per PR.
-3. Add or update tests under `test/*.test.ts` (unit) or `test/e2e/` (real-socket) when behavior changes.
+3. Add or update tests under `test/oauth/`, `test/mcp/`, `test/adapters/`, or `test/auth/` (unit) or `test/e2e/` (real-socket) when behavior changes.
 4. Ensure CI is green: typecheck, test, test:e2e, and build must pass.
 
 ## Scope rules
@@ -40,23 +40,23 @@ npm run build
 
 ## Tests
 
-Unit tests live flat under `test/`:
+Unit tests are grouped by topic:
 
-| File | Area |
+| Path | Area |
 |------|------|
-| `app.test.ts` | `createMcpApp` end-to-end, incl. audience enforcement |
-| `audit.test.ts` | Audit port, tool-error redaction |
-| `auth.bearer.test.ts` | Bearer / timing-safe compare |
-| `dispatch.test.ts` | MCP HTTP dispatch |
-| `oauth.clients.test.ts` | Client profiles, confidential clients |
-| `oauth.*.test.ts` | OAuth AS pieces |
-| `protocol.test.ts` | Protocol version negotiation |
-| `validate.test.ts` | JSON Schema subset |
-| `node.test.ts` | Node adapter |
-| `origins.test.ts` | Origin allowlist (multi-tenant Host checks) |
-| `tools.test.ts` | `defineTool` / `apiTool` |
+| `mcp/app.test.ts` | `createMcpApp` end-to-end, incl. audience enforcement |
+| `mcp/audit.test.ts` | Audit port, tool-error redaction |
+| `mcp/dispatch.test.ts` | MCP HTTP dispatch |
+| `mcp/protocol.test.ts` | Protocol version negotiation |
+| `mcp/validate.test.ts` | JSON Schema subset |
+| `mcp/tools.test.ts` | `defineTool` / `apiTool` |
+| `mcp/body.test.ts` | Request body size limits |
+| `auth/bearer.test.ts` | Bearer / timing-safe compare |
+| `adapters/node.test.ts` | Node adapter |
+| `adapters/origins.test.ts` | Origin allowlist (multi-tenant Host checks) |
+| `oauth/*.test.ts` | OAuth AS pieces (`clients`, `consent`, `token`, …) |
 
-`test/e2e/` is a separate tier: it spawns [`examples/http-server.ts`](examples/http-server.ts) (`http.createServer` + `asNodeHandler`) and `fetch`es over loopback (header casing, streamed bodies, real redirects). It is not part of `npm test`.
+`test/helpers/` is shared harness (not matched by the test glob). `test/e2e/` is a separate tier: it spawns [`examples/http-server.ts`](examples/http-server.ts) (`http.createServer` + `asNodeHandler`) and `fetch`es over loopback (header casing, streamed bodies, real redirects). It is not part of `npm test`.
 
 Run with:
 
@@ -67,17 +67,20 @@ npm run test:e2e
 
 ## Releasing (maintainers)
 
-Publishes to npm from GitHub Actions using an **environment secret**
-(`NPM_TOKEN`). The `npm-publish` environment is gated so only you approve.
+Publishes to npm from GitHub Actions via **trusted publishing (OIDC)** —
+no long-lived `NPM_TOKEN`. The `npm-publish` environment is gated so only
+you approve the deployment. Provenance is attached automatically
+(`npm publish --provenance`).
 
-### One-time setup (GitHub)
+### One-time setup
 
-1. Create an npm [Granular Access Token](https://www.npmjs.com/settings/~/tokens)
-   with **Read and write** on packages.
+1. On [npmjs.com](https://www.npmjs.com/) → package `mcp-trellis` →
+   **Trusted Publisher** → configure GitHub Actions:
+   - Repository: `amir1824/mcp-trellis`
+   - Workflow filename: `publish.yml`
 2. Repo → **Settings** → **Environments** → **New environment** → `npm-publish`
-3. On that environment:
-   - **Required reviewers** → add yourself (and only yourself)
-   - **Environment secrets** → `NPM_TOKEN` = the npm token
+3. On that environment: **Required reviewers** → add yourself (and only yourself).
+   Do **not** add an `NPM_TOKEN` secret — OIDC replaces it.
 4. Optional hardening: **Settings** → **Tags** → restrict who can create `v*`
    tags to yourself.
 
@@ -98,6 +101,9 @@ Publishes to npm from GitHub Actions using an **environment secret**
 
 3. GitHub asks you to **Approve** the `npm-publish` deployment — only then
    does it publish to npm and create the GitHub Release.
+
+If publish fails with `ENEEDAUTH`, the trusted-publisher config on npmjs.com
+was never finished — fix that first. Do not fall back to a long-lived token.
 
 `prepublishOnly` still runs build + test inside `npm publish` as a last guard.
 

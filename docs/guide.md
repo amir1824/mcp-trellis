@@ -213,7 +213,7 @@ The lower-level handler. Here the audience check is **yours** — prefer
 |------|------|
 | `authenticate(req, method, tool?)` | Return `{ id, scopes, claims? }`, or `null` → 401 + `WWW-Authenticate`. **Must reject tokens whose audience is not this server's canonical resource** |
 | `context(req, principal)` | Build per-request ctx for tools (DB, env, …). Use `principal?.claims` for tenant / plan / role without re-decoding the bearer |
-| `audit?(entry)` | Opt-in **metrics hook**: pass any function to receive tool results **and** every denial (bad token, missing scope, query-string token). `entry.method` is `""` for transport-level denials made before parsing. Throwing from this port never fails the request, and neither does hanging — see `auditTimeoutMs` below. Omit it and the library stays silent |
+| `audit?(entry)` | Opt-in **metrics hook**: pass any function to receive tool results **and** auth denials (bad token, missing scope, query-string token), plus the 500 path when a host port throws. `entry.method` is `""` for transport-level denials made before parsing. Protocol errors (malformed JSON, bad `jsonrpc`, unsupported protocol version, oversized body, batch) are **not** audited. Throwing from this port never fails the request, and neither does hanging — see `auditTimeoutMs` below. Omit it and the library stays silent |
 
 `auditTimeoutMs` (default 1000ms) races `audit` against a timeout, so a
 slow sink can't stall a response past that bound either.

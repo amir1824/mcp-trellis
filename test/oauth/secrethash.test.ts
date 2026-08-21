@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { hashClientSecret, verifyClientSecret } from "../src/oauth/secrethash.js";
+import { hashClientSecret, verifyClientSecret } from "../../src/oauth/secrethash.js";
 
 const CODE_SECRET = "code-secret-value-32-characters-long-enough";
 

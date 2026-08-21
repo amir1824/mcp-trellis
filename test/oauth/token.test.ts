@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { sha256Base64Url } from "../src/oauth/pkce.js";
-import { expectOAuthError, expectOAuthRedirectError } from "./helpers/http.js";
+import { sha256Base64Url } from "../../src/oauth/pkce.js";
+import { expectOAuthError, expectOAuthRedirectError } from "../helpers/http.js";
 import {
   authorizeCode,
   DEFAULT_CLIENT_ID,
   DEFAULT_REDIRECT_URI,
   forgeCode,
   redeem,
-} from "./helpers/oauth.js";
-import { HARNESS_CODE_SECRET, recordingPorts } from "./helpers/ports.js";
-import { createOAuthRouter } from "./helpers/router.js";
+} from "../helpers/oauth.js";
+import { HARNESS_CODE_SECRET, recordingPorts } from "../helpers/ports.js";
+import { createOAuthRouter } from "../helpers/router.js";
 
 const ORIGIN = "https://example.test";
 const RESOURCE = `${ORIGIN}/mcp`;

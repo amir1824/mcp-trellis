@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { sha256Base64Url } from "../src/oauth/pkce.js";
-import type { ClientStore, OAuthAuditEntry } from "../src/oauth/types.js";
-import { createOAuthRouter } from "./helpers/router.js";
+import { sha256Base64Url } from "../../src/oauth/pkce.js";
+import type { ClientStore, OAuthAuditEntry } from "../../src/oauth/types.js";
+import { createOAuthRouter } from "../helpers/router.js";
 
 const ORIGIN = "https://example.test";
 const RESOURCE = `${ORIGIN}/mcp`;

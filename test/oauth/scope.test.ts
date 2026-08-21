@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { firstScopeError, formatScope, parseScope, requestedScopes } from "../src/oauth/scope.js";
-import { expectOAuthRedirectError } from "./helpers/http.js";
-import { accessToken } from "./helpers/oauth.js";
-import { recordingPorts } from "./helpers/ports.js";
-import { createOAuthRouter } from "./helpers/router.js";
+import {
+  firstScopeError,
+  formatScope,
+  parseScope,
+  requestedScopes,
+} from "../../src/oauth/scope.js";
+import { expectOAuthRedirectError } from "../helpers/http.js";
+import { accessToken } from "../helpers/oauth.js";
+import { recordingPorts } from "../helpers/ports.js";
+import { createOAuthRouter } from "../helpers/router.js";
 
 describe("parseScope / formatScope", () => {
   it("splits on spaces and trims empty entries", () => {

@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { authorizationServerMetadata, protectedResourceMetadata } from "../src/oauth/metadata.js";
+import {
+  authorizationServerMetadata,
+  protectedResourceMetadata,
+} from "../../src/oauth/metadata.js";
 import {
   canonicalResource,
   normalizeConfiguredPath,
   resourcesEqual,
-} from "../src/oauth/resource.js";
+} from "../../src/oauth/resource.js";
 
 describe("metadata grant derivation", () => {
   it("advertises only configured grants", () => {

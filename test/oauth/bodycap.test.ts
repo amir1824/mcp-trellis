@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { DEFAULT_OAUTH_BODY_LIMIT } from "../src/body.js";
-import { stubPorts } from "./helpers/ports.js";
-import { createOAuthRouter } from "./helpers/router.js";
+import { DEFAULT_OAUTH_BODY_LIMIT } from "../../src/body.js";
+import { stubPorts } from "../helpers/ports.js";
+import { createOAuthRouter } from "../helpers/router.js";
 
 const OVER_CAP = "x".repeat(DEFAULT_OAUTH_BODY_LIMIT + 1);
 
