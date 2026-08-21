@@ -71,6 +71,18 @@ Publishes to npm from GitHub Actions via **trusted publishing (OIDC)** —
 no long-lived `NPM_TOKEN`. Provenance is attached automatically when the
 trusted publisher is configured.
 
+> **Status note (1.0.0):** the live `1.0.0` on npm was published manually
+> from a local machine while the OIDC path above was still being debugged
+> (see the `fix:`-prefixed commits around `2026-08-21`) — it does **not**
+> carry npm provenance (`npm view mcp-trellis@1.0.0 dist.attestations` is
+> empty). `publishConfig.provenance` was removed from `package.json` for
+> exactly this reason: it blocked the local escape-hatch publish that got
+> `1.0.0` out. The Actions workflow below still passes `--provenance`
+> explicitly and remains the intended path — confirm the trusted-publisher
+> config below is actually correct, then cut the **next** release
+> (`1.0.1`+) through Actions so the npm page shows the Provenance badge.
+> Don't publish locally again once that's confirmed working.
+
 ### One-time setup (required — publish fails with ENEEDAUTH until this exists)
 
 1. Log in to npm as the package owner (`amir-b`).

@@ -9,6 +9,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 Breaking — read before upgrading from 0.5.x.
 
+> **Note:** this version was published manually while the CI/OIDC release
+> path was being fixed and does not carry npm provenance. See
+> [CONTRIBUTING.md](CONTRIBUTING.md#releasing-maintainers) — `1.0.1`+ ship
+> through the hardened GitHub Actions path.
+
 ### Changed
 
 - **`requireRegisteredClients` defaults to `true`.** Invented public
