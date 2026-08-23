@@ -69,9 +69,10 @@ const app = createMcpApp<Ctx>({
 });
 
 const server = http.createServer();
-server.listen(Number(process.env.PORT ?? 0), "127.0.0.1", () => {
+const host = process.env.HOST ?? "127.0.0.1";
+server.listen(Number(process.env.PORT ?? 0), host, () => {
   const { port } = server.address() as AddressInfo;
-  const origin = `http://127.0.0.1:${port}`;
+  const origin = `http://${host === "0.0.0.0" ? "127.0.0.1" : host}:${port}`;
   const handler = asNodeHandler(app, { origin });
   server.on("request", (req, res) => {
     void handler(req, res);
