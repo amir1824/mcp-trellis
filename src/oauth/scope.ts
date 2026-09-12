@@ -1,7 +1,8 @@
 /** OAuth scope handling — space-delimited sets (RFC 6749 §3.3). */
 
+import { oauthError } from "./config.js";
 import { OAUTH_ERRORS } from "./constants.js";
-import { type OAuthErrorInfo, oauthError } from "./types.js";
+import type { OAuthErrorInfo } from "./types.js";
 
 export const parseScope = (raw: string): string[] =>
   raw
@@ -14,7 +15,7 @@ export const formatScope = (scopes: string[]): string => scopes.join(" ");
 /**
  * Scopes the client asked for, or `fallback` when `scope` is omitted —
  * `fallback` is the full advertised set only for single-scope servers; see
- * `defaultScopes`/`assertScopeConfig` in `types.ts` for the multi-scope rule.
+ * `defaultScopes`/`assertScopeConfig` in `config.ts` for the multi-scope rule.
  * Duplicates are collapsed so the granted string is stable.
  */
 export const requestedScopes = (raw: string, fallback: string[]): string[] => {

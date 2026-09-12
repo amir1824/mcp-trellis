@@ -196,7 +196,7 @@ The library stays protocol-shaped. Your app plugs in the seams:
 | `verifyToken(token, req)` | Decode a bearer and return `{ userId, scopes, audience, claims? }`, or `null`. **The library compares `audience` against this server's canonical resource** — you cannot forget the check. Optional `claims` are passed to `context` on `principal` |
 | `resolveUser`, `loginUrl`, `mintAccessToken`, `codeSecret` | Same as the OAuth ports below |
 | `clientStore?` | Pre-registered clients; required for confidential clients like Gemini |
-| `refreshAccessToken?` | If set, metadata advertises `refresh_token` |
+| `refreshAccessToken?` | If set, metadata advertises `refresh_token`. Receives `resource` and optional reduced `scope` — **MUST reject tokens not originally issued for that resource, and any `scope` outside the originally granted set** (see [security.md](security.md)) |
 | `revokeToken?` | RFC 7009; presence mounts `/revoke` and advertises `revocation_endpoint` |
 
 `consent?` (approval-page policy — see [Consent](#consent), below) and
@@ -213,7 +213,7 @@ The lower-level handler. Here the audience check is **yours** — prefer
 |------|------|
 | `authenticate(req, method, tool?)` | Return `{ id, scopes, claims? }`, or `null` → 401 + `WWW-Authenticate`. **Must reject tokens whose audience is not this server's canonical resource** |
 | `context(req, principal)` | Build per-request ctx for tools (DB, env, …). Use `principal?.claims` for tenant / plan / role without re-decoding the bearer |
-| `audit?(entry)` | Opt-in **metrics hook**: pass any function to receive tool results **and** auth denials (bad token, missing scope, query-string token), plus the 500 path when a host port throws. `entry.method` is `""` for transport-level denials made before parsing. Protocol errors (malformed JSON, bad `jsonrpc`, unsupported protocol version, oversized body, batch) are **not** audited. Throwing from this port never fails the request, and neither does hanging — see `auditTimeoutMs` below. Omit it and the library stays silent |
+| `audit?(entry)` | Opt-in **metrics hook**: pass any function to receive tool results **and** auth denials (bad token, missing scope, query-string token, rejected browser Origin), plus the 500 path when a host port throws. `entry.method` is `""` for transport-level denials made before parsing (`query_string_token`, `unauthorized`, `origin_not_allowed`). Protocol errors (malformed JSON, bad `jsonrpc`, unsupported protocol version, oversized body, batch) are **not** audited. Throwing from this port never fails the request, and neither does hanging — see `auditTimeoutMs` below. Omit it and the library stays silent |
 
 `auditTimeoutMs` (default 1000ms) races `audit` against a timeout, so a
 slow sink can't stall a response past that bound either.
@@ -248,6 +248,12 @@ stdout, write your own `audit` function — that is the intended production path
 
 By default `initialize`, `ping`, and notifications are public. Override `publicMethods` if every method must require Bearer.
 
+**Browser `Origin`.** MCP Streamable HTTP expects servers to validate the
+request `Origin` header. Pass `allowedRequestOrigins` on `createMcpHandler` /
+`createMcpApp`. Native connectors omit the header and are admitted. An omitted
+allowlist **rejects** any present `Origin` (use `["*"]` only if you mean it).
+This is separate from Node Host `allowedOrigins` on `asNodeHandler`.
+
 ### OAuth (`createOAuthRouter`)
 
 | Port | Role |
@@ -256,7 +262,7 @@ By default `initialize`, `ping`, and notifications are public. Override `publicM
 | `resolveUser` | Consenting user, or `null` → redirect to `loginUrl` |
 | `loginUrl` | Where unauthenticated authorize requests go |
 | `mintAccessToken` | Issue a **user-bound**, **audience-bound** access token (`resource` is the RFC 8707 URI) — never a shared god token |
-| `refreshAccessToken?` | If set, metadata advertises `refresh_token`; also receives `resource` |
+| `refreshAccessToken?` | If set, metadata advertises `refresh_token`; receives `resource` and optional client `scope` (advertised-scope check is library-side). **MUST reject refresh tokens not originally issued for that `resource`, and any `scope` outside the originally granted set** — opaque RT, same pattern as audience |
 | `revokeToken?` | If set, mounts `/revoke` and advertises `revocation_endpoint`. Well-formed authenticated revoke → 200 even if the token is unknown; `invalid_request` 400 and `invalid_client` 401 still apply |
 | `codeStore?` | Shared single-use jti store for multi-instance (`consume(jti, expMs)`); pruning in-memory default otherwise. Also backs consent-ticket single-use — see below |
 | `clientStore?` | Pre-registered clients: `get(clientId)` returns registered redirect URIs and auth method. Two ways to authenticate a confidential client's secret — **prefer `secretHash(clientId)`**: return a stored hash from `hashClientSecret`, and the library compares it with the same constant-time primitive it uses everywhere else; `verifySecret(clientId, presented)` is the fallback when you'd rather compare yourself. Credentials never enter the library either way |

@@ -67,3 +67,11 @@ export const kvRevocation = (kv: Kv) => ({
   },
   isRevoked: async (token: string) => (await kv.get(`revoked:${token}`)) !== null,
 });
+
+/**
+ * RFC 6749 §6 — requested refresh scopes must be a subset of the grant
+ * originally bound to this refresh token. Library validates advertised scopes
+ * only; the host owns this check (opaque RT).
+ */
+export const isScopeSubset = (requested: string[], granted: string[]): boolean =>
+  requested.every((scope) => granted.includes(scope) || granted.includes("*"));

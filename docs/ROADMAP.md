@@ -110,7 +110,9 @@ a proper JSON-RPC error.
 - **Claims on `Principal`.** Optional `claims` from `verifyToken` /
   `VerifiedToken` flow into `context` (plan/role metadata — not the
   Host→tenant isolation key). Host-origin allowlisting (`allowedOrigins` on
-  `asNodeHandler`) is **required** when origin is Host-derived.
+  `asNodeHandler`) is **required** when origin is Host-derived. Separately,
+  browser `Origin` on MCP is gated by `allowedRequestOrigins` (fail-closed
+  when the header is present; native clients omit it).
 
 - **`validateArgs` fail-fast.** With `validateArgs: true`, unsupported JSON
   Schema keywords throw at `createToolRegistry` construction instead of

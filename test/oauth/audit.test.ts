@@ -143,6 +143,23 @@ describe("OAuth audit hook — client_auth_failed", () => {
     assert.ok(res);
     assert.equal(res.status, 401);
   });
+
+  it("a hanging OAuth audit port does not stall the response past auditTimeoutMs", async () => {
+    const router = createOAuthRouter({
+      allowUnregisteredClients: false,
+      auditTimeoutMs: 150,
+      ports: {
+        ...basePorts,
+        clientStore: gemini,
+        audit: () => new Promise<void>(() => {}),
+      },
+    });
+    const res = await router.tryHandle(
+      tokenRequest({ grant_type: "authorization_code", code: "x", client_id: "someone-else" }),
+    );
+    assert.ok(res);
+    assert.equal(res.status, 401);
+  });
 });
 
 describe("OAuth audit hook — server_error (rejected codeSecret, host port exceptions)", () => {

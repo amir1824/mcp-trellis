@@ -154,6 +154,142 @@ describe("dispatch", () => {
     });
     assert.equal(res.status, 202);
     assert.equal(await res.text(), "");
+    assert.equal(res.headers.get("Cache-Control"), "no-store");
+  });
+
+  it("returns -32600 for a non-string method instead of 500", async () => {
+    const res = await post({ jsonrpc: "2.0", id: 1, method: 7 });
+    assert.equal(res.status, 400);
+    const body = (await res.json()) as { error: { code: number } };
+    assert.equal(body.error.code, -32600);
+  });
+
+  it("returns -32600 for an object id", async () => {
+    const res = await post({ jsonrpc: "2.0", id: { a: 1 }, method: "ping" });
+    assert.equal(res.status, 400);
+    const body = (await res.json()) as { error: { code: number }; id: unknown };
+    assert.equal(body.error.code, -32600);
+    assert.equal(body.id, null);
+  });
+
+  it("returns 202 for ping without id (JSON-RPC notification)", async () => {
+    const res = await post({ jsonrpc: "2.0", method: "ping" });
+    assert.equal(res.status, 202);
+    assert.equal(await res.text(), "");
+  });
+
+  it("returns 202 for an unknown method without id", async () => {
+    const res = await post({ jsonrpc: "2.0", method: "resources/list" });
+    assert.equal(res.status, 202);
+  });
+
+  it("rejects a foreign Origin by default", async () => {
+    const res = await postWithHeaders(
+      { jsonrpc: "2.0", id: 1, method: "ping" },
+      { Origin: "https://evil.example" },
+    );
+    assert.equal(res.status, 403);
+    assert.equal(res.headers.get("Access-Control-Allow-Origin"), null);
+  });
+
+  it("admits a matching Origin when allowedRequestOrigins is set and reflects CORS", async () => {
+    const gated = createMcpHandler<Ctx>({
+      registry,
+      serverInfo: { name: "test", version: "0.0.1" },
+      wwwAuthenticate: {
+        realm: "test",
+        resourceMetadataUrl: "https://example.test/.well-known/oauth-protected-resource/mcp",
+      },
+      allowedRequestOrigins: ["https://app.example"],
+      ports: {
+        authenticate: async () => null,
+        context: async () => ({ who: "tester" }),
+      },
+    });
+    const res = await gated.fetch(
+      new Request("https://example.test/mcp", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "https://app.example",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
+      }),
+    );
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("Access-Control-Allow-Origin"), "https://app.example");
+    assert.equal(res.headers.get("Vary"), "Origin");
+
+    const preflight = await gated.fetch(
+      new Request("https://example.test/mcp", {
+        method: "OPTIONS",
+        headers: { Origin: "https://app.example" },
+      }),
+    );
+    assert.equal(preflight.status, 204);
+    assert.equal(preflight.headers.get("Cache-Control"), "no-store");
+    assert.equal(preflight.headers.get("Access-Control-Allow-Origin"), "https://app.example");
+    assert.equal(preflight.headers.get("Vary"), "Origin");
+  });
+
+  it("audits origin_not_allowed when a foreign Origin is rejected", async () => {
+    const entries: { error?: string | undefined }[] = [];
+    const gated = createMcpHandler<Ctx>({
+      registry,
+      serverInfo: { name: "test", version: "0.0.1" },
+      wwwAuthenticate: {
+        realm: "test",
+        resourceMetadataUrl: "https://example.test/.well-known/oauth-protected-resource/mcp",
+      },
+      ports: {
+        authenticate: async () => null,
+        context: async () => ({ who: "tester" }),
+        audit: (entry) => {
+          entries.push({ error: entry.error });
+        },
+      },
+    });
+    const res = await gated.fetch(
+      new Request("https://example.test/mcp", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "https://evil.example",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
+      }),
+    );
+    assert.equal(res.status, 403);
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0]?.error, "origin_not_allowed");
+  });
+
+  it("admits any Origin when allowedRequestOrigins is ['*']", async () => {
+    const open = createMcpHandler<Ctx>({
+      registry,
+      serverInfo: { name: "test", version: "0.0.1" },
+      wwwAuthenticate: {
+        realm: "test",
+        resourceMetadataUrl: "https://example.test/.well-known/oauth-protected-resource/mcp",
+      },
+      allowedRequestOrigins: ["*"],
+      ports: {
+        authenticate: async () => null,
+        context: async () => ({ who: "tester" }),
+      },
+    });
+    const res = await open.fetch(
+      new Request("https://example.test/mcp", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "https://evil.example",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
+      }),
+    );
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("Access-Control-Allow-Origin"), "*");
   });
 
   it("rejects batches", async () => {

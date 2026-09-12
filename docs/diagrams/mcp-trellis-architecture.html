@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>mcp-trellis · Architecture</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Hebrew:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5fb;
+      --color-ink:     #1e1f29;
+      --color-muted:   #55566b;
+      --color-accent:  #5b5bf0;
+      --font-sans:     'Noto Sans Hebrew', system-ui, sans-serif;
+      --font-mono:     ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+
+    .frame { max-width: 1280px; width: 100%; }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-family: var(--font-sans);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+
+    svg { width: 100%; min-width: 960px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Architecture · mcp-trellis</p>
+    <h1>Host-agnostic MCP + OAuth 2.1</h1>
+
+    <svg viewBox="0 0 1280 760" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="mcp-trellis-architecture-title mcp-trellis-architecture-desc">
+      <title id="mcp-trellis-architecture-title">mcp-trellis architecture</title>
+      <desc id="mcp-trellis-architecture-desc">Connectors reach an edge host, then createMcpApp routes OAuth and MCP traffic to library handlers and your login, token, store, and tool ports.</desc>
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#55566b"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5b5bf0"/></marker>
+        <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4545c8"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#f5f5fb"/>
+
+      <!-- Zones (before arrows) -->
+      <rect x="40" y="96" width="168" height="400" rx="8"
+            fill="rgba(30,31,41,0.02)" stroke="rgba(30,31,41,0.10)" stroke-width="0.8"/>
+      <rect x="84" y="100" width="80" height="12" rx="2" fill="#f5f5fb"/>
+      <text x="124" y="109" fill="rgba(30,31,41,0.40)" font-size="7" font-family="ui-monospace, monospace"
+            text-anchor="middle" letter-spacing="0.14em">CONNECTORS</text>
+
+      <rect x="440" y="56" width="480" height="520" rx="8"
+            fill="rgba(30,31,41,0.02)" stroke="rgba(30,31,41,0.10)" stroke-width="0.8"/>
+      <rect x="624" y="60" width="112" height="12" rx="2" fill="#f5f5fb"/>
+      <text x="680" y="69" fill="rgba(30,31,41,0.40)" font-size="7" font-family="ui-monospace, monospace"
+            text-anchor="middle" letter-spacing="0.14em">MCP-TRELLIS</text>
+
+      <rect x="980" y="96" width="260" height="440" rx="8"
+            fill="rgba(30,31,41,0.02)" stroke="rgba(30,31,41,0.10)" stroke-width="0.8"/>
+      <rect x="1052" y="100" width="116" height="12" rx="2" fill="#f5f5fb"/>
+      <text x="1110" y="109" fill="rgba(30,31,41,0.40)" font-size="7" font-family="ui-monospace, monospace"
+            text-anchor="middle" letter-spacing="0.14em">YOUR PORTS</text>
+
+      <!-- Arrows -->
+      <!-- Clients → Edge (link) -->
+      <line x1="192" y1="172" x2="248" y2="172" stroke="#4545c8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <line x1="192" y1="292" x2="248" y2="292" stroke="#4545c8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <line x1="192" y1="412" x2="248" y2="412" stroke="#4545c8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+
+      <!-- Edge → createMcpApp (accent primary) -->
+      <path d="M 392,292 H 480 Q 488,292 488,284 V 120 Q 488,112 496,112 H 592"
+            fill="none" stroke="#5b5bf0" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+
+      <!-- createMcpApp → OAuth / MCP -->
+      <path d="M 640,144 V 168 H 558 Q 550,168 550,176 V 200"
+            fill="none" stroke="#55566b" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <path d="M 720,144 V 168 H 802 Q 810,168 810,176 V 200"
+            fill="none" stroke="#55566b" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+      <!-- OAuth → Consent / Discovery -->
+      <line x1="550" y1="280" x2="550" y2="312" stroke="#5b5bf0" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+      <line x1="550" y1="376" x2="550" y2="408" stroke="#55566b" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+
+      <!-- MCP → Audience → Registry -->
+      <line x1="810" y1="280" x2="810" y2="312" stroke="#55566b" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="810" y1="376" x2="810" y2="408" stroke="#55566b" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+      <!-- Library → Ports (distinct Auth attach points: MINT@160, VERIFY@184) -->
+      <path d="M 640,228 H 680 Q 688,228 688,220 V 168 Q 688,160 696,160 H 1000"
+            fill="none" stroke="#4545c8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <path d="M 640,256 H 680 Q 688,256 688,264 V 288 Q 688,296 696,296 H 1000"
+            fill="none" stroke="#55566b" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <path d="M 900,344 H 940 Q 948,344 948,336 V 192 Q 948,184 956,184 H 1000"
+            fill="none" stroke="#55566b" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="900" y1="440" x2="1000" y2="440" stroke="#55566b" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+      <!-- Arrow labels (6–10px gap above stroke) -->
+      <rect x="204" y="152" width="36" height="12" rx="2" fill="#f5f5fb"/>
+      <text x="222" y="161" fill="#4545c8" font-size="8" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">HTTPS</text>
+
+      <rect x="500" y="92" width="48" height="12" rx="2" fill="#f5f5fb"/>
+      <text x="524" y="101" fill="#5b5bf0" font-size="8" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">FETCH</text>
+
+      <rect x="568" y="148" width="40" height="12" rx="2" fill="#f5f5fb"/>
+      <text x="588" y="157" fill="#55566b" font-size="8" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">OAUTH</text>
+
+      <rect x="744" y="148" width="32" height="12" rx="2" fill="#f5f5fb"/>
+      <text x="760" y="157" fill="#55566b" font-size="8" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">MCP</text>
+
+      <rect x="560" y="288" width="52" height="12" rx="2" fill="#f5f5fb"/>
+      <text x="586" y="297" fill="#5b5bf0" font-size="8" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">APPROVE</text>
+
+      <rect x="560" y="384" width="40" height="12" rx="2" fill="#f5f5fb"/>
+      <text x="580" y="393" fill="#8d8ea3" font-size="8" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">META</text>
+
+      <rect x="820" y="288" width="36" height="12" rx="2" fill="#f5f5fb"/>
+      <text x="838" y="297" fill="#55566b" font-size="8" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">AUD</text>
+
+      <rect x="820" y="384" width="48" height="12" rx="2" fill="#f5f5fb"/>
+      <text x="844" y="393" fill="#55566b" font-size="8" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">SCOPE</text>
+
+      <rect x="820" y="140" width="40" height="12" rx="2" fill="#f5f5fb"/>
+      <text x="840" y="149" fill="#4545c8" font-size="8" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">MINT</text>
+
+      <rect x="924" y="276" width="44" height="12" rx="2" fill="#f5f5fb"/>
+      <text x="946" y="285" fill="#8d8ea3" font-size="8" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">STORE</text>
+
+      <rect x="880" y="164" width="48" height="12" rx="2" fill="#f5f5fb"/>
+      <text x="904" y="173" fill="#55566b" font-size="8" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">VERIFY</text>
+
+      <rect x="928" y="420" width="40" height="12" rx="2" fill="#f5f5fb"/>
+      <text x="948" y="429" fill="#55566b" font-size="8" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">CALL</text>
+
+      <!-- Nodes: Connectors -->
+      <rect x="56" y="140" width="136" height="64" rx="6" fill="#f5f5fb"/>
+      <rect x="56" y="140" width="136" height="64" rx="6" fill="rgba(85,86,107,0.10)" stroke="#8d8ea3" stroke-width="1"/>
+      <rect x="64" y="148" width="40" height="12" rx="2" fill="transparent" stroke="rgba(141,142,163,0.40)" stroke-width="0.8"/>
+      <text x="84" y="157" fill="#8d8ea3" font-size="7" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">CLIENT</text>
+      <text x="124" y="176" fill="#1e1f29" font-size="12" font-weight="600" font-family="'Noto Sans Hebrew', sans-serif" text-anchor="middle">Claude</text>
+      <text x="124" y="192" fill="#55566b" font-size="9" font-family="ui-monospace, monospace" text-anchor="middle">DCR + PKCE</text>
+
+      <rect x="56" y="260" width="136" height="64" rx="6" fill="#f5f5fb"/>
+      <rect x="56" y="260" width="136" height="64" rx="6" fill="rgba(85,86,107,0.10)" stroke="#8d8ea3" stroke-width="1"/>
+      <rect x="64" y="268" width="40" height="12" rx="2" fill="transparent" stroke="rgba(141,142,163,0.40)" stroke-width="0.8"/>
+      <text x="84" y="277" fill="#8d8ea3" font-size="7" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">CLIENT</text>
+      <text x="124" y="296" fill="#1e1f29" font-size="12" font-weight="600" font-family="'Noto Sans Hebrew', sans-serif" text-anchor="middle">Gemini</text>
+      <text x="124" y="312" fill="#55566b" font-size="9" font-family="ui-monospace, monospace" text-anchor="middle">pre-reg secret</text>
+
+      <rect x="56" y="380" width="136" height="64" rx="6" fill="#f5f5fb"/>
+      <rect x="56" y="380" width="136" height="64" rx="6" fill="rgba(85,86,107,0.10)" stroke="#8d8ea3" stroke-width="1"/>
+      <rect x="64" y="388" width="40" height="12" rx="2" fill="transparent" stroke="rgba(141,142,163,0.40)" stroke-width="0.8"/>
+      <text x="84" y="397" fill="#8d8ea3" font-size="7" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">CLIENT</text>
+      <text x="124" y="416" fill="#1e1f29" font-size="12" font-weight="600" font-family="'Noto Sans Hebrew', sans-serif" text-anchor="middle">Codex</text>
+      <text x="124" y="432" fill="#55566b" font-size="9" font-family="ui-monospace, monospace" text-anchor="middle">OAuth 2.1 PKCE</text>
+
+      <!-- Edge host -->
+      <rect x="248" y="148" width="144" height="320" rx="6" fill="#f5f5fb"/>
+      <rect x="248" y="148" width="144" height="320" rx="6" fill="rgba(30,31,41,0.03)" stroke="rgba(30,31,41,0.30)" stroke-width="1"/>
+      <rect x="256" y="156" width="36" height="12" rx="2" fill="transparent" stroke="rgba(30,31,41,0.22)" stroke-width="0.8"/>
+      <text x="274" y="165" fill="#8d8ea3" font-size="7" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">EDGE</text>
+      <text x="320" y="292" fill="#1e1f29" font-size="12" font-weight="600" font-family="'Noto Sans Hebrew', sans-serif" text-anchor="middle">Your host</text>
+      <text x="320" y="312" fill="#55566b" font-size="9" font-family="ui-monospace, monospace" text-anchor="middle">Workers · Next</text>
+      <text x="320" y="328" fill="#55566b" font-size="9" font-family="ui-monospace, monospace" text-anchor="middle">Node · Deno · Bun</text>
+      <text x="320" y="352" fill="#8d8ea3" font-size="8" font-family="ui-monospace, monospace" text-anchor="middle">Request → Response</text>
+
+      <!-- createMcpApp (focal) -->
+      <rect x="592" y="80" width="176" height="64" rx="6" fill="#f5f5fb"/>
+      <rect x="592" y="80" width="176" height="64" rx="6" fill="#efeeff" stroke="#5b5bf0" stroke-width="1"/>
+      <rect x="600" y="88" width="36" height="12" rx="2" fill="transparent" stroke="rgba(91,91,240,0.50)" stroke-width="0.8"/>
+      <text x="618" y="97" fill="#5b5bf0" font-size="7" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">APP</text>
+      <text x="680" y="116" fill="#1e1f29" font-size="12" font-weight="600" font-family="'Noto Sans Hebrew', sans-serif" text-anchor="middle">createMcpApp</text>
+      <text x="680" y="132" fill="#55566b" font-size="9" font-family="ui-monospace, monospace" text-anchor="middle">oauth.tryHandle → /mcp</text>
+
+      <!-- OAuth AS -->
+      <rect x="460" y="200" width="180" height="80" rx="6" fill="#f5f5fb"/>
+      <rect x="460" y="200" width="180" height="80" rx="6" fill="#ffffff" stroke="#1e1f29" stroke-width="1"/>
+      <rect x="468" y="208" width="28" height="12" rx="2" fill="transparent" stroke="rgba(30,31,41,0.40)" stroke-width="0.8"/>
+      <text x="482" y="217" fill="#1e1f29" font-size="7" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">AS</text>
+      <text x="550" y="240" fill="#1e1f29" font-size="12" font-weight="600" font-family="'Noto Sans Hebrew', sans-serif" text-anchor="middle">OAuth router</text>
+      <text x="550" y="256" fill="#55566b" font-size="9" font-family="ui-monospace, monospace" text-anchor="middle">/authorize · /token</text>
+      <text x="550" y="268" fill="#55566b" font-size="9" font-family="ui-monospace, monospace" text-anchor="middle">/register · /revoke</text>
+
+      <!-- Consent (security, 2nd accent) -->
+      <rect x="460" y="312" width="180" height="64" rx="6" fill="#f5f5fb"/>
+      <rect x="460" y="312" width="180" height="64" rx="6" fill="rgba(91,91,240,0.05)" stroke="rgba(91,91,240,0.50)" stroke-width="1" stroke-dasharray="4,4"/>
+      <rect x="468" y="320" width="48" height="12" rx="2" fill="transparent" stroke="rgba(91,91,240,0.40)" stroke-width="0.8"/>
+      <text x="492" y="329" fill="#5b5bf0" font-size="7" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">SECURE</text>
+      <text x="550" y="348" fill="#1e1f29" font-size="12" font-weight="600" font-family="'Noto Sans Hebrew', sans-serif" text-anchor="middle">Consent</text>
+      <text x="550" y="364" fill="#55566b" font-size="9" font-family="ui-monospace, monospace" text-anchor="middle">POST …/consent</text>
+
+      <!-- Discovery -->
+      <rect x="460" y="408" width="180" height="64" rx="6" fill="#f5f5fb"/>
+      <rect x="460" y="408" width="180" height="64" rx="6" fill="rgba(30,31,41,0.02)" stroke="rgba(30,31,41,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+      <rect x="468" y="416" width="36" height="12" rx="2" fill="transparent" stroke="rgba(30,31,41,0.25)" stroke-width="0.8"/>
+      <text x="486" y="425" fill="#8d8ea3" font-size="7" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">META</text>
+      <text x="550" y="444" fill="#1e1f29" font-size="12" font-weight="600" font-family="'Noto Sans Hebrew', sans-serif" text-anchor="middle">Discovery</text>
+      <text x="550" y="460" fill="#55566b" font-size="9" font-family="ui-monospace, monospace" text-anchor="middle">.well-known/*</text>
+
+      <!-- MCP Handler -->
+      <rect x="720" y="200" width="180" height="80" rx="6" fill="#f5f5fb"/>
+      <rect x="720" y="200" width="180" height="80" rx="6" fill="#ffffff" stroke="#1e1f29" stroke-width="1"/>
+      <rect x="728" y="208" width="36" height="12" rx="2" fill="transparent" stroke="rgba(30,31,41,0.40)" stroke-width="0.8"/>
+      <text x="746" y="217" fill="#1e1f29" font-size="7" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">MCP</text>
+      <text x="810" y="240" fill="#1e1f29" font-size="12" font-weight="600" font-family="'Noto Sans Hebrew', sans-serif" text-anchor="middle">MCP handler</text>
+      <text x="810" y="256" fill="#55566b" font-size="9" font-family="ui-monospace, monospace" text-anchor="middle">JSON-RPC /mcp</text>
+      <text x="810" y="268" fill="#55566b" font-size="9" font-family="ui-monospace, monospace" text-anchor="middle">initialize · tools/*</text>
+
+      <!-- Audience gate (ink dashed — accent reserved for createMcpApp + Consent) -->
+      <rect x="720" y="312" width="180" height="64" rx="6" fill="#f5f5fb"/>
+      <rect x="720" y="312" width="180" height="64" rx="6" fill="rgba(30,31,41,0.02)" stroke="rgba(30,31,41,0.30)" stroke-width="1" stroke-dasharray="4,4"/>
+      <rect x="728" y="320" width="36" height="12" rx="2" fill="transparent" stroke="rgba(30,31,41,0.30)" stroke-width="0.8"/>
+      <text x="746" y="329" fill="#55566b" font-size="7" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">GATE</text>
+      <text x="810" y="348" fill="#1e1f29" font-size="12" font-weight="600" font-family="'Noto Sans Hebrew', sans-serif" text-anchor="middle">Audience check</text>
+      <text x="810" y="364" fill="#55566b" font-size="9" font-family="ui-monospace, monospace" text-anchor="middle">RFC 8707 aud</text>
+
+      <!-- Tool registry -->
+      <rect x="720" y="408" width="180" height="64" rx="6" fill="#f5f5fb"/>
+      <rect x="720" y="408" width="180" height="64" rx="6" fill="rgba(30,31,41,0.05)" stroke="#55566b" stroke-width="1"/>
+      <rect x="728" y="416" width="40" height="12" rx="2" fill="transparent" stroke="rgba(85,86,107,0.50)" stroke-width="0.8"/>
+      <text x="748" y="425" fill="#55566b" font-size="7" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">REG</text>
+      <text x="810" y="444" fill="#1e1f29" font-size="12" font-weight="600" font-family="'Noto Sans Hebrew', sans-serif" text-anchor="middle">Tool registry</text>
+      <text x="810" y="460" fill="#55566b" font-size="9" font-family="ui-monospace, monospace" text-anchor="middle">scope-gated call</text>
+
+      <!-- Your ports -->
+      <rect x="1000" y="140" width="220" height="72" rx="6" fill="#f5f5fb"/>
+      <rect x="1000" y="140" width="220" height="72" rx="6" fill="rgba(85,86,107,0.10)" stroke="#8d8ea3" stroke-width="1"/>
+      <rect x="1008" y="148" width="40" height="12" rx="2" fill="transparent" stroke="rgba(141,142,163,0.40)" stroke-width="0.8"/>
+      <text x="1028" y="157" fill="#8d8ea3" font-size="7" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">AUTH</text>
+      <text x="1110" y="176" fill="#1e1f29" font-size="12" font-weight="600" font-family="'Noto Sans Hebrew', sans-serif" text-anchor="middle">Auth ports</text>
+      <text x="1110" y="192" fill="#55566b" font-size="9" font-family="ui-monospace, monospace" text-anchor="middle">resolve · mint · verify</text>
+
+      <rect x="1000" y="260" width="220" height="72" rx="6" fill="#f5f5fb"/>
+      <rect x="1000" y="260" width="220" height="72" rx="6" fill="rgba(30,31,41,0.05)" stroke="#55566b" stroke-width="1"/>
+      <rect x="1008" y="268" width="44" height="12" rx="2" fill="transparent" stroke="rgba(85,86,107,0.50)" stroke-width="0.8"/>
+      <text x="1030" y="277" fill="#55566b" font-size="7" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">STORE</text>
+      <text x="1110" y="296" fill="#1e1f29" font-size="12" font-weight="600" font-family="'Noto Sans Hebrew', sans-serif" text-anchor="middle">Stores</text>
+      <text x="1110" y="312" fill="#55566b" font-size="9" font-family="ui-monospace, monospace" text-anchor="middle">clientStore · codeStore</text>
+
+      <rect x="1000" y="380" width="220" height="72" rx="6" fill="#f5f5fb"/>
+      <rect x="1000" y="380" width="220" height="72" rx="6" fill="#ffffff" stroke="#1e1f29" stroke-width="1"/>
+      <rect x="1008" y="388" width="40" height="12" rx="2" fill="transparent" stroke="rgba(30,31,41,0.40)" stroke-width="0.8"/>
+      <text x="1028" y="397" fill="#1e1f29" font-size="7" font-family="ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">TOOLS</text>
+      <text x="1110" y="416" fill="#1e1f29" font-size="12" font-weight="600" font-family="'Noto Sans Hebrew', sans-serif" text-anchor="middle">Tool handlers</text>
+      <text x="1110" y="432" fill="#55566b" font-size="9" font-family="ui-monospace, monospace" text-anchor="middle">your business logic</text>
+
+      <!-- Legend -->
+      <line x1="40" y1="640" x2="1240" y2="640" stroke="rgba(30,31,41,0.10)" stroke-width="0.8"/>
+      <text x="40" y="660" fill="#55566b" font-size="8" font-family="ui-monospace, monospace" letter-spacing="0.14em">LEGEND</text>
+
+      <rect x="40" y="676" width="14" height="10" rx="2" fill="#efeeff" stroke="#5b5bf0" stroke-width="1"/>
+      <text x="60" y="684" fill="#55566b" font-size="8" font-family="'Noto Sans Hebrew', sans-serif">Focal router</text>
+
+      <rect x="168" y="676" width="14" height="10" rx="2" fill="#ffffff" stroke="#1e1f29" stroke-width="1"/>
+      <text x="188" y="684" fill="#55566b" font-size="8" font-family="'Noto Sans Hebrew', sans-serif">Library handler</text>
+
+      <rect x="316" y="676" width="14" height="10" rx="2" fill="rgba(91,91,240,0.05)" stroke="rgba(91,91,240,0.50)" stroke-width="1" stroke-dasharray="3,2"/>
+      <text x="336" y="684" fill="#55566b" font-size="8" font-family="'Noto Sans Hebrew', sans-serif">Security control</text>
+
+      <rect x="468" y="676" width="14" height="10" rx="2" fill="rgba(30,31,41,0.05)" stroke="#55566b" stroke-width="1"/>
+      <text x="488" y="684" fill="#55566b" font-size="8" font-family="'Noto Sans Hebrew', sans-serif">Store / registry</text>
+
+      <rect x="620" y="676" width="14" height="10" rx="2" fill="rgba(30,31,41,0.03)" stroke="rgba(30,31,41,0.30)" stroke-width="1"/>
+      <text x="640" y="684" fill="#55566b" font-size="8" font-family="'Noto Sans Hebrew', sans-serif">Edge host</text>
+
+      <rect x="732" y="676" width="14" height="10" rx="2" fill="rgba(85,86,107,0.10)" stroke="#8d8ea3" stroke-width="1"/>
+      <text x="752" y="684" fill="#55566b" font-size="8" font-family="'Noto Sans Hebrew', sans-serif">External / port</text>
+
+      <line x1="880" y1="680" x2="908" y2="680" stroke="#5b5bf0" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <text x="916" y="684" fill="#55566b" font-size="8" font-family="'Noto Sans Hebrew', sans-serif">Primary</text>
+
+      <line x1="1000" y1="680" x2="1028" y2="680" stroke="#4545c8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <text x="1036" y="684" fill="#55566b" font-size="8" font-family="'Noto Sans Hebrew', sans-serif">HTTP / mint</text>
+
+      <line x1="1140" y1="680" x2="1168" y2="680" stroke="#55566b" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <text x="1176" y="684" fill="#55566b" font-size="8" font-family="'Noto Sans Hebrew', sans-serif">Optional</text>
+    </svg>
+  </div>
+</body>
+</html>

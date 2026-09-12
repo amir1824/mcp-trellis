@@ -1,7 +1,7 @@
 {
   "name": "mcp-trellis",
-  "version": "1.0.0",
-  "description": "Zero-dependency MCP server + OAuth 2.1 authorization server in one package, for Claude, Gemini, and Codex connectors",
+  "version": "1.1.0",
+  "description": "Build secure remote MCP servers for Claude, ChatGPT and Gemini using your existing auth.",
   "type": "module",
   "license": "MIT",
   "sideEffects": false,
@@ -25,7 +25,9 @@
     "model-context-protocol",
     "cloudflare-workers",
     "authorization-server",
-    "connector"
+    "connector",
+    "typescript",
+    "mcp-server"
   ],
   "types": "./dist/server.d.ts",
   "exports": {
@@ -44,7 +46,8 @@
   },
   "files": [
     "dist",
-    "docs",
+    "docs/*.md",
+    "docs/diagrams/**",
     "README.md",
     "LICENSE"
   ],
@@ -58,7 +61,11 @@
     "test:coverage": "node --import tsx --test --experimental-test-coverage --test-coverage-lines=85 --test-coverage-branches=75 --enable-source-maps test/oauth/*.test.ts test/mcp/*.test.ts test/adapters/*.test.ts test/auth/*.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "npm run build && npm test",
+    "demo": "npm run build && tsx examples/saas-demo/server.ts",
+    "smoke:pack": "node scripts/clean-npm-smoke.mjs",
+    "pretypecheck": "npm run build",
+    "pretest:e2e": "npm run build"
   },
   "engines": {
     "node": ">=20"

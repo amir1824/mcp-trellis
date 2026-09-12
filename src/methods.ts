@@ -1,14 +1,6 @@
 import { type WwwAuthenticateOptions, wwwAuthenticateHeader } from "./auth/bearer.js";
-import { emptyResponse, jsonResponse } from "./http.js";
-import {
-  JSONRPC_METHOD_NOT_FOUND,
-  JSONRPC_UNAUTHORIZED,
-  type JsonRpcId,
-  type JsonRpcRequest,
-  rpcError,
-  rpcResult,
-} from "./jsonrpc.js";
-import { pickProtocolVersion } from "./protocol.js";
+import { jsonResponse } from "./http.js";
+import { JSONRPC_UNAUTHORIZED, type JsonRpcId, type JsonRpcRequest, rpcError } from "./jsonrpc.js";
 import type { ToolRegistry } from "./registry.js";
 
 export type Principal = {
@@ -65,6 +57,13 @@ export type McpHandlerOptions<TCtx> = {
    * indefinitely — "can't fail" isn't "can't delay."
    */
   auditTimeoutMs?: number;
+  /**
+   * Browser `Origin` header allowlist for MCP (DNS rebinding / CSRF).
+   * Distinct from Node Host `allowedOrigins` on `asNodeHandler`.
+   * No `Origin` → allowed (native clients). Omitted/empty → reject any
+   * present `Origin`. `"*"` admits any Origin.
+   */
+  allowedRequestOrigins?: string[];
 };
 
 const DEFAULT_AUDIT_TIMEOUT_MS = 1000;
@@ -76,21 +75,27 @@ export const DEFAULT_PUBLIC_METHODS = new Set([
   "initialized",
 ]);
 
-const NOTIFICATION_PREDICATES: Array<(body: JsonRpcRequest) => boolean> = [
-  (body) => typeof body.method === "string" && body.method.startsWith("notifications/"),
-  (body) => body.method === "initialized",
-  (body) => body.id === undefined && body.method === undefined && "result" in body,
-];
+/**
+ * JSON-RPC 2.0: a notification omits `id` (no response). MCP also treats
+ * `notifications/*` and legacy `initialized` as notifications even when an
+ * `id` is present. Orphan result-shaped bodies (no method/id) get 202 too.
+ */
+export const isNotification = (body: JsonRpcRequest): boolean => {
+  if (body.id === undefined) {
+    return typeof body.method === "string" || (body.method === undefined && "result" in body);
+  }
+  return (
+    (typeof body.method === "string" && body.method.startsWith("notifications/")) ||
+    body.method === "initialized"
+  );
+};
 
-export const isNotification = (body: JsonRpcRequest): boolean =>
-  NOTIFICATION_PREDICATES.some((predicate) => predicate(body));
-
-export const resolveWww = <TCtx>(
+export const resolveWwwAuthenticate = <TCtx>(
   options: McpHandlerOptions<TCtx>,
-  req: Request,
+  request: Request,
 ): WwwAuthenticateOptions =>
   typeof options.wwwAuthenticate === "function"
-    ? options.wwwAuthenticate(req)
+    ? options.wwwAuthenticate(request)
     : options.wwwAuthenticate;
 
 /**
@@ -101,12 +106,14 @@ export const resolveWww = <TCtx>(
  * responses by id sees `null` on every 401 regardless of what it sent.
  */
 export const unauthorized = (
-  www: WwwAuthenticateOptions,
+  wwwAuthenticate: WwwAuthenticateOptions,
   message = "Unauthorized",
   id: JsonRpcId = null,
 ): Response =>
-  jsonResponse(rpcError(id, JSONRPC_UNAUTHORIZED, message), 401, {
-    "WWW-Authenticate": wwwAuthenticateHeader(www),
+  jsonResponse({
+    data: rpcError(id, JSONRPC_UNAUTHORIZED, message),
+    status: 401,
+    headers: { "WWW-Authenticate": wwwAuthenticateHeader(wwwAuthenticate) },
   });
 
 /**
@@ -139,108 +146,4 @@ export const safeAudit = async <TCtx>(
 export const hasScope = (principal: Principal, scope: string | undefined): boolean => {
   if (!scope) return true;
   return principal.scopes.includes(scope) || principal.scopes.includes("*");
-};
-
-type MethodFn<TCtx> = (input: {
-  req: Request;
-  body: JsonRpcRequest;
-  id: JsonRpcId;
-  principal: Principal | null;
-  ctx: TCtx;
-  options: McpHandlerOptions<TCtx>;
-  /** Request start, for denial-path audit timing — see `dispatchRpc`. */
-  startedAt: number;
-}) => Promise<Response>;
-
-const METHODS = {
-  initialize: async ({ id, body, options }) =>
-    jsonResponse(
-      rpcResult(id, {
-        protocolVersion: pickProtocolVersion(body.params),
-        capabilities: { tools: {} },
-        serverInfo: options.serverInfo,
-        instructions: options.instructions ?? "",
-      }),
-    ),
-
-  ping: async ({ id }) => jsonResponse(rpcResult(id, {})),
-
-  "tools/list": async ({ id, options }) =>
-    jsonResponse(rpcResult(id, { tools: options.registry.list() })),
-
-  "tools/call": async ({ req, body, id, principal, ctx, options, startedAt }) => {
-    const params = body.params ?? {};
-    const name = String(params.name ?? "");
-    const rawArgs = params.arguments;
-    const args =
-      rawArgs !== null && typeof rawArgs === "object" && !Array.isArray(rawArgs)
-        ? (rawArgs as Record<string, unknown>)
-        : {};
-
-    const tool = options.registry.get(name);
-    if (tool?.scope && (!principal || !hasScope(principal, tool.scope))) {
-      await safeAudit(options, {
-        method: "tools/call",
-        tool: name,
-        principalId: principal?.id,
-        ok: false,
-        error: "missing_scope",
-        durationMs: Date.now() - startedAt,
-      });
-      return unauthorized(resolveWww(options, req), `Missing scope: ${tool.scope}`, id);
-    }
-
-    const started = Date.now();
-    const result = await options.registry.call(name, ctx, args);
-    await safeAudit(options, {
-      method: "tools/call",
-      tool: name,
-      principalId: principal?.id,
-      ok: !result.isError,
-      error: result.isError ? result.content[0]?.text : undefined,
-      durationMs: Date.now() - started,
-    });
-    return jsonResponse(rpcResult(id, result));
-  },
-} as const satisfies Record<string, MethodFn<unknown>>;
-
-export const dispatchRpc = async <TCtx>(input: {
-  req: Request;
-  body: JsonRpcRequest;
-  options: McpHandlerOptions<TCtx>;
-  publicMethods: Set<string>;
-  /** Request start (captured in `createMcpHandler.fetch`), for denial-path audit timing. */
-  startedAt: number;
-}): Promise<Response> => {
-  const { req, body, options, publicMethods, startedAt } = input;
-  const method = body.method ?? "";
-  // Notifications omit `id`; explicit null is a valid request id (JSON-RPC).
-  const id = body.id === undefined ? null : body.id;
-  const toolName = method === "tools/call" ? String(body.params?.name ?? "") : undefined;
-
-  const isPublic = publicMethods.has(method) || method.startsWith("notifications/");
-  let principal: Principal | null = null;
-
-  if (!isPublic) {
-    principal = await options.ports.authenticate(req, method, toolName);
-    if (!principal) {
-      await safeAudit(options, {
-        method,
-        tool: toolName,
-        ok: false,
-        error: "unauthorized",
-        durationMs: Date.now() - startedAt,
-      });
-      return unauthorized(resolveWww(options, req), undefined, id);
-    }
-  }
-
-  const handler = (METHODS as Record<string, MethodFn<TCtx> | undefined>)[method];
-  if (!handler) {
-    if (body.id === undefined) return emptyResponse(202);
-    return jsonResponse(rpcError(body.id, JSONRPC_METHOD_NOT_FOUND, `Method not found: ${method}`));
-  }
-
-  const ctx = await options.ports.context(req, principal);
-  return handler({ req, body, id, principal, ctx, options, startedAt });
 };

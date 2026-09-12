@@ -2,14 +2,16 @@ import { BodyTooLargeError } from "../body.js";
 import { requireHttpMethod } from "../http.js";
 import { firstClientAuthError, readClientAuth } from "./clientauth.js";
 import { type AuthCodeRecord, consumeAuthCode } from "./codes.js";
+import { advertisedScopes, oauthError, resolveSecret, tokenResponse } from "./config.js";
 import { GRANT_TYPES, type GrantType, OAUTH_ERRORS } from "./constants.js";
 import { verifyPkceS256 } from "./pkce.js";
 import { readOAuthBody } from "./reqbody.js";
 import { canonicalResource, firstResourceError, resourcesEqual } from "./resource.js";
-import { type OAuthRouterOptions, oauthError, resolveSecret, tokenResponse } from "./types.js";
+import { firstScopeError, formatScope, requestedScopes } from "./scope.js";
+import type { OAuthRouterOptions } from "./types.js";
 
 const POST_ONLY = new Set(["POST"]);
-const NO_CORS = { cors: false } as const;
+const corsDisabled = { cors: false } as const;
 
 type GrantInput = {
   request: Request;
@@ -33,15 +35,26 @@ const handleRefresh: GrantHandler = async ({ body, options, expectedResource, cl
   const resourceError = firstResourceError(body.resource ?? "", expectedResource);
   if (resourceError) return resourceError;
 
-  // ponytail: AS cannot verify the refresh token's original audience; the port owns that check.
+  // RFC 6749 §6: client MAY request a reduced scope; omit → host keeps original.
+  let requestedScope: string | undefined;
+  if (body.scope !== undefined && body.scope !== "") {
+    const requested = requestedScopes(body.scope, []);
+    const scopeError = firstScopeError(requested, advertisedScopes(options));
+    if (scopeError) return scopeError;
+    requestedScope = formatScope(requested);
+  }
+
+  // ponytail: AS cannot verify the refresh token's original audience/grant; the port owns those checks.
   const minted = await options.ports.refreshAccessToken({
     refreshToken,
     clientId,
     resource: expectedResource,
+    ...(requestedScope !== undefined ? { scope: requestedScope } : {}),
   });
   if (!minted) {
     return oauthError(OAUTH_ERRORS.invalidGrant, 400, "invalid refresh_token");
   }
+  // Scope in the response must come from the port — not the client's request.
   return tokenResponse(minted);
 };
 
@@ -113,14 +126,14 @@ export const handleToken = async (
   request: Request,
   options: OAuthRouterOptions,
 ): Promise<Response> => {
-  const methodError = requireHttpMethod(request, POST_ONLY, NO_CORS);
+  const methodError = requireHttpMethod(request, POST_ONLY, corsDisabled);
   if (methodError) return methodError;
 
   let body: Record<string, string>;
   try {
     body = await readOAuthBody(request);
-  } catch (exc) {
-    if (exc instanceof BodyTooLargeError) {
+  } catch (caught) {
+    if (caught instanceof BodyTooLargeError) {
       return oauthError(OAUTH_ERRORS.invalidRequest, 413, "request body too large");
     }
     return oauthError(OAUTH_ERRORS.invalidRequest, 400, "malformed request body");

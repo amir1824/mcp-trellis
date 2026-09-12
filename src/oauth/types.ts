@@ -1,7 +1,6 @@
-import { jsonResponse } from "../http.js";
 import type { CodeStore } from "./codes.js";
 import type { ConsentOptions } from "./consent.js";
-import { DEFAULT_SCOPE, type TokenEndpointAuthMethod } from "./constants.js";
+import type { TokenEndpointAuthMethod } from "./constants.js";
 import type { RedirectAllowlistOptions } from "./redirect.js";
 
 export type OAuthUser = { id: string };
@@ -72,6 +71,13 @@ export type RefreshAccessTokenInput = {
    * Implementations MUST reject refresh tokens not originally issued for this resource.
    */
   resource: string;
+  /**
+   * RFC 6749 §6 — optional scope reduction requested by the client.
+   * When set, the library validates against advertised `scopes` only.
+   * Implementations MUST also reject any scope outside what was originally
+   * granted to this refresh token (the library cannot see opaque RTs).
+   */
+  scope?: string;
 };
 
 export type RevokeTokenInput = {
@@ -130,24 +136,6 @@ export type OAuthPorts = {
   audit?: ((entry: OAuthAuditEntry) => void | Promise<void>) | undefined;
 };
 
-/**
- * Invoke `ports.audit`, swallowing any failure — the OAuth-side twin of
- * `methods.ts`'s `safeAudit`. No timeout wrapper here: unlike the MCP
- * side, nothing here is expected to be a slow, request-scoped metrics
- * call in the same way, and adding one would be complexity without a
- * demonstrated need — revisit if that changes.
- */
-export const safeOAuthAudit = async (
-  options: OAuthRouterOptions,
-  entry: OAuthAuditEntry,
-): Promise<void> => {
-  try {
-    await options.ports.audit?.(entry);
-  } catch {
-    // Intentionally ignored.
-  }
-};
-
 export type OAuthRouterOptions = {
   ports: OAuthPorts;
   resourcePath?: string;
@@ -191,123 +179,16 @@ export type OAuthRouterOptions = {
    * not under `ports`. Omit for the built-in hardened interstitial.
    */
   consent?: ConsentOptions;
-};
-
-/** Default true — see `OAuthRouterOptions.allowUnregisteredClients`. */
-export const unregisteredClientsAllowed = (options: OAuthRouterOptions): boolean =>
-  options.allowUnregisteredClients !== false;
-
-/** Default true since 1.0 — see `OAuthRouterOptions.requireRegisteredClients`. */
-export const registeredClientsRequired = (options: OAuthRouterOptions): boolean =>
-  options.requireRegisteredClients !== false;
-
-/** Scopes this AS advertises and is willing to grant. */
-export const advertisedScopes = (options: OAuthRouterOptions): string[] =>
-  options.scopes ?? [DEFAULT_SCOPE];
-
-/**
- * Scopes granted when a client omits `scope`. Falls back to the full
- * advertised set only when that set has at most one entry — see
- * `assertScopeConfig`, which forbids the ambiguous multi-scope case at
- * construction instead of silently over-granting here.
- */
-export const defaultScopes = (options: OAuthRouterOptions): string[] =>
-  options.defaultScopes ?? advertisedScopes(options);
-
-/**
- * A multi-scope server MUST say what an omitted `scope` grants — the
- * alternative (silently granting everything advertised) is exactly the
- * escalation least-privilege scoping exists to prevent.
- */
-export const assertScopeConfig = (options: OAuthRouterOptions): void => {
-  const advertised = advertisedScopes(options);
-  if (advertised.length > 1 && !options.defaultScopes) {
-    throw new Error(
-      "scopes has more than one entry — defaultScopes must say what an omitted " +
-        "scope request grants (e.g. defaultScopes: [] for least privilege)",
-    );
-  }
-  const unknown = (options.defaultScopes ?? []).find((scope) => !advertised.includes(scope));
-  if (unknown !== undefined) {
-    throw new Error(`defaultScopes contains "${unknown}", which is not in scopes`);
-  }
-};
-
-/**
- * `codeSecret` can forge an auth code for any userId/scope/resource, so a
- * weak or copy-pasted one is a full authorization bypass, not a footgun.
- * The literals here are the exact strings this package's own docs/examples
- * publish — copy-paste is the realistic failure mode.
- */
-const MIN_CODE_SECRET_LENGTH = 32;
-const DENYLISTED_CODE_SECRETS = new Set([
-  "e2e-code-secret-value",
-  "change-me",
-  "test-secret-value",
-]);
-const GENERATE_HINT = "generate one with `openssl rand -base64 32`";
-
-export const assertCodeSecret = (secret: string): void => {
-  // Checked before the length rule so a denylisted literal is always named
-  // for what it is, even if a future literal happens to be 32+ characters.
-  if (DENYLISTED_CODE_SECRETS.has(secret)) {
-    throw new Error(
-      `codeSecret must not be a literal published in this package's own docs or examples — ${GENERATE_HINT}`,
-    );
-  }
-  if (secret.length < MIN_CODE_SECRET_LENGTH) {
-    throw new Error(
-      `codeSecret must be at least ${MIN_CODE_SECRET_LENGTH} characters (got ${secret.length}) — ${GENERATE_HINT}`,
-    );
-  }
-};
-
-export const resolveSecret = async (ports: OAuthPorts, req: Request): Promise<string> => {
-  const secret =
-    typeof ports.codeSecret === "string" ? ports.codeSecret : await ports.codeSecret(req);
-  assertCodeSecret(secret);
-  return secret;
+  /**
+   * Max time to wait for `ports.audit` before responding anyway. Default
+   * 1000ms — same guarantee as `McpHandlerOptions.auditTimeoutMs`.
+   */
+  auditTimeoutMs?: number;
 };
 
 /**
  * An OAuth error's code and description without a `Response` built yet —
- * lets a caller choose delivery: `oauthError` below for a direct JSON
- * body, or a redirect to the client's own callback (RFC 6749 §4.1.2.1,
- * see `authorize.ts` and `consent.ts`).
+ * lets a caller choose delivery: `oauthError` for a direct JSON body, or a
+ * redirect to the client's own callback (RFC 6749 §4.1.2.1).
  */
 export type OAuthErrorInfo = { code: string; description: string };
-
-export const oauthError = (error: string, status: number, description?: string): Response =>
-  jsonResponse(
-    description ? { error, error_description: description } : { error },
-    status,
-    undefined,
-    { cors: false },
-  );
-
-const UNREGISTERED_CLIENT_DESCRIPTION =
-  "unknown client_id — this server only serves pre-registered clients";
-
-/** Direct JSON error when this AS does not serve unknown `client_id`s. */
-export const unregisteredClientError = (
-  options: OAuthRouterOptions,
-  reject: { code: string; status: number },
-): Response | null => {
-  if (unregisteredClientsAllowed(options)) return null;
-  return oauthError(reject.code, reject.status, UNREGISTERED_CLIENT_DESCRIPTION);
-};
-
-/** `grantedScope` is what the auth code carried; the port may narrow it further. */
-export const tokenResponse = (minted: MintedToken, grantedScope?: string): Response =>
-  jsonResponse(
-    {
-      access_token: minted.accessToken,
-      token_type: minted.tokenType ?? "bearer",
-      expires_in: minted.expiresIn,
-      scope: minted.scope ?? grantedScope ?? DEFAULT_SCOPE,
-      ...(minted.refreshToken ? { refresh_token: minted.refreshToken } : {}),
-    },
-    200,
-    undefined,
-    { cors: false },
-  );

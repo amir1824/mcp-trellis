@@ -1,6 +1,14 @@
 import { BodyTooLargeError, DEFAULT_OAUTH_BODY_LIMIT, readBoundedText } from "../body.js";
 import { INTERNAL_ERROR, jsonResponse, requireHttpMethod } from "../http.js";
+import { safeOAuthAudit } from "./audit.js";
 import { handleAuthorize } from "./authorize.js";
+import {
+  assertCodeSecret,
+  assertScopeConfig,
+  oauthError,
+  resolveSecret,
+  unregisteredClientsAllowed,
+} from "./config.js";
 import { handleConsent } from "./consent.js";
 import { GRANT_TYPES, OAUTH_ERRORS } from "./constants.js";
 import { CLAUDE_CALLBACK, isAllowedRedirectUri } from "./redirect.js";
@@ -8,16 +16,7 @@ import { DEFAULT_RESOURCE_PATH, normalizeConfiguredPath } from "./resource.js";
 import { handleRevoke } from "./revoke.js";
 import { seal } from "./sealed.js";
 import { handleToken } from "./token.js";
-import {
-  assertCodeSecret,
-  assertScopeConfig,
-  type ClientAssertion,
-  type OAuthRouterOptions,
-  oauthError,
-  resolveSecret,
-  safeOAuthAudit,
-  unregisteredClientsAllowed,
-} from "./types.js";
+import type { ClientAssertion, OAuthRouterOptions } from "./types.js";
 import { handleWellKnown } from "./wellknown.js";
 
 export type {
@@ -46,8 +45,8 @@ const handleRegister = async (request: Request, options: OAuthRouterOptions): Pr
         .map((u) => String(u))
         .filter((uri) => isAllowedRedirectUri(uri, options.redirect));
     }
-  } catch (exc) {
-    if (exc instanceof BodyTooLargeError) {
+  } catch (caught) {
+    if (caught instanceof BodyTooLargeError) {
       return oauthError(OAUTH_ERRORS.invalidRequest, 413, "request body too large");
     }
     redirectUris = [];
@@ -79,12 +78,14 @@ const handleRegister = async (request: Request, options: OAuthRouterOptions): Pr
   const clientId = await seal(secret, "client", { redirectUris } satisfies ClientAssertion);
 
   return jsonResponse({
-    client_id: clientId,
-    client_id_issued_at: Math.floor(Date.now() / 1000),
-    token_endpoint_auth_method: "none",
-    redirect_uris: redirectUris,
-    grant_types: [GRANT_TYPES.authorizationCode],
-    response_types: ["code"],
+    data: {
+      client_id: clientId,
+      client_id_issued_at: Math.floor(Date.now() / 1000),
+      token_endpoint_auth_method: "none",
+      redirect_uris: redirectUris,
+      grant_types: [GRANT_TYPES.authorizationCode],
+      response_types: ["code"],
+    },
   });
 };
 
@@ -170,7 +171,7 @@ export const createOAuthRouter = (options: OAuthRouterOptions): OAuthRouter => {
 
         const route = routes[path];
         return route ? await route(request) : null;
-      } catch (exc) {
+      } catch (caught) {
         // A host port (resolveUser/mintAccessToken/clientStore/...) threw,
         // or codeSecret failed validation (assertCodeSecret, e.g. a
         // per-request function returning something too short). We only
@@ -179,7 +180,7 @@ export const createOAuthRouter = (options: OAuthRouterOptions): OAuthRouter => {
         // gets the generic server_error; ports.audit gets the real reason.
         await safeOAuthAudit(options, {
           event: "server_error",
-          reason: exc instanceof Error ? exc.message : String(exc),
+          reason: caught instanceof Error ? caught.message : String(caught),
         });
         return oauthError(OAUTH_ERRORS.serverError, 500, INTERNAL_ERROR);
       }
@@ -195,6 +196,12 @@ export {
   issueAuthCode,
   newClientId,
 } from "./codes.js";
+export {
+  advertisedScopes,
+  defaultScopes,
+  registeredClientsRequired,
+  unregisteredClientsAllowed,
+} from "./config.js";
 export type { ConsentOptions, ConsentRequest } from "./consent.js";
 export { buildErrorRedirectUrl } from "./consent.js";
 export {
@@ -235,10 +242,4 @@ export type {
   RefreshAccessTokenInput,
   RegisteredClient,
   RevokeTokenInput,
-} from "./types.js";
-export {
-  advertisedScopes,
-  defaultScopes,
-  registeredClientsRequired,
-  unregisteredClientsAllowed,
 } from "./types.js";

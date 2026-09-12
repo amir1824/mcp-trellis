@@ -59,6 +59,7 @@ jobs:
       - run: npm test
       - run: npm run test:e2e
       - run: npm run build
+      - run: npm run smoke:pack
 
       - name: Prove OIDC is available to this job
         run: |

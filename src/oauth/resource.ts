@@ -1,7 +1,8 @@
 /** Canonical MCP resource URI (RFC 8707 / RFC 9728). */
 
+import { oauthError } from "./config.js";
 import { OAUTH_ERRORS } from "./constants.js";
-import { type OAuthErrorInfo, oauthError } from "./types.js";
+import type { OAuthErrorInfo } from "./types.js";
 
 export const DEFAULT_RESOURCE_PATH = "/mcp";
 

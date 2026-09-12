@@ -1,122 +1,82 @@
 # mcp-trellis
 
-[![CI](https://github.com/amir1824/mcp-trellis/actions/workflows/ci.yml/badge.svg)](https://github.com/amir1824/mcp-trellis/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+**Build a secure remote MCP server using the auth your app already has.**
 
-**Host-agnostic MCP + OAuth ports** — you bring the runtime and IdP; the library owns the connector protocol.
+Claude, ChatGPT and Gemini. No new database. No auth vendor. One TypeScript package.
 
-Web-standard `Request` → `Response`. Same handler on Cloudflare Workers, Next.js App Router, Deno, Bun, and Node HTTP via `mcp-trellis/node`. Zero runtime dependencies.
+Your app already knows who the user is. Connecting an AI client still means wiring OAuth discovery, registration, consent, PKCE and token exchange. **mcp-trellis handles that protocol work**, while your app keeps login, token verification and data permissions.
 
-## Why mcp-trellis
+```mermaid
+flowchart LR
+  A[Existing app: login + user data] --> B[mcp-trellis: OAuth + MCP]
+  B --> C[AI client: user-scoped tools]
+```
 
-The whole connector stack in one package — MCP handler **and** OAuth 2.1 authorization server — with no database and no vendor signup. You own login, token minting, and storage; the library owns the protocol.
-
-| | mcp-trellis | Official MCP SDK | `workers-oauth-provider` | `@mcpauth/auth` | Auth0 / Clerk / Authlete |
-|---|---|---|---|---|---|
-| MCP handler | ✅ | ✅ | ❌ | ❌ | ❌ |
-| OAuth 2.1 authorization server | ✅ | ❌ bring your own | ✅ | ✅ | ✅ |
-| Runtime | any Web-standard | any Web-standard | Workers only | Node | — |
-| Database | none | — | KV (optional) | **required** | — |
-| Runtime dependencies | **zero** | several | several | several | — |
-| Self-hosted | ✅ | ✅ | ✅ | ✅ | ❌ SaaS |
-| Named connector profiles (Claude / Gemini / Codex), enforced | ✅ | ❌ | ❌ | ❌ | ❌ |
-
-Prefer the official SDK when you already have a separate AS. Prefer
-`workers-oauth-provider` when you want Cloudflare's Workers-only
-implementation. Prefer a managed IdP when you'd rather pay than operate one.
-
-Named alternatives in the same problem space:
-
-- **`@mcpauth/auth` / `getmcpauth` / `mcp-auth`** — OAuth for MCP, typically
-  with a DB or a different runtime/stack assumption. mcp-trellis is the
-  **zero-dependency** option that ships the MCP handler **and** the OAuth 2.1
-  AS in one package.
-- **`fastmcp-oauth`** — OAuth helpers around FastMCP. mcp-trellis is host-agnostic
-  (`Request`/`Response`) and not tied to a particular MCP framework.
-
-## Requirements
-
-- **Node ≥ 20** for Node hosts (global WebCrypto in ESM)
-- Or any runtime with WebCrypto + `fetch` (Workers, Deno, Bun)
-
-## Install
+## The 30-second example
 
 ```bash
 npm install mcp-trellis
 ```
 
-## Quick start
-
-One call mounts the MCP endpoint, the OAuth authorization server, and both discovery documents:
-
 ```ts
 import { createMcpApp } from "mcp-trellis";
+import { existingAuth, projectsForUser } from "./your-app.js";
 
-const app = createMcpApp({
-  serverInfo: { name: "demo", version: "1.0.0" },
+export const mcp = createMcpApp<{ userId: string }>({
+  serverInfo: { name: "my-saas", version: "1.0.0" },
   clients: ["claude"],
-  tools: [
-    {
-      name: "echo",
-      description: "Echo text back",
-      inputSchema: {
-        type: "object",
-        properties: { text: { type: "string" } },
-        required: ["text"],
-      },
-      scope: "mcp",
-      handler: (_ctx, args) => String(args.text ?? ""),
-    },
-  ],
-  auth: {
-    codeSecret: process.env.OAUTH_CODE_SECRET!,
-    resolveUser: async (req) => getSession(req),
-    loginUrl: (_req, next) => `/login?next=${encodeURIComponent(next)}`,
-    mintAccessToken: async ({ userId, scope, resource }) => ({
-      // Embed `resource` as the token audience (RFC 8707).
-      accessToken: await issueUserToken(userId, { aud: resource, scope }),
-      expiresIn: 3600,
-    }),
-    verifyToken: async (token) => {
-      const claims = await readUserToken(token);
-      if (!claims) return null;
-      return {
-        userId: claims.sub,
-        scopes: claims.scope.split(" "),
-        audience: claims.aud,
-      };
-    },
-  },
+  auth: existingAuth,
+  context: (_request, user) => ({ userId: user!.id }),
+  tools: [{
+    name: "list_my_projects",
+    description: "List the signed-in user's projects",
+    inputSchema: { type: "object", properties: {} },
+    scope: "mcp",
+    handler: async ({ userId }) => JSON.stringify(await projectsForUser(userId)),
+  }],
 });
-
-export default { fetch: (req: Request) => app.fetch(req) };
 ```
 
-You return the token's `audience`; **the library rejects tokens minted for a different resource** before any tool runs. Details: [docs/security.md](docs/security.md).
+This shows the integration shape: `your-app.js` is your application's auth/data adapter, not a supplied module. **[Run the complete Node demo](examples/saas-demo/README.md)** for working login, token handling and two users with different projects. Node ≥20 is required.
 
-A real `/authorize` walk includes an approval step: a resolved session doesn't redirect straight back with a code, it renders a consent screen first (built in, or your own via `consent`). First-time integrators clicking through by hand should expect an HTML page there, not an immediate redirect — see [Consent](docs/guide.md#consent).
+[![npm](https://img.shields.io/npm/v/mcp-trellis)](https://www.npmjs.com/package/mcp-trellis)
+[![CI](https://github.com/amir1824/mcp-trellis/actions/workflows/ci.yml/badge.svg)](https://github.com/amir1824/mcp-trellis/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Smoke-test with `initialize` (public — no Bearer needed):
+## When should I use this?
 
-```bash
-curl -s http://127.0.0.1:8787/mcp \
-  -H 'content-type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}'
-```
+- Your TypeScript app already has login and user data, and you want to expose user-scoped tools through remote MCP.
+- You want the MCP handler and OAuth authorization endpoints in one package, with zero runtime dependencies.
+- You want to reuse your runtime and existing storage. The library does not require a new database; production deployments still need appropriate replay, token and session storage.
 
-```json
-{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"serverInfo":{"name":"demo","version":"1.0.0"},"instructions":""}}
-```
+## When should I not use this?
 
-## Clients
+- You need a managed identity provider, a user database, or a login system built for you.
+- You already have an MCP server and authorization server that meet your needs.
+- You need protocol features or client combinations absent from the [verified support table](docs/compatibility.md).
+- You only need a local stdio tool with no remote authorization flow.
 
-| Client | Registration | Token endpoint auth | Notes |
-|--------|--------------|---------------------|-------|
-| `claude` | Dynamic (DCR), public + PKCE | `none` | Claude Custom Connectors callback allowlisted |
-| `gemini` | **Pre-registered**, confidential | `client_secret_basic`, `client_secret_post` | Supply `auth.clientStore` |
-| `codex` | OAuth 2.1 per MCP auth spec, public + PKCE | `none` | ChatGPT / Codex share one contract |
+## Run a real tool
 
-Pre-registered clients, DCR enforcement, and `clientStore` wiring: [docs/guide.md#clients](docs/guide.md#clients).
+The [Project desk demo](examples/saas-demo/README.md) proves the local flow: app login → OAuth consent → access token → `list_my_projects`. Alice sees her two projects; Bob sees his own. It uses fictional data and an independent app session.
+
+**Live Claude / ChatGPT recordings are still pending.** Automated OAuth tests are not evidence that a current vendor client has connected successfully.
+
+## Clients and compatibility
+
+| Profile | Implemented server flow | Live client evidence |
+|---|---|---|
+| Claude (`claude`) | Dynamic registration, public client, PKCE | Pending |
+| ChatGPT / Codex (`codex`) | Public client, PKCE; configure exact hosted callback as needed | Pending for each product |
+| Gemini Enterprise (`gemini`) | Pre-registered client; secret basic/post; requires `clientStore` | Pending; does not imply every Gemini product |
+
+Protocol versions implemented: `2024-11-05`, `2025-03-26`, `2025-06-18`; default `2025-06-18`. See [test evidence and verification checklist](docs/compatibility.md), [client configuration](docs/guide.md#clients) and [troubleshooting](docs/troubleshooting.md).
+
+## Integrate with your app
+
+Implement `resolveUser`, `loginUrl`, `mintAccessToken` and `verifyToken` using your app's existing auth. Mint tokens for the requested MCP resource and return their verified `audience`; the library rejects an audience mismatch before executing tools. A logged-in user still sees an OAuth consent screen. Your data layer must enforce ownership and tenant permissions. Browser callers that send an `Origin` header need `allowedRequestOrigins` (fail-closed by default) — see [security.md](docs/security.md).
+
+[Node demo](examples/saas-demo/README.md) · [Host recipes](docs/guide.md) · [Security responsibilities](docs/security.md) · [npm](https://www.npmjs.com/package/mcp-trellis)
 
 ## Architecture
 

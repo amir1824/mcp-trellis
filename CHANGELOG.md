@@ -3,7 +3,43 @@
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [1.1.0] - 2026-09-12
+
+Breaking for browser-origin callers — read before upgrading if a browser sends
+`Origin` to `/mcp`. Also breaking for hosts that call the exported
+`jsonResponse` helper with positional arguments.
+
+### Changed
+
+- **Browser `Origin` on MCP is fail-closed by default.** Requests that send an
+  `Origin` header are rejected with **403** unless
+  `allowedRequestOrigins` admits them (`["*"]` to opt out). Requests with no
+  `Origin` (native / server-to-server connectors) are unchanged. Distinct from
+  Node Host `allowedOrigins` on `asNodeHandler`. See [security.md](docs/security.md).
+- **`jsonResponse` takes a single object** `{ data, status?, headers?, cors? }`
+  instead of positional `(data, status?, headers?, options?)`. Export type
+  `JsonResponseInput` from the package root.
+- **npm `files` no longer ships all of `docs/`.** Published docs are
+  `docs/*.md` and `docs/diagrams/**` only — launch media under `docs/launch/`
+  stays out of the tarball.
+
+### Added
+
+- **`allowedRequestOrigins`** on `createMcpHandler` / `createMcpApp` — browser
+  Origin allowlist for MCP Streamable HTTP; matching Origins are reflected in
+  CORS (with `Vary: Origin`) instead of always `*`. Rejected Origins audit as
+  `origin_not_allowed`.
+- **JSON-RPC request shape checks** before routing: non-string `method` and
+  non-scalar `id` → `-32600`; requests that omit `id` are treated as
+  notifications (**202**, no body), including `ping`.
+- **Refresh token `scope` (RFC 6749 §6):** optional reduced scope on the token
+  request is validated against advertised scopes and forwarded as
+  `RefreshAccessTokenInput.scope`. The token response `scope` comes from the
+  host port only. Hosts **MUST** enforce ⊆ originally granted scopes (opaque
+  refresh token — same pattern as `resource`).
+- **`auditTimeoutMs` on `OAuthRouterOptions`** (default 1000ms) — `safeOAuthAudit`
+  races the OAuth audit hook like MCP `safeAudit`. `createMcpApp`'s
+  `auditTimeoutMs` applies to both sides.
 
 ## [1.0.0] - "Freeze"
 

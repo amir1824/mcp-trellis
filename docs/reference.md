@@ -72,9 +72,11 @@ Anything else → JSON-RPC `-32601`. Capabilities advertise **tools only**.
 | `instructions` | no | Returned on `initialize` |
 | `publicMethods` | no | Default: `initialize`, `ping`, notifications |
 | `auditTimeoutMs` | no | Max time to wait for `ports.audit` before responding anyway. Default 1000ms — see [security.md](security.md) |
+| `allowedRequestOrigins` | no | Browser `Origin` allowlist. Omitted → reject any present `Origin`; no header → allow; `"*"` opts out. Distinct from Node Host `allowedOrigins` |
 
 `ports.audit` fires on tool results and on auth denials (bad token, missing
-scope, query-string token), plus the 500 path when a host port throws.
+scope, query-string token, rejected browser Origin as `origin_not_allowed`),
+plus the 500 path when a host port throws.
 Malformed JSON, bad `jsonrpc`, unsupported `MCP-Protocol-Version`, oversized
 bodies, and batch requests return JSON-RPC client errors without an audit
 entry — those are protocol errors, not auth denials.
@@ -94,6 +96,7 @@ entry — those are protocol errors, not auth denials.
 | `requireRegisteredClients` | `true` | Reject any `client_id` that isn't `clientStore`-resolved or self-sealed via this server's own `/register` (see [security.md](security.md)). DCR stays mounted, unlike `allowUnregisteredClients: false` — a client just can't invent an id out of thin air |
 | `redirect` | see below | Redirect URI allowlist |
 | `consent` | see below | Consent/approval policy for `/authorize` |
+| `auditTimeoutMs` | `1000` | Max time to wait for `ports.audit` before responding anyway — same as MCP |
 
 **`redirect` (`RedirectAllowlistOptions`):**
 
@@ -129,7 +132,7 @@ validated against their own bound `redirectUris`.
 | `allowLoopback` | `true` | Allow loopback redirects — see the narrowed `http:`-only, no-`localhost` behavior in [security.md](security.md) |
 | `consent` | built-in interstitial | Same as `OAuthRouterOptions.consent` — override the approval page or pre-approve specific client ids |
 | `requireRegisteredClients` | `true` | Same as `OAuthRouterOptions.requireRegisteredClients` — inventing a public `client_id` is rejected unless it comes from `clientStore` or this server's own `/register` |
-| `instructions`, `validateArgs`, `onToolError`, `context`, `audit`, `auditTimeoutMs` | — | Passed through. `audit`/`auditTimeoutMs` are the MCP-side (tool-call) hook — the OAuth side has its own, separate `auth.audit` (see [Ports](guide.md#ports--what-you-implement)) |
+| `instructions`, `validateArgs`, `onToolError`, `context`, `audit`, `auditTimeoutMs`, `allowedRequestOrigins` | — | Passed through to the MCP handler. `audit`/`auditTimeoutMs` are the MCP-side (tool-call) hook — the OAuth side has its own, separate `auth.audit` (see [Ports](guide.md#ports--what-you-implement)); `auditTimeoutMs` also applies to OAuth audit |
 
 ## Exports
 
@@ -144,7 +147,7 @@ validated against their own bound `redirectUris`.
 - `validateAgainstSchema`, `JSON_SCHEMA_TYPES`, `SUPPORTED_SCHEMA_KEYWORDS`, `IGNORED_SCHEMA_KEYWORDS`, `unsupportedKeywords`, `missingObjectType`
 - `rpcResult`, `rpcError`, JSON-RPC error constants
 - `pickProtocolVersion`, `PROTOCOL_VERSIONS`, `DEFAULT_PROTOCOL_VERSION`, `ASSUMED_HEADER_PROTOCOL_VERSION`
-- `jsonResponse`, `emptyResponse`, `optionsResponse`, `corsHeaders`, `methodNotAllowed`
+- `jsonResponse({ data, status?, headers?, cors? })`, `emptyResponse`, `optionsResponse`, `corsHeaders`, `methodNotAllowed` — type `JsonResponseInput` exported
 - Types: `McpApp`, `McpAppOptions`, `McpAppAuth`, `VerifiedToken`, `ClientName`, `ClientProfile`, `McpHandler`, `McpHandlerOptions`, `McpPorts`, `Principal`, `AuditEntry`, `ServerInfo`, `ToolDef`, `ToolHandler`, `ToolResult`, `ToolRegistry`, `JsonSchema`, `StandardSchemaV1`, `DefineToolOptions`, `ApiToolOptions`, `ApiRequest`, `ClientStore`, `RegisteredClient`, `CodeStore`, `MintAccessTokenInput`, `RefreshAccessTokenInput`, `RevokeTokenInput`, `MintedToken`, `OAuthUser`, …
 
 </details>

@@ -12,11 +12,11 @@
 import { BodyTooLargeError } from "../body.js";
 import { requireHttpMethod } from "../http.js";
 import { issueAuthCode } from "./codes.js";
+import { oauthError, resolveSecret } from "./config.js";
 import { OAUTH_ERRORS } from "./constants.js";
 import { readOAuthBody } from "./reqbody.js";
 import { seal, unseal } from "./sealed.js";
-import type { OAuthUser, RegisteredClient } from "./types.js";
-import { type OAuthRouterOptions, oauthError, resolveSecret } from "./types.js";
+import type { OAuthRouterOptions, OAuthUser, RegisteredClient } from "./types.js";
 
 const POST_ONLY = new Set(["POST"]);
 const CONSENT_TICKET_TTL_MS = 300_000;
@@ -200,8 +200,8 @@ export const handleConsent = async (
   let body: Record<string, string>;
   try {
     body = await readOAuthBody(request);
-  } catch (exc) {
-    if (exc instanceof BodyTooLargeError) {
+  } catch (caught) {
+    if (caught instanceof BodyTooLargeError) {
       return oauthError(OAUTH_ERRORS.invalidRequest, 413, "request body too large");
     }
     return oauthError(OAUTH_ERRORS.invalidRequest, 400, "malformed request body");

@@ -1,11 +1,12 @@
 import { jsonResponse, requireHttpMethod } from "../http.js";
+import { unregisteredClientsAllowed } from "./config.js";
 import { GRANT_TYPES } from "./constants.js";
 import {
   authorizationServerMetadata,
   type GrantType,
   protectedResourceMetadata,
 } from "./metadata.js";
-import { type OAuthPorts, type OAuthRouterOptions, unregisteredClientsAllowed } from "./types.js";
+import type { OAuthPorts, OAuthRouterOptions } from "./types.js";
 
 const GET_ONLY = new Set(["GET"]);
 
@@ -48,5 +49,5 @@ export const handleWellKnown = async (
   const body = paths.prmPaths.has(path)
     ? protectedResourceMetadata(metaOpts)
     : authorizationServerMetadata(metaOpts);
-  return jsonResponse(body);
+  return jsonResponse({ data: body });
 };

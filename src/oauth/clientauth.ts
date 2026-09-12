@@ -1,18 +1,14 @@
 /** Token-endpoint client authentication (RFC 6749 §2.3.1). */
 
+import { safeOAuthAudit } from "./audit.js";
+import { oauthError, resolveSecret, unregisteredClientsAllowed } from "./config.js";
 import {
   OAUTH_ERRORS,
   TOKEN_ENDPOINT_AUTH_METHODS,
   type TokenEndpointAuthMethod,
 } from "./constants.js";
 import { verifyClientSecret } from "./secrethash.js";
-import {
-  type OAuthRouterOptions,
-  oauthError,
-  resolveSecret,
-  safeOAuthAudit,
-  unregisteredClientsAllowed,
-} from "./types.js";
+import type { OAuthRouterOptions } from "./types.js";
 
 export type ClientAuth = {
   clientId: string;

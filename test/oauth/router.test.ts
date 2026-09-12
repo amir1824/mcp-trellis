@@ -288,6 +288,130 @@ describe("oauth router grant advertisement", () => {
     assert.equal(refreshedResource, RESOURCE);
   });
 
+  it("refresh grant forwards a reduced scope to the port", async () => {
+    let refreshedScope: string | undefined = "unset";
+    const router = createOAuthRouter({
+      scopes: ["read", "write"],
+      defaultScopes: ["read"],
+      ports: {
+        ...basePorts,
+        refreshAccessToken: async (input) => {
+          refreshedScope = input.scope;
+          return {
+            accessToken: "refreshed",
+            expiresIn: 3600,
+            ...(input.scope !== undefined ? { scope: input.scope } : {}),
+          };
+        },
+      },
+    });
+    const res = await router.tryHandle(
+      new Request("https://example.test/mcp/oauth/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          grant_type: "refresh_token",
+          refresh_token: "rt",
+          client_id: "cid",
+          resource: RESOURCE,
+          scope: "read",
+        }),
+      }),
+    );
+    assert.ok(res);
+    assert.equal(res.status, 200);
+    assert.equal(refreshedScope, "read");
+    const body = (await res.json()) as { scope: string };
+    assert.equal(body.scope, "read");
+  });
+
+  it("refresh token response scope comes from the port, not the client request alone", async () => {
+    const router = createOAuthRouter({
+      scopes: ["read", "write"],
+      defaultScopes: ["read"],
+      ports: {
+        ...basePorts,
+        refreshAccessToken: async () => ({
+          accessToken: "refreshed",
+          expiresIn: 3600,
+          // Host narrowed further / omitted echo of the client wish list.
+          scope: "read",
+        }),
+      },
+    });
+    const res = await router.tryHandle(
+      new Request("https://example.test/mcp/oauth/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          grant_type: "refresh_token",
+          refresh_token: "rt",
+          client_id: "cid",
+          resource: RESOURCE,
+          scope: "read write",
+        }),
+      }),
+    );
+    assert.ok(res);
+    assert.equal(res.status, 200);
+    assert.equal(((await res.json()) as { scope: string }).scope, "read");
+  });
+
+  it("refresh grant rejects a scope outside the advertised set", async () => {
+    const router = createOAuthRouter({
+      scopes: ["read", "write"],
+      defaultScopes: ["read"],
+      ports: {
+        ...basePorts,
+        refreshAccessToken: async () => ({ accessToken: "refreshed", expiresIn: 3600 }),
+      },
+    });
+    const res = await router.tryHandle(
+      new Request("https://example.test/mcp/oauth/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          grant_type: "refresh_token",
+          refresh_token: "rt",
+          client_id: "cid",
+          resource: RESOURCE,
+          scope: "admin",
+        }),
+      }),
+    );
+    assert.ok(res);
+    assert.equal(res.status, 400);
+    assert.equal(((await res.json()) as { error: string }).error, "invalid_scope");
+  });
+
+  it("refresh grant omits scope on the port input when the client does not send one", async () => {
+    let sawScopeKey = false;
+    const router = createOAuthRouter({
+      ports: {
+        ...basePorts,
+        refreshAccessToken: async (input) => {
+          sawScopeKey = "scope" in input && input.scope !== undefined;
+          return { accessToken: "refreshed", expiresIn: 3600, scope: "mcp" };
+        },
+      },
+    });
+    const res = await router.tryHandle(
+      new Request("https://example.test/mcp/oauth/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          grant_type: "refresh_token",
+          refresh_token: "rt",
+          client_id: "cid",
+          resource: RESOURCE,
+        }),
+      }),
+    );
+    assert.ok(res);
+    assert.equal(res.status, 200);
+    assert.equal(sawScopeKey, false);
+  });
+
   it("authorize redirects to login when no user", async () => {
     const router = createOAuthRouter({
       ports: {

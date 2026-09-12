@@ -1,6 +1,14 @@
 import { requireHttpMethod } from "../http.js";
 import { issueAuthCode } from "./codes.js";
 import {
+  advertisedScopes,
+  defaultScopes,
+  oauthError,
+  registeredClientsRequired,
+  resolveSecret,
+  unregisteredClientError,
+} from "./config.js";
+import {
   buildCodeRedirectUrl,
   buildErrorRedirectUrl,
   isPreApproved,
@@ -13,16 +21,7 @@ import { isAllowedRedirectUri, type RedirectAllowlistOptions } from "./redirect.
 import { canonicalResource, resourceErrorInfo } from "./resource.js";
 import { formatScope, requestedScopes, scopeErrorInfo } from "./scope.js";
 import { unseal } from "./sealed.js";
-import {
-  advertisedScopes,
-  type ClientAssertion,
-  defaultScopes,
-  type OAuthRouterOptions,
-  oauthError,
-  registeredClientsRequired,
-  resolveSecret,
-  unregisteredClientError,
-} from "./types.js";
+import type { ClientAssertion, OAuthRouterOptions } from "./types.js";
 
 const GET_ONLY = new Set(["GET"]);
 /** Reflected into `Location` on denial — an unbounded `state` is a header-size DoS knob. */

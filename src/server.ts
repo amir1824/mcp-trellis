@@ -38,6 +38,8 @@ export {
 export {
   corsHeaders,
   emptyResponse,
+  type JsonResponseInput,
+  type JsonResponseOptions,
   jsonResponse,
   methodNotAllowed,
   optionsResponse,
