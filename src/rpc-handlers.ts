@@ -2,6 +2,7 @@
 
 import { jsonResponse } from "./http.js";
 import {
+  JSONRPC_INVALID_PARAMS,
   JSONRPC_METHOD_NOT_FOUND,
   type JsonRpcId,
   type JsonRpcRequest,
@@ -10,6 +11,7 @@ import {
 } from "./jsonrpc.js";
 import {
   hasScope,
+  insufficientScope,
   type McpHandlerOptions,
   type Principal,
   resolveWwwAuthenticate,
@@ -42,8 +44,13 @@ const METHODS = {
 
   ping: async ({ id }) => jsonResponse({ data: rpcResult(id, {}) }),
 
-  "tools/list": async ({ id, options }) =>
-    jsonResponse({ data: rpcResult(id, { tools: options.registry.list() }) }),
+  "tools/list": async ({ id, options, principal }) => {
+    const allowScope = options.hideToolsOutsideScope
+      ? (scope: string | null | undefined) =>
+          !scope || (principal ? hasScope(principal, scope) : false)
+      : undefined;
+    return jsonResponse({ data: rpcResult(id, { tools: options.registry.list(allowScope) }) });
+  },
 
   "tools/call": async ({ req, body, id, principal, ctx, options, startedAt }) => {
     const params = body.params ?? {};
@@ -55,7 +62,26 @@ const METHODS = {
         : {};
 
     const tool = options.registry.get(name);
-    if (tool?.scope && (!principal || !hasScope(principal, tool.scope))) {
+    if (!tool) {
+      // A name that doesn't refer to any registered tool is a malformed
+      // request, not a tool execution outcome — MCP distinguishes protocol
+      // errors (a standard JSON-RPC error response) from a tool's own
+      // isError: true result, and "no such tool" belongs to the former.
+      // `ToolRegistry.call`'s own "Unknown tool: …" text-result fallback
+      // stays as is for direct callers of that API outside this dispatch.
+      await safeAudit(options, {
+        method: "tools/call",
+        tool: name,
+        principalId: principal?.id,
+        ok: false,
+        error: "unknown_tool",
+        durationMs: Date.now() - startedAt,
+      });
+      return jsonResponse({
+        data: rpcError(id, JSONRPC_INVALID_PARAMS, `Unknown tool: ${name}`),
+      });
+    }
+    if (tool.scope && (!principal || !hasScope(principal, tool.scope))) {
       await safeAudit(options, {
         method: "tools/call",
         tool: name,
@@ -64,7 +90,14 @@ const METHODS = {
         error: "missing_scope",
         durationMs: Date.now() - startedAt,
       });
-      return unauthorized(resolveWwwAuthenticate(options, req), `Missing scope: ${tool.scope}`, id);
+      const wwwAuthenticate = resolveWwwAuthenticate(options, req);
+      // No principal at all (only reachable when a host adds "tools/call" to
+      // `publicMethods`) → 401, nothing was presented to authenticate with.
+      // A principal that authenticated but lacks the tool's scope → 403
+      // insufficient_scope (RFC 6750 §3.1) — see `insufficientScope`'s doc.
+      return principal
+        ? insufficientScope(wwwAuthenticate, tool.scope, id)
+        : unauthorized(wwwAuthenticate, `Missing scope: ${tool.scope}`, id);
     }
 
     const toolStartedAt = Date.now();

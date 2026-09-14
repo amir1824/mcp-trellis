@@ -60,7 +60,26 @@ const headerValue = (value: string | string[] | undefined): string | undefined =
 const lastForwarded = (value: string | undefined): string | undefined =>
   value?.split(",").pop()?.trim();
 
-/** Derive origin from Host, or from forwarded headers when trustProxy. */
+/**
+ * A Host (or `X-Forwarded-*`) header that can't safely become an origin —
+ * missing, carrying a path/query/fragment/credentials, malformed, or a
+ * non-`http(s)` scheme. Distinct from a generic `Error` so `asNodeHandler`
+ * can answer this with a client-facing 400 instead of the same 500 it gives
+ * an actual unexpected failure.
+ */
+export class InvalidOriginError extends Error {}
+
+/** A bare `host[:port]` must not carry any of these — they'd mean a path, query, fragment, or credentials smuggled into what should be just the authority. */
+const HOST_HEADER_STRUCTURAL_CHARS = /[/?#@\\]/;
+
+/**
+ * Derive origin from Host, or from forwarded headers when `trustProxy`.
+ * Always normalized and validated through `URL` — the previous
+ * `${proto}://${host}` template trusted the header verbatim, so a Host
+ * carrying a path (`evil.test/../trusted.test`) or credentials
+ * (`user:pass@evil.test`) built a string that merely *looked* like an
+ * origin, and a non-`http(s)` `X-Forwarded-Proto` was never rejected.
+ */
 export const resolveOrigin = (req: NodeRequestLike, options: ResolveOriginOptions = {}): string => {
   const trustProxy = options.trustProxy === true;
   const proto = trustProxy
@@ -70,19 +89,72 @@ export const resolveOrigin = (req: NodeRequestLike, options: ResolveOriginOption
     ? lastForwarded(headerValue(req.headers["x-forwarded-host"])) || headerValue(req.headers.host)
     : headerValue(req.headers.host);
   if (!host) {
-    throw new Error(
+    throw new InvalidOriginError(
       "Cannot resolve origin: pass options.origin or set Host" +
         (trustProxy ? " / X-Forwarded-Host" : ""),
     );
   }
-  return `${proto}://${host}`;
+  if (HOST_HEADER_STRUCTURAL_CHARS.test(host)) {
+    throw new InvalidOriginError(
+      `Cannot resolve origin: Host header "${host}" must be a bare host[:port], not a full URL`,
+    );
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(`${proto}://${host}`);
+  } catch {
+    throw new InvalidOriginError(`Cannot resolve origin: Host header "${host}" is not valid`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new InvalidOriginError(
+      `Cannot resolve origin: unsupported protocol "${parsed.protocol}"`,
+    );
+  }
+  return parsed.origin;
 };
 
-const toBodyInit = (body: unknown): BodyInit | undefined => {
+const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" &&
+  value !== null &&
+  !Array.isArray(value) &&
+  !(value instanceof Uint8Array);
+
+const isFormContentType = (contentType: string | undefined): boolean =>
+  (contentType ?? "").toLowerCase().includes("application/x-www-form-urlencoded");
+
+const appendFormValue = (params: URLSearchParams, key: string, value: unknown): void => {
+  if (Array.isArray(value)) {
+    for (const entry of value) appendFormValue(params, key, entry);
+    return;
+  }
+  if (value === undefined || value === null) return;
+  params.append(key, typeof value === "string" ? value : String(value));
+};
+
+/** Re-serialize a pre-parsed `express.urlencoded()`-shaped body back to `a=1&b=2`. */
+const objectToUrlEncoded = (body: Record<string, unknown>): string => {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(body)) appendFormValue(params, key, value);
+  return params.toString();
+};
+
+/**
+ * `req.body` from a body-parsing middleware (Express `json()`/`urlencoded()`,
+ * multer, …) arrives as an already-parsed object, not raw bytes — the
+ * `Content-Type` header says what shape it should round-trip back to.
+ * Always `JSON.stringify`-ing it (the pre-1.1.1 behavior) sent
+ * `application/x-www-form-urlencoded` bodies to `/token` and `/consent` as a
+ * single bogus JSON-shaped form key nothing downstream could parse, silently
+ * breaking every OAuth exchange behind `express.urlencoded()`.
+ */
+const toBodyInit = (body: unknown, contentType?: string): BodyInit | undefined => {
   if (body === undefined || body === null) return undefined;
   if (typeof body === "string") return body;
   if (body instanceof Uint8Array) {
     return body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer;
+  }
+  if (isPlainRecord(body) && isFormContentType(contentType)) {
+    return objectToUrlEncoded(body);
   }
   return JSON.stringify(body);
 };
@@ -106,7 +178,16 @@ export const toWebRequest = (req: NodeRequestLike, options: ToWebRequestOptions)
   }
 
   const body = options.body !== undefined ? options.body : req.body;
-  const bodyInit = toBodyInit(body);
+  const bodyInit = toBodyInit(body, headers.get("content-type") ?? undefined);
+  if (isPlainRecord(body)) {
+    // The re-serialized body's byte length no longer matches whatever
+    // Content-Length the original (already-parsed) request declared — a
+    // stale header here can make the body-size precheck reject a body well
+    // within the cap, or let an oversized one slip past it (still caught by
+    // the streaming fallback either way).
+    headers.delete("content-length");
+    headers.delete("transfer-encoding");
+  }
   return new Request(url, {
     method,
     headers,
@@ -162,11 +243,23 @@ export const readNodeBody = async (
   return bytes.byteLength > 0 ? bytes : undefined;
 };
 
+/**
+ * Unlike every other header, `Set-Cookie` cannot be folded into one
+ * comma-joined value — a cookie's own `Expires` attribute contains a comma.
+ * The Fetch `Headers` object accordingly keeps duplicates apart internally
+ * and exposes them via `getSetCookie()`, but `forEach`/`entries()` still
+ * yields one `"set-cookie"` pair per cookie — calling `res.setHeader` once
+ * per pair (as for any other header) makes each call overwrite the last,
+ * silently dropping every cookie but the final one.
+ */
 export const sendWebResponse = async (res: NodeResponseLike, response: Response): Promise<void> => {
   res.statusCode = response.status;
   response.headers.forEach((value, key) => {
+    if (key.toLowerCase() === "set-cookie") return;
     res.setHeader(key, value);
   });
+  const cookies = response.headers.getSetCookie();
+  if (cookies.length > 0) res.setHeader("set-cookie", cookies);
   res.end(new Uint8Array(await response.arrayBuffer()));
 };
 
@@ -228,6 +321,12 @@ export const asNodeHandler = (
         sendJsonError(res, 413, payloadTooLargeBody(path), () => {
           req.destroy?.();
         });
+        return;
+      }
+      if (exc instanceof InvalidOriginError) {
+        // Bad client input (a malformed or missing Host / X-Forwarded-*),
+        // not a server fault — 400, not the generic 500 below.
+        sendJsonError(res, 400, JSON.stringify({ error: "origin not allowed" }));
         return;
       }
       sendJsonError(res, 500, JSON.stringify({ error: INTERNAL_ERROR }));

@@ -29,6 +29,13 @@ export const defaultScopes = (options: OAuthRouterOptions): string[] =>
  * A multi-scope server MUST say what an omitted `scope` grants — the
  * alternative (silently granting everything advertised) is exactly the
  * escalation least-privilege scoping exists to prevent.
+ *
+ * This controls only what a *token* is granted at authorize time —
+ * `defaultScopes: []` still leaves any tool that omits `ToolDef.scope`
+ * callable by a principal holding zero scopes, since that check happens
+ * per tool-call, not here. `createMcpApp` has the matching guard on the
+ * tool side: it refuses to construct with an unscoped tool once `scopes`
+ * has more than one entry (`assertToolScopesConfigured` in `app.ts`).
  */
 export const assertScopeConfig = (options: OAuthRouterOptions): void => {
   const advertised = advertisedScopes(options);
@@ -73,11 +80,27 @@ export const assertCodeSecret = (secret: string): void => {
   }
 };
 
-export const resolveSecret = async (ports: OAuthPorts, request: Request): Promise<string> => {
-  const secret =
-    typeof ports.codeSecret === "string" ? ports.codeSecret : await ports.codeSecret(request);
-  assertCodeSecret(secret);
-  return secret;
+/**
+ * Resolves `codeSecret` to a non-empty key list — a single string becomes a
+ * one-element array. The **first** entry is the one every caller here uses
+ * to seal new material or hash new client secrets; the full array is what a
+ * caller trying to unseal/verify existing material tries in order (see
+ * `unsealAny`, `verifyClientSecretAny`). Every entry is validated the same
+ * way a lone string always was.
+ */
+export const resolveSecrets = async (
+  ports: OAuthPorts,
+  request: Request,
+): Promise<readonly [string, ...string[]]> => {
+  const resolved =
+    typeof ports.codeSecret === "function" ? await ports.codeSecret(request) : ports.codeSecret;
+  const secrets = Array.isArray(resolved) ? resolved : [resolved];
+  if (secrets.length === 0) {
+    throw new Error("codeSecret must resolve to at least one key, not an empty array");
+  }
+  secrets.forEach(assertCodeSecret);
+  // Cast is sound: the length check above guarantees at least one element.
+  return secrets as [string, ...string[]];
 };
 
 export const oauthError = (error: string, status: number, description?: string): Response =>

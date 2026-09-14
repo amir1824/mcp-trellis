@@ -6,7 +6,7 @@ import {
   assertCodeSecret,
   assertScopeConfig,
   oauthError,
-  resolveSecret,
+  resolveSecrets,
   unregisteredClientsAllowed,
 } from "./config.js";
 import { handleConsent } from "./consent.js";
@@ -29,27 +29,69 @@ export type {
 
 const POST_ONLY = new Set(["POST"]);
 
+/**
+ * RFC 7591 doesn't cap `redirect_uris`, but this server seals the whole
+ * list into the `client_id` it hands back (see below) — that `client_id`
+ * then travels as an `/authorize` query parameter on every future request,
+ * a place with real, if informal, length ceilings (browsers, proxies,
+ * access logs). A client legitimately needs a handful of callback URLs at
+ * most; this bounds the sealed payload rather than trusting an
+ * unauthenticated caller's array length.
+ */
+const MAX_REGISTER_REDIRECT_URIS = 10;
+
 const handleRegister = async (request: Request, options: OAuthRouterOptions): Promise<Response> => {
   const methodError = requireHttpMethod(request, POST_ONLY);
   if (methodError) return methodError;
 
-  let suppliedRedirectUris = false;
-  let redirectUris: string[] = [];
+  let text: string;
   try {
-    const text = await readBoundedText(request, DEFAULT_OAUTH_BODY_LIMIT);
-    const body = JSON.parse(text) as Record<string, unknown>;
-    const raw = body.redirect_uris;
-    if (Array.isArray(raw)) {
-      suppliedRedirectUris = true;
-      redirectUris = raw
-        .map((u) => String(u))
-        .filter((uri) => isAllowedRedirectUri(uri, options.redirect));
-    }
+    text = await readBoundedText(request, DEFAULT_OAUTH_BODY_LIMIT);
   } catch (caught) {
     if (caught instanceof BodyTooLargeError) {
       return oauthError(OAUTH_ERRORS.invalidRequest, 413, "request body too large");
     }
-    redirectUris = [];
+    return oauthError(OAUTH_ERRORS.invalidClientMetadata, 400, "malformed request body");
+  }
+
+  // Malformed JSON, or a body that isn't a JSON object, previously fell
+  // through to "no redirect_uris supplied" and silently registered the
+  // Claude-callback default — a client whose request was never actually
+  // understood got back what looked like a successful registration instead
+  // of an error explaining why.
+  let body: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("not a JSON object");
+    }
+    body = parsed as Record<string, unknown>;
+  } catch {
+    return oauthError(
+      OAUTH_ERRORS.invalidClientMetadata,
+      400,
+      "request body must be a JSON object",
+    );
+  }
+
+  let suppliedRedirectUris = false;
+  let redirectUris: string[] = [];
+  const raw = body.redirect_uris;
+  if (raw !== undefined) {
+    if (!Array.isArray(raw)) {
+      return oauthError(OAUTH_ERRORS.invalidClientMetadata, 400, "redirect_uris must be an array");
+    }
+    if (raw.length > MAX_REGISTER_REDIRECT_URIS) {
+      return oauthError(
+        OAUTH_ERRORS.invalidClientMetadata,
+        400,
+        `redirect_uris must have at most ${MAX_REGISTER_REDIRECT_URIS} entries`,
+      );
+    }
+    suppliedRedirectUris = true;
+    redirectUris = raw
+      .map((u) => String(u))
+      .filter((uri) => isAllowedRedirectUri(uri, options.redirect));
   }
 
   // No redirect_uris in the body: fall back to the Claude callback only if
@@ -74,8 +116,14 @@ const handleRegister = async (request: Request, options: OAuthRouterOptions): Pr
   // self-verifying assertion of the redirect_uris this call just validated.
   // `/authorize` unseals it and binds the client to exactly this list,
   // the same protection a stored registration would give a pre-registered id.
-  const secret = await resolveSecret(options.ports, request);
-  const clientId = await seal(secret, "client", { redirectUris } satisfies ClientAssertion);
+  // Always sealed with the *primary* (first) codeSecret — never an older
+  // rotation entry — so every newly issued client_id is verifiable with
+  // the fewest possible keys going forward.
+  const secrets = await resolveSecrets(options.ports, request);
+  const clientId = await seal(secrets[0], "client", {
+    redirectUris,
+    iat: Math.floor(Date.now() / 1000),
+  } satisfies ClientAssertion);
 
   return jsonResponse({
     data: {
@@ -104,21 +152,30 @@ export const createOAuthRouter = (options: OAuthRouterOptions): OAuthRouter => {
     );
   }
 
-  // Function-form codeSecret is re-validated on every call in resolveSecret,
-  // since its value can vary per request; a string form is fixed for the
-  // life of this router, so fail fast at construction instead of at the
-  // first request.
+  // Function-form codeSecret is re-validated on every call in resolveSecrets,
+  // since its value can vary per request; a string or array form is fixed
+  // for the life of this router, so fail fast at construction instead of at
+  // the first request.
   if (typeof options.ports.codeSecret === "string") {
     assertCodeSecret(options.ports.codeSecret);
+  } else if (Array.isArray(options.ports.codeSecret)) {
+    if (options.ports.codeSecret.length === 0) {
+      throw new Error("codeSecret array must not be empty — at least one key is required");
+    }
+    options.ports.codeSecret.forEach(assertCodeSecret);
   }
   assertScopeConfig(options);
 
   // Normalized once here, not per request — "/mcp/" and "/mcp" must never
   // produce divergent canonical resources (canonicalResource doesn't strip
   // a trailing slash itself; normalizeResource, used to compare an
-  // incoming request's resource against it, does).
+  // incoming request's resource against it, does). oauthPath gets the same
+  // treatment — a trailing slash there previously reached the routing
+  // table, `handleWellKnown`, and `authorize.ts`'s consent form action
+  // completely unnormalized, each potentially disagreeing about the exact
+  // path once one of the three had a slash the others didn't expect.
   const resourcePath = normalizeConfiguredPath(options.resourcePath ?? DEFAULT_RESOURCE_PATH);
-  const oauthPath = options.oauthPath ?? "/mcp/oauth";
+  const oauthPath = normalizeConfiguredPath(options.oauthPath ?? "/mcp/oauth");
 
   if (oauthPath === resourcePath) {
     throw new Error(
@@ -140,18 +197,26 @@ export const createOAuthRouter = (options: OAuthRouterOptions): OAuthRouter => {
     `/.well-known/oauth-authorization-server${resourcePath}`,
   ]);
 
+  // Every handler below gets the *normalized* resourcePath/oauthPath, not
+  // whatever raw values the caller passed (or omitted) — so a handler
+  // reading `options.oauthPath` (e.g. `authorize.ts`'s consent form action)
+  // always agrees with the routing table built from `oauthPath` above,
+  // without re-deriving its own default or normalization.
+  const normalizedOptions: OAuthRouterOptions = { ...options, resourcePath, oauthPath };
+
   const routes: Record<string, RouteHandler> = {
     ...(unregisteredClientsAllowed(options)
       ? {
-          [`${oauthPath}/register`]: (request: Request) => handleRegister(request, options),
+          [`${oauthPath}/register`]: (request: Request) =>
+            handleRegister(request, normalizedOptions),
         }
       : {}),
-    [`${oauthPath}/authorize`]: (request) => handleAuthorize(request, options),
-    [`${oauthPath}/consent`]: (request) => handleConsent(request, options),
-    [`${oauthPath}/token`]: (request) => handleToken(request, options),
+    [`${oauthPath}/authorize`]: (request) => handleAuthorize(request, normalizedOptions),
+    [`${oauthPath}/consent`]: (request) => handleConsent(request, normalizedOptions),
+    [`${oauthPath}/token`]: (request) => handleToken(request, normalizedOptions),
     ...(options.ports.revokeToken
       ? {
-          [`${oauthPath}/revoke`]: (request: Request) => handleRevoke(request, options),
+          [`${oauthPath}/revoke`]: (request: Request) => handleRevoke(request, normalizedOptions),
         }
       : {}),
   };
@@ -161,7 +226,7 @@ export const createOAuthRouter = (options: OAuthRouterOptions): OAuthRouter => {
       try {
         const path = new URL(request.url).pathname;
 
-        const known = await handleWellKnown(request, options, {
+        const known = await handleWellKnown(request, normalizedOptions, {
           prmPaths,
           asPaths,
           resourcePath,
@@ -178,7 +243,7 @@ export const createOAuthRouter = (options: OAuthRouterOptions): OAuthRouter => {
         // ever reach here on a route this router owns, so answer with a
         // real error instead of throwing out of `tryHandle` — the caller
         // gets the generic server_error; ports.audit gets the real reason.
-        await safeOAuthAudit(options, {
+        await safeOAuthAudit(normalizedOptions, {
           event: "server_error",
           reason: caught instanceof Error ? caught.message : String(caught),
         });

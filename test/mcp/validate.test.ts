@@ -124,6 +124,30 @@ describe("type-less object schema (previously a silent pass-everything bug)", ()
   });
 });
 
+describe("required/properties use Object.hasOwn, not `in` — no Object.prototype leakage", () => {
+  it("still reports a prototype-named property as required when the argument omits it", () => {
+    const schema = { type: "object", properties: {}, required: ["toString"] };
+    // `"toString" in {}` is true (inherited from Object.prototype) — must
+    // still be reported as missing since {} never *owns* it.
+    const errors = validateAgainstSchema({}, schema);
+    assert.deepEqual(errors, ["args.toString: required"]);
+  });
+
+  it("accepts an argument that actually owns a prototype-named property", () => {
+    const schema = { type: "object", properties: {}, required: ["toString"] };
+    assert.deepEqual(validateAgainstSchema({ toString: "hi" }, schema), []);
+  });
+
+  it("does not validate an unset properties[key] against the inherited prototype value", () => {
+    // If this used `key in record`, `constructor` would appear to be
+    // "present" (as Object's own constructor function) and get validated
+    // against the string schema below — it must be skipped instead, since
+    // {} never owns a "constructor" property of its own.
+    const schema = { type: "object", properties: { constructor: { type: "string" } } };
+    assert.deepEqual(validateAgainstSchema({}, schema), []);
+  });
+});
+
 describe("union type arrays", () => {
   const nullableString = { type: ["string", "null"] };
 

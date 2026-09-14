@@ -159,11 +159,17 @@ const rangeErrors: TypeChecker = (value, schema, path) => {
 const objectErrors: TypeChecker = (value, schema, path) => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return [];
   const record = value as Record<string, unknown>;
+  // `Object.hasOwn`, not `key in record` — `in` also matches inherited
+  // Object.prototype members (`toString`, `constructor`, `hasOwnProperty`,
+  // …), so `required: ["toString"]` would pass against `{}` and a
+  // `properties: { constructor: {...} }` entry would validate against the
+  // prototype's own `constructor`, neither of which is an actual argument
+  // the caller supplied.
   const requiredErrors = (schema.required ?? [])
-    .filter((key) => !(key in record))
+    .filter((key) => !Object.hasOwn(record, key))
     .map((key) => `${path}.${key}: required`);
   const propertyErrors = Object.entries(schema.properties ?? {})
-    .filter(([key]) => key in record)
+    .filter(([key]) => Object.hasOwn(record, key))
     .flatMap(([key, propSchema]) => validateNode(record[key], propSchema, `${path}.${key}`));
   return [...requiredErrors, ...propertyErrors];
 };

@@ -9,18 +9,19 @@
 import { isAllowedOrigin } from "../src/adapters/origins.js";
 import { createMcpApp } from "../src/app.js";
 import type { ToolDef } from "../src/registry.js";
+import { signToken, verifyToken } from "./signed-token.js";
 
 type Env = {
   OAUTH_CODE_SECRET: string;
+  // A separate secret from OAUTH_CODE_SECRET — signing access tokens and
+  // sealing auth codes are different jobs; reusing one key for both means a
+  // compromise of either leaks the other's blast radius too.
+  ACCESS_TOKEN_SECRET: string;
 };
 
 type Ctx = { userId: string };
 
-type TokenPayload = {
-  userId: string;
-  scopes: string[];
-  audience: string;
-};
+const ACCESS_TOKEN_TTL_MS = 3_600_000;
 
 const ping: ToolDef<Ctx> = {
   name: "ping_db",
@@ -30,18 +31,6 @@ const ping: ToolDef<Ctx> = {
   handler: async () => "ok",
 };
 
-const encodeToken = (payload: TokenPayload): string =>
-  btoa(JSON.stringify(payload)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-
-const decodeToken = (token: string): TokenPayload | null => {
-  try {
-    const padded = token.replace(/-/g, "+").replace(/_/g, "/");
-    return JSON.parse(atob(padded)) as TokenPayload;
-  } catch {
-    return null;
-  }
-};
-
 const buildApp = (env: Env) =>
   createMcpApp<Ctx>({
     serverInfo: { name: "worker-example", version: "1.0.0" },
@@ -49,18 +38,33 @@ const buildApp = (env: Env) =>
     clients: ["claude"],
     auth: {
       codeSecret: env.OAUTH_CODE_SECRET,
+      // resolveUser is a placeholder that always succeeds as one fixed
+      // user — this example has no real login system to wire up. A real
+      // Worker's resolveUser reads the caller's actual session (its own
+      // cookie/JWT, or a call out to your IdP) and returns null when
+      // nobody is logged in (→ redirect to loginUrl). Do not ship this
+      // fixed-user placeholder — it authenticates every caller as "u1".
       resolveUser: async () => ({ id: "u1" }),
       loginUrl: (req, next) => `${new URL(req.url).origin}/login?next=${encodeURIComponent(next)}`,
       mintAccessToken: async ({ userId, scope, resource }) => ({
-        accessToken: encodeToken({
+        accessToken: await signToken(env.ACCESS_TOKEN_SECRET, {
           userId,
           scopes: scope.split(" "),
           audience: resource,
+          exp: Date.now() + ACCESS_TOKEN_TTL_MS,
         }),
-        expiresIn: 3600,
+        expiresIn: ACCESS_TOKEN_TTL_MS / 1000,
         scope,
       }),
-      verifyToken: async (token) => decodeToken(token),
+      verifyToken: async (token) => verifyToken(env.ACCESS_TOKEN_SECRET, token),
+      // No `codeStore` is passed, so auth codes and consent tickets fall
+      // back to the library's process-local in-memory store — fine for a
+      // single Worker isolate during development, but Workers can run many
+      // concurrent isolates in production, and an isolate can be evicted
+      // between requests. Pass a `codeStore` backed by a Durable Object or
+      // D1 before deploying — **not** Workers KV alone, which cannot do the
+      // atomic single-use check auth-code redemption needs (see
+      // `examples/stores.ts`'s `kvCodeStore` docstring).
     },
     context: async (_req, principal) => ({ userId: principal?.id ?? "" }),
   });

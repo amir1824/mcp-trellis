@@ -1,11 +1,12 @@
 import { requireHttpMethod } from "../http.js";
+import { safeOAuthAudit } from "./audit.js";
 import { issueAuthCode } from "./codes.js";
 import {
   advertisedScopes,
   defaultScopes,
   oauthError,
   registeredClientsRequired,
-  resolveSecret,
+  resolveSecrets,
   unregisteredClientError,
 } from "./config.js";
 import {
@@ -18,9 +19,9 @@ import {
 } from "./consent.js";
 import { OAUTH_ERRORS } from "./constants.js";
 import { isAllowedRedirectUri, type RedirectAllowlistOptions } from "./redirect.js";
-import { canonicalResource, resourceErrorInfo } from "./resource.js";
+import { canonicalResource, normalizeConfiguredPath, resourceErrorInfo } from "./resource.js";
 import { formatScope, requestedScopes, scopeErrorInfo } from "./scope.js";
-import { unseal } from "./sealed.js";
+import { unsealAny } from "./sealed.js";
 import type { ClientAssertion, OAuthRouterOptions } from "./types.js";
 
 const GET_ONLY = new Set(["GET"]);
@@ -82,12 +83,22 @@ export const handleAuthorize = async (
   }
 
   const registered = (await options.ports.clientStore?.get(clientId)) ?? null;
-  const secret = await resolveSecret(options.ports, request);
+  const secrets = await resolveSecrets(options.ports, request);
   // Additive: a `client_id` this server itself sealed via `/register` is
   // bound to its own redirect_uris exactly like a pre-registered client,
   // without ever being written to storage. Non-sealed ids unseal to null
   // and keep today's behavior.
-  const assertion = registered ? null : await unseal<ClientAssertion>(secret, "client", clientId);
+  const unsealedAssertion = registered
+    ? null
+    : await unsealAny<ClientAssertion>(secrets, "client", clientId);
+  const assertion = unsealedAssertion?.value ?? null;
+  if (unsealedAssertion && unsealedAssertion.keyIndex > 0) {
+    await safeOAuthAudit(options, {
+      event: "legacy_code_secret_used",
+      clientId,
+      reason: `client assertion unsealed with codeSecret[${unsealedAssertion.keyIndex}]`,
+    });
+  }
 
   if (!registered && !assertion) {
     const unregistered = unregisteredClientError(options, {
@@ -156,7 +167,7 @@ export const handleAuthorize = async (
   if (!user) return redirectToLogin(request, url, options);
 
   if (isPreApproved(options, clientId, registered)) {
-    const code = await issueAuthCode(secret, {
+    const code = await issueAuthCode(secrets[0], {
       clientId,
       redirectUri,
       codeChallenge,
@@ -167,7 +178,7 @@ export const handleAuthorize = async (
     return secureRedirect(buildCodeRedirectUrl(redirectUri, code, state));
   }
 
-  const ticket = await issueConsentTicket(secret, {
+  const ticket = await issueConsentTicket(secrets[0], {
     clientId,
     redirectUri,
     codeChallenge,
@@ -184,6 +195,10 @@ export const handleAuthorize = async (
     resource: expectedResource,
     user,
     ticket,
-    oauthPath: options.oauthPath ?? "/mcp/oauth",
+    // `createOAuthRouter` always passes a pre-normalized `oauthPath`
+    // through; `normalizeConfiguredPath` here is defense in depth for a
+    // caller invoking `handleAuthorize` directly with a raw, un-normalized
+    // option (e.g. a trailing slash) — see `router.ts`'s `normalizedOptions`.
+    oauthPath: normalizeConfiguredPath(options.oauthPath ?? "/mcp/oauth"),
   });
 };

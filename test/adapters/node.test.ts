@@ -2,21 +2,24 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   asNodeHandler,
+  InvalidOriginError,
   type NodeRequestLike,
   type NodeResponseLike,
   resolveOrigin,
+  sendWebResponse,
   toWebRequest,
 } from "../../src/adapters/node.js";
 import { createMcpHandler } from "../../src/dispatch.js";
+import { createOAuthRouter } from "../../src/oauth/router.js";
 import { createToolRegistry } from "../../src/registry.js";
 
 type MockRes = NodeResponseLike & {
-  headers: Record<string, string>;
+  headers: Record<string, string | readonly string[]>;
   chunk: Uint8Array | string | undefined;
 };
 
 const mockRes = (): MockRes => {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string | readonly string[]> = {};
   let chunk: Uint8Array | string | undefined;
   const res: MockRes = {
     statusCode: 0,
@@ -25,7 +28,11 @@ const mockRes = (): MockRes => {
       return chunk;
     },
     setHeader(name, value) {
-      headers[name.toLowerCase()] = String(value);
+      // Real Node `res.setHeader` keeps an array value as an array (used for
+      // `Set-Cookie`) rather than stringifying it — matched here so tests
+      // can tell "one setHeader('set-cookie', [...])" apart from "N
+      // setHeader('set-cookie', ...) calls each overwriting the last".
+      headers[name.toLowerCase()] = Array.isArray(value) ? value : String(value);
     },
     end(body, callback) {
       chunk = body;
@@ -67,6 +74,91 @@ describe("resolveOrigin", () => {
 
   it("throws without host", () => {
     assert.throws(() => resolveOrigin({ headers: {} }), /Cannot resolve origin/);
+  });
+
+  it("throws InvalidOriginError specifically, not a generic Error", () => {
+    assert.throws(() => resolveOrigin({ headers: {} }), InvalidOriginError);
+  });
+
+  it("normalizes an explicit port and host casing through URL", () => {
+    const req: NodeRequestLike = { headers: { host: "APP.Example.COM:443" } };
+    // Port 443 is the default for https — URL.origin omits a default port.
+    assert.equal(resolveOrigin(req), "https://app.example.com");
+  });
+
+  it("rejects a Host header carrying a path — not a bare host[:port]", () => {
+    const req: NodeRequestLike = { headers: { host: "app.example.com/evil-path" } };
+    assert.throws(() => resolveOrigin(req), InvalidOriginError);
+  });
+
+  it("rejects a Host header carrying embedded credentials", () => {
+    const req: NodeRequestLike = { headers: { host: "user:pass@app.example.com" } };
+    assert.throws(() => resolveOrigin(req), InvalidOriginError);
+  });
+
+  it("rejects a Host header carrying a query or fragment", () => {
+    assert.throws(
+      () => resolveOrigin({ headers: { host: "app.example.com?x=1" } }),
+      InvalidOriginError,
+    );
+    assert.throws(
+      () => resolveOrigin({ headers: { host: "app.example.com#frag" } }),
+      InvalidOriginError,
+    );
+  });
+
+  it("rejects a non-http(s) X-Forwarded-Proto", () => {
+    const req: NodeRequestLike = {
+      headers: { host: "app.example.com", "x-forwarded-proto": "javascript" },
+    };
+    assert.throws(() => resolveOrigin(req, { trustProxy: true }), InvalidOriginError);
+  });
+
+  it("rejects a Host header that fails to parse as a URL authority", () => {
+    const req: NodeRequestLike = { headers: { host: "not a valid host" } };
+    assert.throws(() => resolveOrigin(req), InvalidOriginError);
+  });
+});
+
+describe("sendWebResponse", () => {
+  it("forwards every Set-Cookie, not just the last one", async () => {
+    const headers = new Headers();
+    headers.append("Set-Cookie", "a=1; Path=/");
+    headers.append("Set-Cookie", "b=2; Path=/");
+    const response = new Response("ok", { status: 200, headers });
+
+    const res = mockRes();
+    await sendWebResponse(res, response);
+
+    assert.deepEqual(res.headers["set-cookie"], ["a=1; Path=/", "b=2; Path=/"]);
+  });
+
+  it("still forwards a single Set-Cookie", async () => {
+    const headers = new Headers({ "Set-Cookie": "a=1; Path=/" });
+    const response = new Response("ok", { status: 200, headers });
+
+    const res = mockRes();
+    await sendWebResponse(res, response);
+
+    assert.deepEqual(res.headers["set-cookie"], ["a=1; Path=/"]);
+  });
+
+  it("omits Set-Cookie entirely when the response sets none", async () => {
+    const response = new Response("ok", { status: 200 });
+    const res = mockRes();
+    await sendWebResponse(res, response);
+    assert.equal("set-cookie" in res.headers, false);
+  });
+
+  it("still forwards ordinary headers unaffected by the Set-Cookie special-case", async () => {
+    const headers = new Headers({ "Content-Type": "text/plain" });
+    headers.append("Set-Cookie", "a=1");
+    const response = new Response("ok", { status: 200, headers });
+
+    const res = mockRes();
+    await sendWebResponse(res, response);
+
+    assert.equal(res.headers["content-type"], "text/plain");
   });
 });
 
@@ -235,6 +327,91 @@ describe("asNodeHandler", () => {
     assert.equal(web.url, "https://acme.example.com/.well-known/oauth-authorization-server");
   });
 
+  it("re-serializes a pre-parsed express.urlencoded() body back to form-encoding", async () => {
+    // What express.urlencoded() hands the handler for `grant_type=authorization_code&code=abc`.
+    const req: NodeRequestLike = {
+      method: "POST",
+      url: "/mcp/oauth/token",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: { grant_type: "authorization_code", code: "abc" },
+    };
+    const web = toWebRequest(req, { origin: "https://example.test" });
+    assert.equal(await web.text(), "grant_type=authorization_code&code=abc");
+  });
+
+  it("repeats an array-valued form field as repeated keys, not a JSON-stringified array", async () => {
+    const req: NodeRequestLike = {
+      method: "POST",
+      url: "/mcp/oauth/register",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: { redirect_uris: ["https://a.test/cb", "https://b.test/cb"] },
+    };
+    const web = toWebRequest(req, { origin: "https://example.test" });
+    const params = new URLSearchParams(await web.text());
+    assert.deepEqual(params.getAll("redirect_uris"), ["https://a.test/cb", "https://b.test/cb"]);
+  });
+
+  it("still JSON-stringifies a pre-parsed body when Content-Type is JSON", async () => {
+    const req: NodeRequestLike = {
+      method: "POST",
+      url: "/mcp/oauth/token",
+      headers: { "content-type": "application/json" },
+      body: { grant_type: "authorization_code", code: "abc" },
+    };
+    const web = toWebRequest(req, { origin: "https://example.test" });
+    assert.deepEqual(await web.json(), { grant_type: "authorization_code", code: "abc" });
+  });
+
+  it("drops a stale Content-Length when the body is re-serialized", () => {
+    const req: NodeRequestLike = {
+      method: "POST",
+      url: "/mcp/oauth/token",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "content-length": "999999",
+      },
+      body: { grant_type: "authorization_code", code: "abc" },
+    };
+    const web = toWebRequest(req, { origin: "https://example.test" });
+    assert.equal(web.headers.get("content-length"), null);
+  });
+
+  it("end-to-end: asNodeHandler + express-style pre-parsed body reaches /token as a real grant, not client_id required", async () => {
+    const oauth = createOAuthRouter({
+      requireRegisteredClients: false,
+      ports: {
+        codeSecret: "x".repeat(40),
+        resolveUser: async () => ({ id: "u1" }),
+        loginUrl: () => "/login",
+        mintAccessToken: async () => ({ accessToken: "a", expiresIn: 60 }),
+      },
+    });
+    const handler = asNodeHandler(
+      { fetch: async (req) => (await oauth.tryHandle(req)) ?? new Response(null, { status: 404 }) },
+      { origin: "https://example.test" },
+    );
+    const res = mockRes();
+    await handler(
+      {
+        method: "POST",
+        url: "/mcp/oauth/token",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: {
+          grant_type: "authorization_code",
+          code: "not-a-real-code",
+          client_id: "c1",
+          resource: "https://example.test/mcp",
+        },
+      },
+      res,
+    );
+    const text = typeof res.chunk === "string" ? res.chunk : new TextDecoder().decode(res.chunk);
+    const body = JSON.parse(text) as { error: string; error_description?: string };
+    // Reaching "invalid_grant" (not "invalid_request: client_id required") proves the
+    // pre-parsed object body was actually understood as a form body, not double-JSON-encoded.
+    assert.equal(body.error, "invalid_grant");
+  });
+
   it("requires origin or trustProxy", () => {
     assert.throws(() => asNodeHandler(mcp), /requires options.origin/);
   });
@@ -276,6 +453,26 @@ describe("asNodeHandler", () => {
       res,
     );
     assert.equal(res.statusCode, 200);
+  });
+
+  it("answers a malformed Host header with 400, not 500 — bad client input, not a server fault", async () => {
+    const handler = asNodeHandler(mcp, { trustProxy: true, allowedOrigins: ["*"] });
+    const res = mockRes();
+    await handler(
+      {
+        method: "POST",
+        url: "/mcp",
+        headers: {
+          host: "evil.example/../trusted.example",
+          "content-type": "application/json",
+        },
+        body: { jsonrpc: "2.0", id: 3, method: "ping" },
+      },
+      res,
+    );
+    assert.equal(res.statusCode, 400);
+    const body = JSON.parse(String(res.chunk)) as { error: string };
+    assert.equal(body.error, "origin not allowed");
   });
 
   it("answers with 500 instead of leaving the connection hanging when fetch throws", async () => {

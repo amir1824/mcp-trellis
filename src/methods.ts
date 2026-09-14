@@ -64,6 +64,18 @@ export type McpHandlerOptions<TCtx> = {
    * present `Origin`. `"*"` admits any Origin.
    */
   allowedRequestOrigins?: string[];
+  /**
+   * Filter `tools/list` down to tools the calling principal's scopes
+   * actually satisfy (an unscoped tool is always listed). Default
+   * **false** — every tool is always listed, `tools/call` is what enforces
+   * scope (with a **403** `insufficient_scope`, see `insufficientScope`).
+   * Turning this on trades that step-up signal away: a client can no
+   * longer discover "this tool exists, ask for its scope" from `tools/list`
+   * for a scope it doesn't hold — only worth it if listing a tool at all
+   * would leak something (its name, description, or schema) you don't want
+   * a lesser-scoped principal to see.
+   */
+  hideToolsOutsideScope?: boolean;
 };
 
 const DEFAULT_AUDIT_TIMEOUT_MS = 1000;
@@ -114,6 +126,31 @@ export const unauthorized = (
     data: rpcError(id, JSONRPC_UNAUTHORIZED, message),
     status: 401,
     headers: { "WWW-Authenticate": wwwAuthenticateHeader(wwwAuthenticate) },
+  });
+
+/**
+ * RFC 6750 §3.1: a request that authenticated but lacks the required scope
+ * gets **403**, not 401 — 401 tells the client "authenticate", which a
+ * scope-step-up client obeys by re-running the exact same OAuth flow,
+ * getting back the exact same scopes, and retrying forever. 403 with
+ * `error="insufficient_scope"` says what's actually wrong: re-consent with
+ * a broader `scope` request, not re-authenticate.
+ */
+export const insufficientScope = (
+  wwwAuthenticate: WwwAuthenticateOptions,
+  scope: string,
+  id: JsonRpcId = null,
+): Response =>
+  jsonResponse({
+    data: rpcError(id, JSONRPC_UNAUTHORIZED, `Missing scope: ${scope}`),
+    status: 403,
+    headers: {
+      "WWW-Authenticate": wwwAuthenticateHeader({
+        ...wwwAuthenticate,
+        error: "insufficient_scope",
+        scope,
+      }),
+    },
   });
 
 /**

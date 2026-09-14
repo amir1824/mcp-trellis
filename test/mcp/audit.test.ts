@@ -113,11 +113,38 @@ describe("audit port", () => {
       },
       "read-tok",
     );
-    assert.equal(res.status, 401);
+    // Authenticated (with "read"), just missing "ingest" — RFC 6750 §3.1
+    // insufficient_scope, not a plain 401 "go authenticate again".
+    assert.equal(res.status, 403);
+    assert.match(res.headers.get("WWW-Authenticate") ?? "", /error="insufficient_scope"/);
     assert.equal(entries.length, 1);
     assert.equal(entries[0]?.ok, false);
     assert.equal(entries[0]?.error, "missing_scope");
     assert.equal(entries[0]?.tool, "needs_ingest");
+  });
+
+  it("audits unknown_tool for a tools/call naming no registered tool", async () => {
+    const entries: AuditEntry[] = [];
+    const handler = makeHandler((e) => {
+      entries.push(e);
+    });
+    const res = await post(
+      handler,
+      {
+        jsonrpc: "2.0",
+        id: 5,
+        method: "tools/call",
+        params: { name: "no-such-tool", arguments: {} },
+      },
+      "read-tok",
+    );
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { error: { code: number } };
+    assert.equal(body.error.code, -32602);
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0]?.ok, false);
+    assert.equal(entries[0]?.error, "unknown_tool");
+    assert.equal(entries[0]?.tool, "no-such-tool");
   });
 
   it("does not throw when audit port is omitted", async () => {

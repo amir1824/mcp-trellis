@@ -73,11 +73,29 @@ describe("consent interstitial hardening", () => {
     const router = makeRouter();
     const res = await router.tryHandle(new Request(authorizeUrl(), { method: "GET" }));
     assert.ok(res);
-    assert.match(res.headers.get("Content-Security-Policy") ?? "", /default-src 'none'/);
+    const csp = res.headers.get("Content-Security-Policy") ?? "";
+    assert.match(csp, /default-src 'none'/);
     assert.equal(res.headers.get("X-Frame-Options"), "DENY");
     assert.equal(res.headers.get("Referrer-Policy"), "no-referrer");
     assert.equal(res.headers.get("Cache-Control"), "no-store");
   });
+
+  it(
+    "form-action allows both 'self' and the redirect_uri's own origin — Chromium enforces " +
+      "form-action across the redirect an approved POST produces, not just the immediate " +
+      "submission target, so 'self' alone would block every cross-origin client callback",
+    async () => {
+      const router = makeRouter();
+      const res = await router.tryHandle(
+        new Request(authorizeUrl({ redirect_uri: "http://127.0.0.1:31337/callback/path" }), {
+          method: "GET",
+        }),
+      );
+      assert.ok(res);
+      const csp = res.headers.get("Content-Security-Policy") ?? "";
+      assert.match(csp, /form-action 'self' http:\/\/127\.0\.0\.1:31337(?:\s|;)/);
+    },
+  );
 
   it("HTML-escapes an attacker-controlled client_id — no raw markup reflected", async () => {
     const router = makeRouter();

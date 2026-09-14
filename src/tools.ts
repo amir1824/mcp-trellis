@@ -8,6 +8,7 @@
  * actually parses and types `args` at call time — keep the two in sync.
  */
 
+import { BodyTooLargeError, DEFAULT_MCP_BODY_LIMIT, readBoundedText } from "./body.js";
 import type { ToolDef, ToolResult } from "./registry.js";
 import type { JsonSchema } from "./validate.js";
 
@@ -70,7 +71,8 @@ type ToolCore = {
   description: string;
   /** Advertised via tools/list. Required — see module doc for why. */
   inputSchema: JsonSchema;
-  scope?: string | undefined;
+  /** See `ToolDef.scope` — pass `null` to explicitly opt out of a scope check. */
+  scope?: string | null | undefined;
 };
 
 type ToolHandler<TCtx, Args> = (
@@ -123,6 +125,24 @@ type ApiExtra<TCtx, Args> = {
    */
   onError?: (res: Response) => Promise<ToolResult | string> | ToolResult | string;
   fetch?: typeof fetch;
+  /**
+   * Abort the upstream request after this many ms. Default 30000. An
+   * upstream that never responds otherwise hangs the tool call (and the
+   * MCP request behind it) indefinitely. Pass `false` to disable — the
+   * request then relies entirely on whatever signal (if any) is already on
+   * the `Request` your `request` callback returns; a timeout firing surfaces
+   * as `isError: true`, not a thrown exception `onToolError` would redact.
+   */
+  timeoutMs?: number | false;
+  /**
+   * Cap the upstream response body at this many bytes before it ever
+   * reaches `respond`/`onError`/the default error path — an unbounded
+   * `res.text()` on an attacker-influenced or merely oversized upstream
+   * response is the same memory-exhaustion shape an unbounded *incoming*
+   * request body is (see `body.ts`). Default 1 MiB. Exceeding it surfaces
+   * as `isError: true`, not a thrown exception `onToolError` would redact.
+   */
+  maxResponseBytes?: number;
 };
 
 export type ApiToolOptions<TCtx, Input = Record<string, unknown>> =
@@ -148,14 +168,63 @@ const defaultErrorResult = (res: Response): ToolResult => {
   };
 };
 
+const DEFAULT_API_TOOL_TIMEOUT_MS = 30_000;
+
+const isTimeoutError = (exc: unknown): boolean =>
+  exc instanceof Error && exc.name === "TimeoutError";
+
 const runApi = async <TCtx, Args>(
   options: ApiExtra<TCtx, Args>,
   ctx: TCtx,
   args: Args,
 ): Promise<ToolResult | string> => {
-  const res = await (options.fetch ?? fetch)(await options.request(ctx, args));
-  if (!res.ok) return options.onError ? options.onError(res) : defaultErrorResult(res);
-  return (options.respond ?? defaultRespond)(res);
+  const fetchImpl = options.fetch ?? fetch;
+  const input = await options.request(ctx, args);
+  const timeoutMs = options.timeoutMs ?? DEFAULT_API_TOOL_TIMEOUT_MS;
+
+  let res: Response;
+  try {
+    res =
+      timeoutMs === false
+        ? await fetchImpl(input)
+        : await fetchImpl(input, { signal: AbortSignal.timeout(timeoutMs) });
+  } catch (exc) {
+    if (isTimeoutError(exc)) {
+      return {
+        content: [{ type: "text", text: `Request timed out after ${timeoutMs}ms` }],
+        isError: true,
+      };
+    }
+    throw exc;
+  }
+
+  // Capped before `respond`/`onError` ever see it — an unbounded res.text()
+  // on the upstream body is the same memory-exhaustion shape an unbounded
+  // *incoming* body is (see body.ts). Rebuilt as a fresh Response so
+  // `respond`/`onError`'s own res.text()/res.json() calls still work
+  // against the (now-buffered, capped) body exactly as if they'd read the
+  // original response themselves.
+  const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MCP_BODY_LIMIT;
+  let text: string;
+  try {
+    text = await readBoundedText(res, maxResponseBytes);
+  } catch (exc) {
+    if (exc instanceof BodyTooLargeError) {
+      return {
+        content: [{ type: "text", text: `Response exceeded ${maxResponseBytes} bytes` }],
+        isError: true,
+      };
+    }
+    throw exc;
+  }
+  const bounded = new Response(text, {
+    status: res.status,
+    statusText: res.statusText,
+    headers: res.headers,
+  });
+
+  if (!bounded.ok) return options.onError ? options.onError(bounded) : defaultErrorResult(bounded);
+  return (options.respond ?? defaultRespond)(bounded);
 };
 
 /**

@@ -24,8 +24,17 @@ export type VerifiedToken = {
 };
 
 export type McpAppAuth = {
-  /** HMAC secret for signing auth codes. */
-  codeSecret: string | ((req: Request) => string | Promise<string>);
+  /**
+   * Secret(s) that seal auth codes, consent tickets, and self-issued DCR
+   * client assertions, and key `ClientStore.secretHash`. A single string
+   * works exactly as before; pass an array for key rotation — the first
+   * entry seals new material, every entry is tried when unsealing/verifying.
+   * See `OAuthPorts.codeSecret` for the full rotation contract.
+   */
+  codeSecret:
+    | string
+    | string[]
+    | ((req: Request) => string | string[] | Promise<string | string[]>);
   /** Resolve the logged-in user, or null → redirect to `loginUrl`. */
   resolveUser: (req: Request) => Promise<OAuthUser | null>;
   /** Where to send unauthenticated authorize requests. */
@@ -102,4 +111,6 @@ export type McpAppOptions<TCtx> = {
    * Omitted → reject any request that sends `Origin`. Native clients omit the header.
    */
   allowedRequestOrigins?: string[];
+  /** Filter `tools/list` by scope. See `McpHandlerOptions.hideToolsOutsideScope`. Default false. */
+  hideToolsOutsideScope?: boolean;
 };

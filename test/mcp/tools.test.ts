@@ -211,4 +211,145 @@ describe("apiTool", () => {
     assert.equal(result.isError, true);
     assert.equal(fetchCalled, false);
   });
+
+  it("passes an AbortSignal.timeout to fetch by default", async () => {
+    let sawSignal: AbortSignal | undefined;
+    const tool = apiTool<Ctx, WeatherArgs>({
+      name: "get_weather",
+      description: "weather",
+      inputSchema: { type: "object", properties: {} },
+      input: weatherSchema,
+      request: (_ctx, args) => `https://api.example.test/weather?city=${args.city}`,
+      fetch: (async (_input, init) => {
+        sawSignal = init?.signal ?? undefined;
+        return new Response("22C");
+      }) as typeof fetch,
+    });
+    const registry = createToolRegistry<Ctx>([tool]);
+    await registry.call("get_weather", {}, { city: "Eilat" });
+    assert.ok(sawSignal instanceof AbortSignal);
+  });
+
+  it("does not pass a signal when timeoutMs: false", async () => {
+    let sawInit: RequestInit | undefined;
+    const tool = apiTool<Ctx, WeatherArgs>({
+      name: "get_weather",
+      description: "weather",
+      inputSchema: { type: "object", properties: {} },
+      input: weatherSchema,
+      request: (_ctx, args) => `https://api.example.test/weather?city=${args.city}`,
+      timeoutMs: false,
+      fetch: (async (_input, init) => {
+        sawInit = init;
+        return new Response("22C");
+      }) as typeof fetch,
+    });
+    const registry = createToolRegistry<Ctx>([tool]);
+    await registry.call("get_weather", {}, { city: "Eilat" });
+    assert.equal(sawInit, undefined);
+  });
+
+  it("returns isError: true with a clear message when the upstream request times out", async () => {
+    // Faithful to what a real `fetch` throws when an AbortSignal.timeout()
+    // signal fires (a TimeoutError DOMException) — simulated directly
+    // rather than racing a real timer, so the test is deterministic.
+    const tool = apiTool<Ctx, WeatherArgs>({
+      name: "get_weather",
+      description: "weather",
+      inputSchema: { type: "object", properties: {} },
+      input: weatherSchema,
+      request: (_ctx, args) => `https://api.example.test/weather?city=${args.city}`,
+      timeoutMs: 5,
+      fetch: (async () => {
+        throw new DOMException("The operation timed out.", "TimeoutError");
+      }) as typeof fetch,
+    });
+    const registry = createToolRegistry<Ctx>([tool]);
+    const result = await registry.call("get_weather", {}, { city: "Eilat" });
+    assert.equal(result.isError, true);
+    assert.equal(result.content[0]?.text, "Request timed out after 5ms");
+  });
+
+  it("actually aborts a real fetch call once timeoutMs elapses", async () => {
+    // End-to-end with real AbortSignal.timeout + a fetch stub that honors
+    // the signal like a real implementation would — the previous test
+    // covers the DOMException handling in isolation; this one proves the
+    // signal is actually wired through to fetchImpl.
+    const tool = apiTool<Ctx, WeatherArgs>({
+      name: "get_weather",
+      description: "weather",
+      inputSchema: { type: "object", properties: {} },
+      input: weatherSchema,
+      request: (_ctx, args) => `https://api.example.test/weather?city=${args.city}`,
+      timeoutMs: 5,
+      fetch: ((_input, init) =>
+        new Promise<Response>((resolve, reject) => {
+          const timer = setTimeout(() => resolve(new Response("too slow")), 10_000);
+          init?.signal?.addEventListener("abort", () => {
+            clearTimeout(timer);
+            reject(init.signal?.reason);
+          });
+        })) as typeof fetch,
+    });
+    const registry = createToolRegistry<Ctx>([tool]);
+    const result = await registry.call("get_weather", {}, { city: "Eilat" });
+    assert.equal(result.isError, true);
+    assert.equal(result.content[0]?.text, "Request timed out after 5ms");
+  });
+
+  it("caps the response body at maxResponseBytes, surfacing isError: true instead of a thrown exception", async () => {
+    const tool = apiTool<Ctx, WeatherArgs>({
+      name: "get_weather",
+      description: "weather",
+      inputSchema: { type: "object", properties: {} },
+      input: weatherSchema,
+      request: (_ctx, args) => `https://api.example.test/weather?city=${args.city}`,
+      maxResponseBytes: 8,
+      fetch: fakeFetch(new Response("this response is way over the byte cap", { status: 200 })),
+    });
+    const registry = createToolRegistry<Ctx>([tool]);
+    const result = await registry.call("get_weather", {}, { city: "Eilat" });
+    assert.equal(result.isError, true);
+    assert.equal(result.content[0]?.text, "Response exceeded 8 bytes");
+  });
+
+  it("still delivers a response within maxResponseBytes normally", async () => {
+    const tool = apiTool<Ctx, WeatherArgs>({
+      name: "get_weather",
+      description: "weather",
+      inputSchema: { type: "object", properties: {} },
+      input: weatherSchema,
+      request: (_ctx, args) => `https://api.example.test/weather?city=${args.city}`,
+      maxResponseBytes: 1024,
+      fetch: fakeFetch(new Response("22C and sunny", { status: 200 })),
+    });
+    const registry = createToolRegistry<Ctx>([tool]);
+    const result = await registry.call("get_weather", {}, { city: "Eilat" });
+    assert.equal(result.isError, false);
+    assert.equal(result.content[0]?.text, "22C and sunny");
+  });
+
+  it("still forwards status/headers correctly to respond/onError after the size-capped rebuild", async () => {
+    const tool = apiTool<Ctx, WeatherArgs>({
+      name: "get_weather",
+      description: "weather",
+      inputSchema: { type: "object", properties: {} },
+      input: weatherSchema,
+      request: (_ctx, args) => `https://api.example.test/weather?city=${args.city}`,
+      respond: async (res) => {
+        assert.equal(res.headers.get("content-type"), "application/json");
+        const data = (await res.json()) as { tempC: number };
+        return `${data.tempC}°C`;
+      },
+      fetch: fakeFetch(
+        new Response(JSON.stringify({ tempC: 19 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    });
+    const registry = createToolRegistry<Ctx>([tool]);
+    const result = await registry.call("get_weather", {}, { city: "Eilat" });
+    assert.equal(result.content[0]?.text, "19°C");
+  });
 });

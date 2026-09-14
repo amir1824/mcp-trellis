@@ -7,9 +7,6 @@
  * never the Host→tenant authorization key (a forged claim with a matching
  * audience would otherwise scope tools to the wrong tenant).
  *
- * Demo tokens are unsigned base64 JSON — forgeable. Production must use
- * signed, server-issued tokens (JWT/JWS).
- *
  * In an app, import from `mcp-trellis` / `mcp-trellis/node`.
  */
 
@@ -18,8 +15,11 @@ import type { AddressInfo } from "node:net";
 import { asNodeHandler } from "../src/adapters/node.js";
 import { createMcpApp } from "../src/app.js";
 import type { ToolDef } from "../src/registry.js";
+import { signToken, verifyToken } from "./signed-token.js";
 
 type Ctx = { userId: string; tenantId: string; plan?: string };
+
+const ACCESS_TOKEN_TTL_MS = 3_600_000;
 
 const ROWS: Record<string, string[]> = {
   acme: ["invoice-1", "invoice-2"],
@@ -33,13 +33,6 @@ const listRows: ToolDef<Ctx> = {
   scope: "mcp",
   handler: (ctx) => JSON.stringify(ROWS[ctx.tenantId] ?? []),
 };
-
-const encodeToken = (payload: {
-  userId: string;
-  scopes: string[];
-  audience: string;
-  claims?: { plan?: string };
-}): string => Buffer.from(JSON.stringify(payload)).toString("base64url");
 
 const tenantOf = (origin: string): string | null => {
   try {
@@ -60,32 +53,26 @@ const app = createMcpApp<Ctx>({
     codeSecret: "example-multi-tenant-code-secret-do-not-reuse",
     resolveUser: async () => ({ id: "u1" }),
     loginUrl: (_req, next) => `/login?next=${encodeURIComponent(next)}`,
+    // A separate secret from codeSecret above — signing access tokens and
+    // sealing auth codes are different jobs; reusing one key for both means
+    // a compromise of either leaks the other's blast radius too.
     mintAccessToken: async ({ userId, scope, resource }) => {
       const tenantId = tenantOf(new URL(resource).origin);
       if (!tenantId) throw new Error("unknown tenant");
       return {
-        accessToken: encodeToken({
+        accessToken: await signToken("example-multi-tenant-access-token-secret-32c!", {
           userId,
           scopes: scope.split(" "),
           audience: resource,
+          exp: Date.now() + ACCESS_TOKEN_TTL_MS,
           claims: { plan: "pro" },
         }),
-        expiresIn: 3600,
+        expiresIn: ACCESS_TOKEN_TTL_MS / 1000,
         scope,
       };
     },
-    verifyToken: async (token) => {
-      try {
-        return JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as {
-          userId: string;
-          scopes: string[];
-          audience: string;
-          claims?: { plan?: string };
-        };
-      } catch {
-        return null;
-      }
-    },
+    verifyToken: async (token) =>
+      verifyToken("example-multi-tenant-access-token-secret-32c!", token),
   },
   context: async (req, principal) => {
     const tenantId = tenantOf(new URL(req.url).origin) ?? "";

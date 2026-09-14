@@ -24,7 +24,7 @@ With defaults `resourcePath: "/mcp"` and `oauthPath: "/mcp/oauth"`:
 |------|---------|
 | `/.well-known/oauth-protected-resource` (+ `/mcp`) | Protected resource metadata |
 | `/.well-known/oauth-authorization-server` (+ `/mcp`) | Authorization server metadata |
-| `/mcp/oauth/register` | Dynamic client registration (unmounted when DCR is off) |
+| `/mcp/oauth/register` | Dynamic client registration (unmounted when DCR is off). `redirect_uris`, if supplied, must be an array of at most 10 entries — a malformed body, a non-object body, a non-array `redirect_uris`, or too many entries all return **400** `invalid_client_metadata` (RFC 7591 §3.2.2) rather than silently falling back to the default callback. `redirect_uris` omitted entirely still falls back as documented below |
 | `/mcp/oauth/authorize` | Authorization endpoint — GET only. Renders a consent interstitial rather than redirecting directly; see `/consent` below and [security.md](security.md). Once `redirect_uri` is validated, every remaining error redirects to it with `?error=…` (RFC 6749 §4.1.2.1) rather than returning JSON; an invalid `redirect_uri` itself, and an oversized `state`, are the two exceptions and stay direct 400s |
 | `/mcp/oauth/consent` | POST only. Approves or denies a consent ticket issued by `/authorize` and, on approval, issues the code and redirects to `redirect_uri` |
 | `/mcp/oauth/token` | Token endpoint. JSON or form body |
@@ -37,7 +37,7 @@ With defaults `resourcePath: "/mcp"` and `oauthPath: "/mcp/oauth"`:
 | `initialize` | public | Negotiates protocol version; returns `capabilities.tools` |
 | `ping` | public | Empty result |
 | `tools/list` | Bearer | Lists registry entries |
-| `tools/call` | Bearer + scope | Runs the tool; missing scope → 401 |
+| `tools/call` | Bearer + scope | Runs the tool; no Bearer at all → 401, authenticated but missing scope → 403, `params.name` naming no registered tool → `-32602` (protocol error, not a tool result — see `docs/guide.md`) |
 | `notifications/*` | public | HTTP 202 empty body |
 
 Anything else → JSON-RPC `-32601`. Capabilities advertise **tools only**.
@@ -49,6 +49,7 @@ Anything else → JSON-RPC `-32601`. Capabilities advertise **tools only**.
 | **202** | Notification (empty body) |
 | **400** | Parse error, batch array, invalid request, `jsonrpc` not `"2.0"`, unsupported `MCP-Protocol-Version` |
 | **401** | Missing/invalid Bearer; includes `WWW-Authenticate`; echoes the real request id, not `null` |
+| **403** | Authenticated, but the token's scopes don't include the tool's `scope`; `WWW-Authenticate` carries `error="insufficient_scope"` and `scope="<required>"` (RFC 6750 §3.1) |
 | **405** | Wrong HTTP verb on MCP |
 | **413** | Request body over the cap — `/mcp` (1 MiB default), `/token`/`/revoke`/`/register` (64 KiB default) |
 
@@ -57,7 +58,7 @@ Anything else → JSON-RPC `-32601`. Capabilities advertise **tools only**.
 | `-32700` | `JSONRPC_PARSE_ERROR` |
 | `-32600` | `JSONRPC_INVALID_REQUEST` (batches) |
 | `-32601` | `JSONRPC_METHOD_NOT_FOUND` |
-| `-32602` | `JSONRPC_INVALID_PARAMS` |
+| `-32602` | `JSONRPC_INVALID_PARAMS` (unrecognized `tools/call` `params.name`) |
 | `-32603` | `JSONRPC_INTERNAL_ERROR` |
 | `-32001` | `JSONRPC_UNAUTHORIZED` |
 
@@ -93,7 +94,7 @@ entry — those are protocol errors, not auth denials.
 | `defaultScopes` | full `scopes` | Scopes granted when a client omits `scope` entirely. **Required at construction** once `scopes` has more than one entry — the router throws rather than silently granting everything advertised. Must be a subset of `scopes` |
 | `tokenEndpointAuthMethods` | `["none"]` | Advertised client auth methods |
 | `allowUnregisteredClients` | `true` | `false` requires `clientStore`, unmounts DCR, and rejects unknown `client_id`s (`unauthorized_client` / `invalid_client`) |
-| `requireRegisteredClients` | `true` | Reject any `client_id` that isn't `clientStore`-resolved or self-sealed via this server's own `/register` (see [security.md](security.md)). DCR stays mounted, unlike `allowUnregisteredClients: false` — a client just can't invent an id out of thin air |
+| `requireRegisteredClients` | `true` | Reject any `client_id` that isn't `clientStore`-resolved or self-sealed via this server's own `/register` (see [security.md](security.md)). DCR stays mounted, unlike `allowUnregisteredClients: false` — a client just can't invent an id out of thin air. Enforced at `/authorize`, and at `/token`'s `refresh_token` grant and `/revoke` (the `authorization_code` grant's `client_id` is already bound into the sealed code at `/authorize` time, so it's covered indirectly there) |
 | `redirect` | see below | Redirect URI allowlist |
 | `consent` | see below | Consent/approval policy for `/authorize` |
 | `auditTimeoutMs` | `1000` | Max time to wait for `ports.audit` before responding anyway — same as MCP |
@@ -133,6 +134,16 @@ validated against their own bound `redirectUris`.
 | `consent` | built-in interstitial | Same as `OAuthRouterOptions.consent` — override the approval page or pre-approve specific client ids |
 | `requireRegisteredClients` | `true` | Same as `OAuthRouterOptions.requireRegisteredClients` — inventing a public `client_id` is rejected unless it comes from `clientStore` or this server's own `/register` |
 | `instructions`, `validateArgs`, `onToolError`, `context`, `audit`, `auditTimeoutMs`, `allowedRequestOrigins` | — | Passed through to the MCP handler. `audit`/`auditTimeoutMs` are the MCP-side (tool-call) hook — the OAuth side has its own, separate `auth.audit` (see [Ports](guide.md#ports--what-you-implement)); `auditTimeoutMs` also applies to OAuth audit |
+| `hideToolsOutsideScope` | `false` | Filter `tools/list` to tools the calling principal's scopes actually satisfy (an unscoped tool, or one with `scope: null`, is always listed). `tools/call` already enforces scope on its own (403 `insufficient_scope`) regardless of this setting — turning it on only changes what's discoverable via `tools/list` |
+
+**A tool's `scope` (`ToolDef.scope`):** required scope, `null` for "any authenticated
+principal, deliberately" or omitted for the same at runtime. On a server
+advertising more than one `scopes` entry, `createMcpApp` **refuses to
+construct** if any tool omits `scope` — an omission there means "any
+authenticated principal, including one holding none of the advertised
+scopes," which is rarely the intent once there's more than one scope to
+have gotten wrong. Pass `scope: null` to state the omission on purpose.
+A single-scope server has no such ambiguity and is unaffected.
 
 ## Exports
 
@@ -141,7 +152,7 @@ validated against their own bound `redirectUris`.
 
 - `createMcpApp`, `createMcpHandler`, `createToolRegistry`
 - `consoleAudit` — convenience `audit` sink that logs to the console (pass any function for metrics / DB / APM)
-- `defineTool`, `apiTool` — typed, validated tool authoring on top of `ToolDef`
+- `defineTool`, `apiTool` — typed, validated tool authoring on top of `ToolDef`. `apiTool`'s `timeoutMs` (default 30000, or `false` to disable) and `maxResponseBytes` (default 1 MiB) bound the upstream call; either surfaces as `isError: true`, not a thrown exception
 - `CLIENT_PROFILES`, `DEFAULT_CLIENTS`, `authMethodsFor`, `redirectUrisFor`, `preRegisteredClients`, `hasDynamicClient`
 - `parseBearer`, `timingSafeEqual`, `matchesAny`, `wwwAuthenticateHeader`, `rejectQueryToken`
 - `validateAgainstSchema`, `JSON_SCHEMA_TYPES`, `SUPPORTED_SCHEMA_KEYWORDS`, `IGNORED_SCHEMA_KEYWORDS`, `unsupportedKeywords`, `missingObjectType`
@@ -177,5 +188,6 @@ validated against their own bound `redirectUris`.
 
 - `asNodeHandler`, `resolveOrigin`, `isAllowedOrigin`, `toWebRequest`, `sendWebResponse`, `readNodeBody`
 - Types: `NodeRequestLike`, `NodeResponseLike`, `ToWebRequestOptions`, `ResolveOriginOptions`, `AsNodeHandlerOptions`, `OriginAllowlistOptions`
+- `InvalidOriginError` — thrown by `resolveOrigin` for a Host/`X-Forwarded-*` header that can't safely become an origin (missing, carrying a path/query/fragment/credentials, malformed, or a non-`http(s)` scheme). `asNodeHandler` answers it with **400**, not the generic 500 it gives an actual unexpected failure
 
 </details>

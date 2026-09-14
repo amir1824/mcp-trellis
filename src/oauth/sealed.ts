@@ -11,6 +11,7 @@
  */
 
 import { bytesToBase64Url, fromBase64Url } from "./base64url.js";
+import { createBoundedCache } from "./keycache.js";
 
 export type SealedType = "consent" | "client" | "code";
 
@@ -43,9 +44,26 @@ const deriveKey = async (
   );
 };
 
+const KEY_CACHE_LIMIT = 32;
+const keyCache = createBoundedCache<Promise<CryptoKey>>(KEY_CACHE_LIMIT);
+
+/** Same key material for "encrypt" and "decrypt" — WebCrypto just restricts the derived key's own `usages`. */
+const cachedDeriveKey = (
+  secret: string,
+  type: SealedType,
+  usage: "encrypt" | "decrypt",
+): Promise<CryptoKey> => {
+  const cacheKey = `${type}:${usage}:${secret}`;
+  const cached = keyCache.get(cacheKey);
+  if (cached) return cached;
+  const derived = deriveKey(secret, type, usage);
+  keyCache.set(cacheKey, derived);
+  return derived;
+};
+
 /** Seals `payload` as an opaque, type-bound string. */
 export const seal = async <T>(secret: string, type: SealedType, payload: T): Promise<string> => {
-  const key = await deriveKey(secret, type, "encrypt");
+  const key = await cachedDeriveKey(secret, type, "encrypt");
   const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
   const additionalData = new TextEncoder().encode(type);
   const plaintext = new TextEncoder().encode(JSON.stringify(payload));
@@ -70,7 +88,7 @@ export const unseal = async <T>(
   if (!ivPart || !ciphertextPart) return null;
 
   try {
-    const key = await deriveKey(secret, type, "decrypt");
+    const key = await cachedDeriveKey(secret, type, "decrypt");
     const iv = fromBase64Url(ivPart);
     if (iv.byteLength !== IV_BYTES) return null;
     const ciphertext = fromBase64Url(ciphertextPart);
@@ -84,4 +102,22 @@ export const unseal = async <T>(
   } catch {
     return null;
   }
+};
+
+/**
+ * Rotation-aware unseal: tries each `secrets` entry in order, returning the
+ * index of the one that actually worked so a caller can audit "sealed under
+ * a non-primary key" without a second decrypt pass. `secrets` is expected
+ * non-empty (callers resolve it via `resolveSecrets`, which enforces that).
+ */
+export const unsealAny = async <T>(
+  secrets: readonly string[],
+  type: SealedType,
+  sealed: string,
+): Promise<{ value: T; keyIndex: number } | null> => {
+  for (const [keyIndex, secret] of secrets.entries()) {
+    const value = await unseal<T>(secret, type, sealed);
+    if (value !== null) return { value, keyIndex };
+  }
+  return null;
 };

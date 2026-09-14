@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { hashClientSecret, verifyClientSecret } from "../../src/oauth/secrethash.js";
+import {
+  hashClientSecret,
+  verifyClientSecret,
+  verifyClientSecretAny,
+} from "../../src/oauth/secrethash.js";
 
 const CODE_SECRET = "code-secret-value-32-characters-long-enough";
 
@@ -51,5 +55,57 @@ describe("hashClientSecret / verifyClientSecret", () => {
   it("prefixes the hash so its format is self-describing", async () => {
     const hash = await hashClientSecret("client-secret-1", CODE_SECRET);
     assert.ok(hash.startsWith("hmac-sha256$"), hash);
+  });
+});
+
+describe("verifyClientSecretAny (key rotation)", () => {
+  const OLD_CODE_SECRET = "old-code-secret-value-32-characters-longer!";
+
+  it("verifies a hash produced under an older codeSecret, reporting its index", async () => {
+    const hash = await hashClientSecret("client-secret-1", OLD_CODE_SECRET);
+    const result = await verifyClientSecretAny("client-secret-1", hash, [
+      CODE_SECRET,
+      OLD_CODE_SECRET,
+    ]);
+    assert.deepEqual(result, { ok: true, keyIndex: 1 });
+  });
+
+  it("reports keyIndex 0 when the primary (first) codeSecret produced the hash", async () => {
+    const hash = await hashClientSecret("client-secret-1", CODE_SECRET);
+    const result = await verifyClientSecretAny("client-secret-1", hash, [
+      CODE_SECRET,
+      OLD_CODE_SECRET,
+    ]);
+    assert.deepEqual(result, { ok: true, keyIndex: 0 });
+  });
+
+  it("returns ok: false, keyIndex: null when no configured codeSecret matches", async () => {
+    const hash = await hashClientSecret("client-secret-1", "a-third-unrelated-code-secret!!");
+    const result = await verifyClientSecretAny("client-secret-1", hash, [
+      CODE_SECRET,
+      OLD_CODE_SECRET,
+    ]);
+    assert.deepEqual(result, { ok: false, keyIndex: null });
+  });
+});
+
+describe("derived-key caching", () => {
+  it("re-derives the HKDF key at most once per codeSecretValue across repeated hashClientSecret calls", async () => {
+    const originalImportKey = crypto.subtle.importKey.bind(crypto.subtle);
+    let importKeyCalls = 0;
+    crypto.subtle.importKey = ((...args: Parameters<typeof originalImportKey>) => {
+      importKeyCalls += 1;
+      return originalImportKey(...args);
+    }) as typeof crypto.subtle.importKey;
+
+    try {
+      const distinctCodeSecret = "cache-test-code-secret-value-32-characters!";
+      await hashClientSecret("client-secret-a", distinctCodeSecret);
+      await hashClientSecret("client-secret-b", distinctCodeSecret);
+      await hashClientSecret("client-secret-c", distinctCodeSecret);
+      assert.equal(importKeyCalls, 1);
+    } finally {
+      crypto.subtle.importKey = originalImportKey;
+    }
   });
 });

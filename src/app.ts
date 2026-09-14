@@ -17,6 +17,7 @@ import {
 import { createMcpHandler } from "./dispatch.js";
 import { INTERNAL_ERROR, jsonResponse } from "./http.js";
 import type { Principal } from "./methods.js";
+import { DEFAULT_SCOPE } from "./oauth/constants.js";
 import {
   canonicalResource,
   DEFAULT_RESOURCE_PATH,
@@ -24,7 +25,7 @@ import {
   resourcesEqual,
 } from "./oauth/resource.js";
 import { createOAuthRouter } from "./oauth/router.js";
-import { createToolRegistry } from "./registry.js";
+import { createToolRegistry, type ToolDef } from "./registry.js";
 
 export type { McpAppAuth, McpAppOptions, VerifiedToken } from "./app-options.js";
 
@@ -32,15 +33,43 @@ export type McpApp = {
   fetch: (request: Request) => Promise<Response>;
 };
 
+/**
+ * On a server advertising more than one scope, a tool with no `scope` is
+ * callable by any authenticated principal — including one holding none of
+ * the advertised scopes at all. That's rarely the intent: it's what
+ * `defaultScopes: []` in the docs describes as "least privilege" defeated
+ * by a single unscoped tool. A single-scope server has no such ambiguity —
+ * "any authenticated principal" and "any principal holding the one scope
+ * this server grants" already coincide in practice — so this only fires
+ * once there's more than one scope to have gotten wrong. Pass `scope: null`
+ * on a tool to state the omission on purpose.
+ */
+const assertToolScopesConfigured = <TCtx>(tools: ToolDef<TCtx>[], scopes: string[]): void => {
+  if (scopes.length <= 1) return;
+  const unscoped = tools.filter((tool) => tool.scope === undefined).map((tool) => tool.name);
+  if (unscoped.length === 0) return;
+  throw new Error(
+    `scopes has more than one entry (${scopes.join(", ")}), but these tools have no ` +
+      `scope and would be callable by any authenticated principal regardless of what ` +
+      `scopes it holds: ${unscoped.join(", ")}. Set scope: "<one of the entries above>" ` +
+      `on each, or scope: null to state the omission on purpose.`,
+  );
+};
+
 export const createMcpApp = <TCtx>(options: McpAppOptions<TCtx>): McpApp => {
   // Normalized once here — "/mcp/" and "/mcp" must route identically, not
   // diverge into a 404 for one of them. See `normalizeConfiguredPath`.
   const resourcePath = normalizeConfiguredPath(options.resourcePath ?? DEFAULT_RESOURCE_PATH);
-  const oauthPath = options.oauthPath ?? `${resourcePath}/oauth`;
+  // `${resourcePath}/oauth` alone produces "//oauth" when resourcePath is
+  // the root "/" — normalizeConfiguredPath only strips a trailing slash,
+  // not this kind of internal double slash from string concatenation.
+  const oauthPath =
+    options.oauthPath ?? (resourcePath === "/" ? "/oauth" : `${resourcePath}/oauth`);
   const clients = options.clients ?? DEFAULT_CLIENTS;
   const realm = options.realm ?? options.serverInfo.name;
 
   assertClientsConfigured(clients, options.auth.clientStore);
+  assertToolScopesConfigured(options.tools, options.scopes ?? [DEFAULT_SCOPE]);
 
   const registry = createToolRegistry<TCtx>(options.tools, {
     ...(options.validateArgs !== undefined ? { validateArgs: options.validateArgs } : {}),
@@ -75,6 +104,9 @@ export const createMcpApp = <TCtx>(options: McpAppOptions<TCtx>): McpApp => {
     ...(options.auditTimeoutMs !== undefined ? { auditTimeoutMs: options.auditTimeoutMs } : {}),
     ...(options.allowedRequestOrigins !== undefined
       ? { allowedRequestOrigins: options.allowedRequestOrigins }
+      : {}),
+    ...(options.hideToolsOutsideScope !== undefined
+      ? { hideToolsOutsideScope: options.hideToolsOutsideScope }
       : {}),
     wwwAuthenticate: (request) => ({
       realm,

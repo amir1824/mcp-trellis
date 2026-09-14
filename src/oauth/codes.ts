@@ -1,15 +1,9 @@
 import { randomBase64Url } from "./pkce.js";
-import { seal, unseal } from "./sealed.js";
+import { seal, unsealAny } from "./sealed.js";
 
 const CODE_TTL_MS = 600_000;
 /** AES-GCM sealed auth codes — authenticated and encrypted (see `sealed.ts`). */
 const SEALED_PREFIX = "v2.";
-
-/**
- * Process-local jti → expMs map when no shared codeStore is provided.
- * ponytail: single-process only; multi-instance → pass ports.codeStore (KV/Redis SET NX EX).
- */
-const memoryUsed = new Map<string, number>();
 
 export type AuthCodeRecord = {
   clientId: string;
@@ -32,21 +26,45 @@ export type CodeStore = {
   consume: (jti: string, expMs: number) => Promise<boolean> | boolean;
 };
 
-const pruneMemory = (nowMs: number): void => {
-  [...memoryUsed].forEach(([jti, exp]) => {
-    if (exp < nowMs) memoryUsed.delete(jti);
-  });
+/**
+ * Prune the in-memory store at most this often, not on every `consume` call
+ * — a full-`Map`-scan-per-call became a real cost once `consent.ts` started
+ * sharing this same store (every code *and* every consent ticket now scans
+ * it on redemption).
+ */
+const PRUNE_INTERVAL_MS = 60_000;
+
+/**
+ * Process-local jti → expMs map when no shared codeStore is provided.
+ * ponytail: single-process only; multi-instance → pass ports.codeStore (KV/Redis SET NX EX).
+ */
+export const createMemoryCodeStore = (): CodeStore => {
+  const used = new Map<string, number>();
+  let lastPrunedAtMs = 0;
+  return {
+    consume: (jti, expMs) => {
+      const nowMs = Date.now();
+      if (nowMs - lastPrunedAtMs >= PRUNE_INTERVAL_MS) {
+        lastPrunedAtMs = nowMs;
+        for (const [key, exp] of used) {
+          if (exp < nowMs) used.delete(key);
+        }
+      }
+      if (used.has(jti)) return false;
+      used.set(jti, expMs);
+      return true;
+    },
+  };
 };
 
-const memoryCodeStore: CodeStore = {
-  consume: (jti, expMs) => {
-    const nowMs = Date.now();
-    pruneMemory(nowMs);
-    if (memoryUsed.has(jti)) return false;
-    memoryUsed.set(jti, expMs);
-    return true;
-  },
-};
+/**
+ * The default single-process store when no `ports.codeStore` is
+ * configured — shared with `consent.ts` (its `ct:`-prefixed jtis live in
+ * the same map, disambiguated by that prefix) so there's exactly one Map
+ * and one prune throttle for both auth codes and consent tickets, not two
+ * independent, unthrottled ones.
+ */
+export const memoryCodeStore: CodeStore = createMemoryCodeStore();
 
 /**
  * Issue an AES-GCM sealed auth code (v2). Single-use via codeStore, or
@@ -98,20 +116,29 @@ const shapeCheckedRecord = (
   };
 };
 
-export const consumeAuthCode = async (
-  secret: string,
+/**
+ * Rotation-aware `consumeAuthCode`, also reporting which `secret` entry
+ * actually unsealed the code — used only by `token.ts` to audit
+ * `"legacy_code_secret_used"` without a second decrypt pass. Not part of
+ * the public API; `consumeAuthCode` below is the stable, exported surface.
+ */
+export const consumeAuthCodeDetailed = async (
+  secret: string | readonly string[],
   code: string,
   options: { codeStore?: CodeStore | undefined; nowMs?: number | undefined } = {},
-): Promise<AuthCodeRecord | null> => {
-  if (!code || !secret) return null;
+): Promise<{ record: AuthCodeRecord; keyIndex: number } | null> => {
+  const secrets = (Array.isArray(secret) ? secret : [secret]).filter(
+    (candidate): candidate is string => Boolean(candidate),
+  );
+  if (!code || secrets.length === 0) return null;
   // 1.0 dropped v1 (HMAC-only) reading — only `v2.` sealed codes redeem.
   if (!code.startsWith(SEALED_PREFIX)) return null;
 
   const nowMs = options.nowMs ?? Date.now();
-  const raw = await unseal<RawAuthCode>(secret, "code", code.slice(SEALED_PREFIX.length));
-  if (!raw) return null;
+  const unsealed = await unsealAny<RawAuthCode>(secrets, "code", code.slice(SEALED_PREFIX.length));
+  if (!unsealed) return null;
 
-  const record = shapeCheckedRecord(raw, nowMs);
+  const record = shapeCheckedRecord(unsealed.value, nowMs);
   if (!record) return null;
 
   const store = options.codeStore ?? memoryCodeStore;
@@ -119,7 +146,23 @@ export const consumeAuthCode = async (
   if (!fresh) return null;
 
   const { jti: _jti, ...rest } = record;
-  return rest;
+  return { record: rest, keyIndex: unsealed.keyIndex };
+};
+
+/**
+ * `secret` may be a single key (unchanged behavior) or a list — every entry
+ * is tried, so a code sealed under an older `codeSecret` keeps redeeming
+ * during rotation. See `resolveSecrets`/`OAuthPorts.codeSecret` for the
+ * rotation contract; use `consumeAuthCodeDetailed` if you also need to know
+ * which key matched.
+ */
+export const consumeAuthCode = async (
+  secret: string | readonly string[],
+  code: string,
+  options: { codeStore?: CodeStore | undefined; nowMs?: number | undefined } = {},
+): Promise<AuthCodeRecord | null> => {
+  const result = await consumeAuthCodeDetailed(secret, code, options);
+  return result?.record ?? null;
 };
 
 export const newClientId = (): string => randomBase64Url(16);

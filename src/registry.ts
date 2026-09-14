@@ -15,7 +15,16 @@ export type ToolDef<TCtx> = {
   name: string;
   description: string;
   inputSchema: JsonSchema;
-  scope?: string | undefined;
+  /**
+   * Required scope, or `undefined`/omitted for "any authenticated
+   * principal, whatever its scopes." On a `createMcpApp` server advertising
+   * more than one scope, an omitted `scope` is a construction-time error —
+   * see `assertToolScopesConfigured` — precisely because "any authenticated
+   * principal" silently includes a principal with zero scopes, which is
+   * rarely the intent on a multi-scope server. Pass `scope: null` to state
+   * that intentionally instead of by omission.
+   */
+  scope?: string | null | undefined;
   handler: ToolHandler<TCtx>;
 };
 
@@ -26,7 +35,15 @@ export type ToolListEntry = {
 };
 
 export type ToolRegistry<TCtx> = {
-  list: () => ToolListEntry[];
+  /**
+   * `allowScope`, when passed, is consulted per tool with that tool's
+   * `scope` — omit a tool by returning `false`. Lets a caller (see
+   * `McpHandlerOptions.hideToolsOutsideScope`) filter `tools/list` by a
+   * principal's granted scopes without the registry itself knowing what a
+   * "principal" or "scope check" is — it only ever sees the raw `scope`
+   * value already on each `ToolDef`.
+   */
+  list: (allowScope?: (scope: string | null | undefined) => boolean) => ToolListEntry[];
   get: (name: string) => ToolDef<TCtx> | undefined;
   call: (name: string, ctx: TCtx, args: Record<string, unknown>) => Promise<ToolResult>;
 };
@@ -112,12 +129,14 @@ export const createToolRegistry = <TCtx>(
   }
 
   return {
-    list: () =>
-      tools.map(({ name, description, inputSchema }) => ({
-        name,
-        description,
-        inputSchema,
-      })),
+    list: (allowScope) =>
+      tools
+        .filter((tool) => !allowScope || allowScope(tool.scope))
+        .map(({ name, description, inputSchema }) => ({
+          name,
+          description,
+          inputSchema,
+        })),
 
     get: (name) => byName.get(name),
 

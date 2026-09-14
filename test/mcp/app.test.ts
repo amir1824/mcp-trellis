@@ -319,6 +319,36 @@ describe("createMcpApp", () => {
     assert.equal(res.status, 200);
   });
 
+  it('resourcePath: "/" advertises /oauth endpoints, not the double-slash //oauth', async () => {
+    const app = createMcpApp<Ctx>({
+      serverInfo: { name: "root-resource-path", version: "1.0.0" },
+      tools: [echo],
+      resourcePath: "/",
+      requireRegisteredClients: false,
+      auth: {
+        codeSecret: "root-resource-path-code-secret-32-characters!",
+        resolveUser: async () => null,
+        loginUrl: () => "/login",
+        mintAccessToken: async () => ({ accessToken: "t", expiresIn: 60 }),
+        verifyToken: async () => null,
+      },
+    });
+    const meta = await app.fetch(new Request(`${ORIGIN}/.well-known/oauth-authorization-server`));
+    assert.equal(meta.status, 200);
+    const body = (await meta.json()) as {
+      authorization_endpoint: string;
+      token_endpoint: string;
+    };
+    assert.equal(body.authorization_endpoint, `${ORIGIN}/oauth/authorize`);
+    assert.equal(body.token_endpoint, `${ORIGIN}/oauth/token`);
+
+    // The routing table must actually match what metadata advertised.
+    const authorize = await app.fetch(
+      new Request(`${ORIGIN}/oauth/authorize?response_type=code`, { method: "GET" }),
+    );
+    assert.notEqual(authorize.status, 404);
+  });
+
   it("locks down to pre-registered clients when only gemini is configured", async () => {
     const app = createMcpApp<Ctx>({
       serverInfo: { name: "gemini-only", version: "1.0.0" },
@@ -415,5 +445,142 @@ describe("createMcpApp", () => {
         }),
       /at least one connector/,
     );
+  });
+
+  const buildAuth = () => ({
+    codeSecret: "scope-guard-test-code-secret-32-characters!",
+    resolveUser: async () => null,
+    loginUrl: () => "/login",
+    mintAccessToken: async () => ({ accessToken: "t", expiresIn: 60 }),
+    verifyToken: async () => null,
+  });
+
+  it("refuses to construct: multi-scope server with a tool that omits scope entirely", () => {
+    const unscoped: ToolDef<Ctx> = { ...echo, name: "unscoped", scope: undefined };
+    assert.throws(
+      () =>
+        createMcpApp<Ctx>({
+          serverInfo: { name: "x", version: "1" },
+          tools: [echo, unscoped],
+          scopes: ["mcp", "admin"],
+          defaultScopes: ["mcp"],
+          auth: buildAuth(),
+        }),
+      /unscoped/,
+    );
+  });
+
+  it("constructs fine: multi-scope server where every tool has an explicit scope", () => {
+    assert.doesNotThrow(() =>
+      createMcpApp<Ctx>({
+        serverInfo: { name: "x", version: "1" },
+        tools: [echo],
+        scopes: ["mcp", "admin"],
+        defaultScopes: ["mcp"],
+        auth: buildAuth(),
+      }),
+    );
+  });
+
+  it("constructs fine: multi-scope server where a tool opts out via scope: null", () => {
+    const open: ToolDef<Ctx> = { ...echo, name: "open", scope: null };
+    assert.doesNotThrow(() =>
+      createMcpApp<Ctx>({
+        serverInfo: { name: "x", version: "1" },
+        tools: [echo, open],
+        scopes: ["mcp", "admin"],
+        defaultScopes: ["mcp"],
+        auth: buildAuth(),
+      }),
+    );
+  });
+
+  it("constructs fine: single-scope server with an unscoped tool — no ambiguity to guard against", () => {
+    const unscoped: ToolDef<Ctx> = { ...echo, name: "unscoped", scope: undefined };
+    assert.doesNotThrow(() =>
+      createMcpApp<Ctx>({
+        serverInfo: { name: "x", version: "1" },
+        tools: [unscoped],
+        // scopes omitted → defaults to the single ["mcp"] scope.
+        auth: buildAuth(),
+      }),
+    );
+  });
+});
+
+describe("hideToolsOutsideScope", () => {
+  const adminOnly: ToolDef<Ctx> = { ...echo, name: "admin_tool", scope: "admin" };
+  const open: ToolDef<Ctx> = { ...echo, name: "open_tool", scope: null };
+
+  const makeScopedApp = (hideToolsOutsideScope?: boolean): McpApp =>
+    createMcpApp<Ctx>({
+      serverInfo: { name: "app-test", version: "1.0.0" },
+      tools: [echo, adminOnly, open],
+      scopes: ["mcp", "admin"],
+      defaultScopes: ["mcp"],
+      clients: ["claude"],
+      ...(hideToolsOutsideScope !== undefined ? { hideToolsOutsideScope } : {}),
+      auth: {
+        codeSecret: "hide-tools-test-code-secret-32-characters!!",
+        resolveUser: async () => ({ id: "u1" }),
+        loginUrl: () => "/login",
+        mintAccessToken: async () => ({ accessToken: "t", expiresIn: 60 }),
+        verifyToken: async (token) => {
+          try {
+            return JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as {
+              userId: string;
+              scopes: string[];
+              audience: string;
+            };
+          } catch {
+            return null;
+          }
+        },
+      },
+    });
+
+  const mcpOnlyToken = encodeToken({ userId: "u1", scopes: ["mcp"], audience: RESOURCE });
+
+  it("defaults to false — tools/list is unfiltered regardless of the principal's scopes", async () => {
+    const app = makeScopedApp();
+    const res = await rpc(app, { jsonrpc: "2.0", id: 1, method: "tools/list" }, mcpOnlyToken);
+    const body = (await res.json()) as { result: { tools: Array<{ name: string }> } };
+    const names = body.result.tools.map((t) => t.name).sort();
+    assert.deepEqual(names, ["admin_tool", "echo", "open_tool"]);
+  });
+
+  it("when true, omits a tool whose scope the principal doesn't hold", async () => {
+    const app = makeScopedApp(true);
+    const res = await rpc(app, { jsonrpc: "2.0", id: 1, method: "tools/list" }, mcpOnlyToken);
+    const body = (await res.json()) as { result: { tools: Array<{ name: string }> } };
+    const names = body.result.tools.map((t) => t.name).sort();
+    // "admin_tool" needs a scope this token doesn't hold — omitted.
+    // "echo" (scope: "mcp") and "open_tool" (scope: null) are both visible.
+    assert.deepEqual(names, ["echo", "open_tool"]);
+  });
+
+  it("when true, an admin-scoped token sees every tool", async () => {
+    const app = makeScopedApp(true);
+    const adminToken = encodeToken({ userId: "u1", scopes: ["mcp", "admin"], audience: RESOURCE });
+    const res = await rpc(app, { jsonrpc: "2.0", id: 1, method: "tools/list" }, adminToken);
+    const body = (await res.json()) as { result: { tools: Array<{ name: string }> } };
+    const names = body.result.tools.map((t) => t.name).sort();
+    assert.deepEqual(names, ["admin_tool", "echo", "open_tool"]);
+  });
+
+  it("hiding a tool from tools/list doesn't change tools/call — still 403 insufficient_scope", async () => {
+    const app = makeScopedApp(true);
+    const res = await rpc(
+      app,
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name: "admin_tool", arguments: { text: "x" } },
+      },
+      mcpOnlyToken,
+    );
+    assert.equal(res.status, 403);
+    assert.match(res.headers.get("WWW-Authenticate") ?? "", /error="insufficient_scope"/);
   });
 });

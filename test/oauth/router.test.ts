@@ -735,4 +735,37 @@ describe("resourcePath / oauthPath construction guards", () => {
     assert.ok(authorized);
     assert.equal(authorized.status, 200, "must reach the consent interstitial, not 404");
   });
+
+  it("normalizes a trailing slash in an explicit oauthPath — metadata, routes, and the consent form action all agree", async () => {
+    const router = createOAuthRouter({ oauthPath: "/mcp/oauth/", ports: basePorts });
+
+    const asMeta = await router.tryHandle(
+      new Request("https://example.test/.well-known/oauth-authorization-server"),
+    );
+    assert.ok(asMeta);
+    const meta = (await asMeta.json()) as { authorization_endpoint: string };
+    assert.equal(meta.authorization_endpoint, "https://example.test/mcp/oauth/authorize");
+
+    const authorizeUrl = new URL("https://example.test/mcp/oauth/authorize");
+    authorizeUrl.search = new URLSearchParams({
+      response_type: "code",
+      client_id: "c1",
+      redirect_uri: CLAUDE_CALLBACK,
+      code_challenge: await sha256Base64Url("oauthpath-trailing-slash-verifier-value"),
+      code_challenge_method: "S256",
+      resource: RESOURCE,
+    }).toString();
+    const authorized = await router.tryHandle(new Request(authorizeUrl, { method: "GET" }));
+    assert.ok(authorized);
+    assert.equal(
+      authorized.status,
+      200,
+      "must reach the consent interstitial via the routing table",
+    );
+
+    // The consent page's form posts to `${oauthPath}/consent` — must also
+    // be the normalized path, not "/mcp/oauth//consent".
+    const html = await authorized.text();
+    assert.match(html, /action="\/mcp\/oauth\/consent"/);
+  });
 });

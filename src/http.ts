@@ -5,6 +5,11 @@ export const corsHeaders = (extra?: Record<string, string>): Record<string, stri
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, MCP-Protocol-Version",
+  // Response headers are opaque to browser JS by default unless explicitly
+  // exposed — without this, a browser-based MCP client reading a 401 can
+  // see the status but not WWW-Authenticate itself, i.e. not the
+  // resource_metadata URL RFC 9728 discovery depends on.
+  "Access-Control-Expose-Headers": "WWW-Authenticate",
   ...extra,
 });
 

@@ -11,11 +11,12 @@
 
 import { BodyTooLargeError } from "../body.js";
 import { requireHttpMethod } from "../http.js";
-import { issueAuthCode } from "./codes.js";
-import { oauthError, resolveSecret } from "./config.js";
+import { safeOAuthAudit } from "./audit.js";
+import { issueAuthCode, memoryCodeStore } from "./codes.js";
+import { oauthError, resolveSecrets } from "./config.js";
 import { OAUTH_ERRORS } from "./constants.js";
 import { readOAuthBody } from "./reqbody.js";
-import { seal, unseal } from "./sealed.js";
+import { seal, unsealAny } from "./sealed.js";
 import type { OAuthRouterOptions, OAuthUser, RegisteredClient } from "./types.js";
 
 const POST_ONLY = new Set(["POST"]);
@@ -37,6 +38,12 @@ export type ConsentOptions = {
   /**
    * Render the approval page yourself. Return any `Response` — HTML, or a
    * redirect to your own route. Omit for the built-in hardened interstitial.
+   *
+   * If your page sets its own `Content-Security-Policy` with `form-action`,
+   * include `new URL(input.redirectUri).origin` in it — Chromium enforces
+   * `form-action` across the redirect your approval POST triggers, not just
+   * the immediate submission target, so `'self'` alone blocks the eventual
+   * redirect back to the client's own callback.
    */
   render?: (input: ConsentRequest) => Response | Promise<Response>;
   /**
@@ -56,20 +63,6 @@ type ConsentTicketPayload = {
   state: string;
   exp: number;
   jti: string;
-};
-
-/** In-memory single-use map, mirroring `codes.ts`'s default when no `codeStore` is configured. */
-const memoryConsumed = new Map<string, number>();
-const memoryConsentStore = {
-  consume: (jti: string, expMs: number): boolean => {
-    const now = Date.now();
-    for (const [key, exp] of memoryConsumed) {
-      if (exp < now) memoryConsumed.delete(key);
-    }
-    if (memoryConsumed.has(jti)) return false;
-    memoryConsumed.set(jti, expMs);
-    return true;
-  },
 };
 
 export const secureRedirect = (location: string): Response =>
@@ -134,13 +127,23 @@ const ESCAPE_HTML: Record<string, string> = {
 const escapeHtml = (value: string): string =>
   value.replace(/[&<>"']/g, (ch) => ESCAPE_HTML[ch] ?? ch);
 
-const CONSENT_SECURITY_HEADERS: Record<string, string> = {
+/**
+ * `form-action` governs where a form (and the redirect chain it triggers)
+ * may end up — not just the immediate POST target. Chromium enforces it on
+ * the 302 this page's own submission produces, so `'self'` alone blocks the
+ * approve/deny POST to `${oauthPath}/consent` from ever reaching a
+ * `redirectUri` on another origin (the common case — Claude, Gemini,
+ * loopback clients). `redirectUri` is already validated by `authorize.ts`
+ * before this renders, so its origin is safe to add here.
+ */
+const consentSecurityHeaders = (redirectUri: string): Record<string, string> => ({
   "Content-Security-Policy":
-    "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+    `default-src 'none'; style-src 'unsafe-inline'; ` +
+    `form-action 'self' ${new URL(redirectUri).origin}; frame-ancestors 'none'`,
   "X-Frame-Options": "DENY",
   "Referrer-Policy": "no-referrer",
   "Cache-Control": "no-store",
-};
+});
 
 /** Built-in hardened interstitial — used whenever the host doesn't supply `consent.render`. */
 const renderBuiltInConsent = (input: ConsentRequest): Response => {
@@ -173,7 +176,10 @@ const renderBuiltInConsent = (input: ConsentRequest): Response => {
 </html>`;
   return new Response(html, {
     status: 200,
-    headers: { "Content-Type": "text/html; charset=utf-8", ...CONSENT_SECURITY_HEADERS },
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      ...consentSecurityHeaders(input.redirectUri),
+    },
   });
 };
 
@@ -212,8 +218,9 @@ export const handleConsent = async (
     return oauthError(OAUTH_ERRORS.invalidRequest, 400, "consent_ticket required");
   }
 
-  const secret = await resolveSecret(options.ports, request);
-  const payload = await unseal<ConsentTicketPayload>(secret, "consent", ticket);
+  const secrets = await resolveSecrets(options.ports, request);
+  const unsealed = await unsealAny<ConsentTicketPayload>(secrets, "consent", ticket);
+  const payload = unsealed?.value ?? null;
   if (
     !payload ||
     typeof payload.exp !== "number" ||
@@ -223,8 +230,19 @@ export const handleConsent = async (
   ) {
     return oauthError(OAUTH_ERRORS.invalidGrant, 400, "invalid or expired consent_ticket");
   }
+  if (unsealed && unsealed.keyIndex > 0) {
+    await safeOAuthAudit(options, {
+      event: "legacy_code_secret_used",
+      clientId: payload.clientId,
+      reason: `consent ticket unsealed with codeSecret[${unsealed.keyIndex}]`,
+    });
+  }
 
-  const store = options.ports.codeStore ?? memoryConsentStore;
+  // Shares the same store `codes.ts` uses for auth codes when no
+  // `ports.codeStore` is configured — the `ct:` prefix disambiguates a
+  // ticket's jti from a code's, so one Map and one prune throttle serve
+  // both instead of two independent, unthrottled ones.
+  const store = options.ports.codeStore ?? memoryCodeStore;
   const fresh = await store.consume(`ct:${payload.jti}`, payload.exp);
   if (!fresh) {
     return oauthError(OAUTH_ERRORS.invalidGrant, 400, "consent_ticket already used");
@@ -243,7 +261,7 @@ export const handleConsent = async (
     return secureRedirect(buildDeniedRedirectUrl(payload.redirectUri, payload.state));
   }
 
-  const code = await issueAuthCode(secret, {
+  const code = await issueAuthCode(secrets[0], {
     clientId: payload.clientId,
     redirectUri: payload.redirectUri,
     codeChallenge: payload.codeChallenge,

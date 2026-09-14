@@ -1,8 +1,9 @@
 import { BodyTooLargeError } from "../body.js";
 import { requireHttpMethod } from "../http.js";
+import { safeOAuthAudit } from "./audit.js";
 import { firstClientAuthError, readClientAuth } from "./clientauth.js";
-import { type AuthCodeRecord, consumeAuthCode } from "./codes.js";
-import { advertisedScopes, oauthError, resolveSecret, tokenResponse } from "./config.js";
+import { type AuthCodeRecord, consumeAuthCodeDetailed } from "./codes.js";
+import { advertisedScopes, oauthError, resolveSecrets, tokenResponse } from "./config.js";
 import { GRANT_TYPES, type GrantType, OAUTH_ERRORS } from "./constants.js";
 import { verifyPkceS256 } from "./pkce.js";
 import { readOAuthBody } from "./reqbody.js";
@@ -87,14 +88,22 @@ const handleAuthCode: GrantHandler = async ({
   const resourceError = firstResourceError(body.resource ?? "", expectedResource);
   if (resourceError) return resourceError;
 
-  const secret = await resolveSecret(options.ports, request);
-  const record = await consumeAuthCode(
-    secret,
+  const secrets = await resolveSecrets(options.ports, request);
+  const consumed = await consumeAuthCodeDetailed(
+    secrets,
     body.code ?? "",
     options.ports.codeStore !== undefined ? { codeStore: options.ports.codeStore } : {},
   );
-  if (!record) {
+  if (!consumed) {
     return oauthError(OAUTH_ERRORS.invalidGrant, 400, "invalid or expired code");
+  }
+  const { record, keyIndex } = consumed;
+  if (keyIndex > 0) {
+    await safeOAuthAudit(options, {
+      event: "legacy_code_secret_used",
+      clientId,
+      reason: `auth code redeemed with codeSecret[${keyIndex}]`,
+    });
   }
 
   const mismatch = firstAuthCodeMismatch(record, body, clientId);

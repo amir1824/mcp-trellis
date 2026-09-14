@@ -1,14 +1,20 @@
 /** Token-endpoint client authentication (RFC 6749 §2.3.1). */
 
 import { safeOAuthAudit } from "./audit.js";
-import { oauthError, resolveSecret, unregisteredClientsAllowed } from "./config.js";
+import {
+  oauthError,
+  registeredClientsRequired,
+  resolveSecrets,
+  unregisteredClientsAllowed,
+} from "./config.js";
 import {
   OAUTH_ERRORS,
   TOKEN_ENDPOINT_AUTH_METHODS,
   type TokenEndpointAuthMethod,
 } from "./constants.js";
-import { verifyClientSecret } from "./secrethash.js";
-import type { OAuthRouterOptions } from "./types.js";
+import { unsealAny } from "./sealed.js";
+import { verifyClientSecretAny } from "./secrethash.js";
+import type { ClientAssertion, OAuthRouterOptions } from "./types.js";
 
 export type ClientAuth = {
   clientId: string;
@@ -102,6 +108,19 @@ const DUMMY_STORED_HASH = "hmac-sha256$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
  * used to distinguish "unknown" from "known, wrong secret" by timing. This
  * only runs on the non-default, already-more-expensive path — public
  * clients (the common case) never pay it.
+ *
+ * A client_id resolved by neither `clientStore` nor unsealing as this
+ * server's own `/register` assertion is further rejected when
+ * `requireRegisteredClients` (default true since 1.0) applies — the same
+ * rule `authorize.ts` already enforces. Without this, an invented public
+ * `client_id` that never went through `/authorize` at all could still
+ * authenticate at `/token`'s `refresh_token` grant or at `/revoke`, quietly
+ * bypassing the guarantee `requireRegisteredClients`'s own docs describe as
+ * global. The `authorization_code` grant was never actually exposed by this
+ * gap — a redeemable code's `clientId` is bound into its sealed payload at
+ * `/authorize` time, where this same check already ran — but `/token` and
+ * `/revoke` share this one gate for every grant, so the fix belongs here,
+ * not duplicated per grant type.
  */
 export const firstClientAuthError = async (
   auth: ClientAuth,
@@ -112,16 +131,45 @@ export const firstClientAuthError = async (
   const registered = (await store?.get(auth.clientId)) ?? null;
 
   if (!registered) {
-    if (unregisteredClientsAllowed(options)) return null;
-    const codeSecretValue = await resolveSecret(options.ports, request);
-    await verifyClientSecret(auth.secret ?? DUMMY_SECRET, DUMMY_STORED_HASH, codeSecretValue);
-    return invalidClientAudited(options, auth.clientId, "unknown client_id");
+    if (!unregisteredClientsAllowed(options)) {
+      const codeSecretValues = await resolveSecrets(options.ports, request);
+      await verifyClientSecretAny(auth.secret ?? DUMMY_SECRET, DUMMY_STORED_HASH, codeSecretValues);
+      return invalidClientAudited(options, auth.clientId, "unknown client_id");
+    }
+    if (registeredClientsRequired(options)) {
+      const codeSecretValues = await resolveSecrets(options.ports, request);
+      const unsealed = await unsealAny<ClientAssertion>(codeSecretValues, "client", auth.clientId);
+      if (!unsealed) {
+        return invalidClientAudited(
+          options,
+          auth.clientId,
+          "client_id must come from clientStore or this server's own /register",
+        );
+      }
+      if (unsealed.keyIndex > 0) {
+        await safeOAuthAudit(options, {
+          event: "legacy_code_secret_used",
+          clientId: auth.clientId,
+          reason: `client assertion unsealed with codeSecret[${unsealed.keyIndex}]`,
+        });
+      }
+    }
+    return null;
   }
 
   const expected = registered.tokenEndpointAuthMethod;
   if (expected === TOKEN_ENDPOINT_AUTH_METHODS.none) return null;
 
+  // A known client_id failing here (wrong method, or right method but no
+  // secret presented) still pays the same fixed comparison cost as one
+  // that reaches the real verifyClientSecretAny call below with a wrong
+  // secret — otherwise these two branches return measurably faster than
+  // every other rejection path in this function, a timing signal for
+  // "this client_id exists and requires a secret" distinct from "the
+  // secret itself was wrong."
   if (auth.method !== expected) {
+    const codeSecretValues = await resolveSecrets(options.ports, request);
+    await verifyClientSecretAny(auth.secret ?? DUMMY_SECRET, DUMMY_STORED_HASH, codeSecretValues);
     return invalidClientAudited(
       options,
       auth.clientId,
@@ -129,16 +177,31 @@ export const firstClientAuthError = async (
     );
   }
   if (!auth.secret) {
+    const codeSecretValues = await resolveSecrets(options.ports, request);
+    await verifyClientSecretAny(DUMMY_SECRET, DUMMY_STORED_HASH, codeSecretValues);
     return invalidClientAudited(options, auth.clientId, "client_secret required");
   }
 
   if (store?.secretHash) {
-    const codeSecretValue = await resolveSecret(options.ports, request);
+    const codeSecretValues = await resolveSecrets(options.ports, request);
     const stored = await store.secretHash(auth.clientId);
     // Constant path whether a hash is on file or not — same reasoning as
     // the unregistered-client branch above.
-    const ok = await verifyClientSecret(auth.secret, stored ?? DUMMY_STORED_HASH, codeSecretValue);
-    if (ok && stored !== null) return null;
+    const { ok, keyIndex } = await verifyClientSecretAny(
+      auth.secret,
+      stored ?? DUMMY_STORED_HASH,
+      codeSecretValues,
+    );
+    if (ok && stored !== null) {
+      if (keyIndex !== null && keyIndex > 0) {
+        await safeOAuthAudit(options, {
+          event: "legacy_code_secret_used",
+          clientId: auth.clientId,
+          reason: `client_secret_hash verified with codeSecret[${keyIndex}]`,
+        });
+      }
+      return null;
+    }
     return invalidClientAudited(
       options,
       auth.clientId,

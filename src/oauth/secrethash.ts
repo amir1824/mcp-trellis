@@ -30,6 +30,7 @@
 
 import { timingSafeEqual } from "../auth/bearer.js";
 import { bytesToBase64Url } from "./base64url.js";
+import { createBoundedCache } from "./keycache.js";
 
 const HASH_PREFIX = "hmac-sha256$";
 const HKDF_INFO = "mcp-trellis:client-secret-hash";
@@ -56,6 +57,17 @@ const deriveHmacKey = async (codeSecretValue: string): Promise<CryptoKey> => {
   );
 };
 
+const KEY_CACHE_LIMIT = 32;
+const hmacKeyCache = createBoundedCache<Promise<CryptoKey>>(KEY_CACHE_LIMIT);
+
+const cachedDeriveHmacKey = (codeSecretValue: string): Promise<CryptoKey> => {
+  const cached = hmacKeyCache.get(codeSecretValue);
+  if (cached) return cached;
+  const derived = deriveHmacKey(codeSecretValue);
+  hmacKeyCache.set(codeSecretValue, derived);
+  return derived;
+};
+
 /**
  * Hash a client secret for storage in your `ClientStore.secretHash` lookup.
  * Call this once, at registration time, with the same `codeSecret` value
@@ -66,7 +78,7 @@ export const hashClientSecret = async (
   secret: string,
   codeSecretValue: string,
 ): Promise<string> => {
-  const key = await deriveHmacKey(codeSecretValue);
+  const key = await cachedDeriveHmacKey(codeSecretValue);
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(secret));
   return `${HASH_PREFIX}${bytesToBase64Url(sig)}`;
 };
@@ -85,4 +97,28 @@ export const verifyClientSecret = async (
   if (!presented || !stored) return false;
   const recomputed = await hashClientSecret(presented, codeSecretValue);
   return timingSafeEqual(recomputed, stored);
+};
+
+/**
+ * Rotation-aware `verifyClientSecret`: a hash stored under an older
+ * `codeSecret` must keep verifying until it's re-hashed under the current
+ * one. Always tries every entry in `codeSecretValues` — even after an
+ * earlier one matches — for the *unknown-client* dummy-compare call site in
+ * `clientauth.ts`, where `stored` is a fixed dummy hash that never matches
+ * any real key: looping the same number of times whether or not a key list
+ * is configured for rotation keeps that call's cost from leaking how many
+ * keys are configured.
+ */
+export const verifyClientSecretAny = async (
+  presented: string,
+  stored: string,
+  codeSecretValues: readonly string[],
+): Promise<{ ok: boolean; keyIndex: number | null }> => {
+  let matchedIndex: number | null = null;
+  for (const [keyIndex, codeSecretValue] of codeSecretValues.entries()) {
+    if (await verifyClientSecret(presented, stored, codeSecretValue)) {
+      matchedIndex ??= keyIndex;
+    }
+  }
+  return { ok: matchedIndex !== null, keyIndex: matchedIndex };
 };

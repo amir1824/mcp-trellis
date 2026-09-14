@@ -106,7 +106,11 @@ describe("dispatch", () => {
     assert.equal(body.error.code, -32002);
   });
 
-  it("returns -32601 for an unknown tool name at the HTTP level", async () => {
+  it("returns -32602 (protocol error, not a tool result) for an unknown tool name", async () => {
+    // A name that doesn't match any registered tool is a malformed
+    // request, not a tool execution outcome — distinct from a tool
+    // handler's own isError: true result (see the "tool error redaction"
+    // suite for that path).
     const res = await post(
       {
         jsonrpc: "2.0",
@@ -117,11 +121,10 @@ describe("dispatch", () => {
       "read-tok",
     );
     assert.equal(res.status, 200);
-    const body = (await res.json()) as {
-      result: { content: Array<{ text: string }>; isError: boolean };
-    };
-    assert.equal(body.result.isError, true);
-    assert.equal(body.result.content[0]?.text, "Unknown tool: no-such-tool");
+    const body = (await res.json()) as { id: unknown; error: { code: number; message: string } };
+    assert.equal(body.id, 9);
+    assert.equal(body.error.code, -32602);
+    assert.equal(body.error.message, "Unknown tool: no-such-tool");
   });
 
   it("rejects a missing jsonrpc field with -32600, echoing the id", async () => {
@@ -343,11 +346,16 @@ describe("dispatch", () => {
     });
     assert.equal(res.status, 401);
     assert.ok(res.headers.get("WWW-Authenticate")?.includes("resource_metadata"));
+    // Without this, a browser-based client's JS can see the 401 happened
+    // but not read WWW-Authenticate itself — the header a browser doesn't
+    // explicitly expose is invisible to page script even though it's on
+    // the wire, and RFC 9728 discovery depends on reading it.
+    assert.equal(res.headers.get("Access-Control-Expose-Headers"), "WWW-Authenticate");
     const body = (await res.json()) as { id: unknown };
     assert.equal(body.id, 3);
   });
 
-  it("denies tool when scope missing, echoing the request id", async () => {
+  it("denies tool when scope missing (403 insufficient_scope), echoing the request id", async () => {
     const res = await post(
       {
         jsonrpc: "2.0",
@@ -357,7 +365,8 @@ describe("dispatch", () => {
       },
       "read-tok",
     );
-    assert.equal(res.status, 401);
+    assert.equal(res.status, 403);
+    assert.match(res.headers.get("WWW-Authenticate") ?? "", /error="insufficient_scope"/);
     const body = (await res.json()) as { id: unknown };
     assert.equal(body.id, 4);
   });

@@ -1,6 +1,6 @@
 {
   "name": "mcp-trellis",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Build secure remote MCP servers for Claude, ChatGPT and Gemini using your existing auth.",
   "type": "module",
   "license": "MIT",

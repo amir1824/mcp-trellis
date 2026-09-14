@@ -5,9 +5,14 @@ export const BEARER_PREFIX = "Bearer ";
 /** Above any real JWT / HMAC sig; prevents allocation DoS on attacker input. */
 export const MAX_COMPARE_LENGTH = 4096;
 
+/** RFC 7235 §2.1 — the auth-scheme token is case-insensitive ("bearer", "BEARER", "Bearer" all valid). */
+const BEARER_SCHEME_RE = /^bearer\s+/i;
+
 export const parseBearer = (authorization: string | null): string | null => {
-  if (!authorization?.startsWith(BEARER_PREFIX)) return null;
-  const token = authorization.slice(BEARER_PREFIX.length).trim();
+  if (!authorization) return null;
+  const match = BEARER_SCHEME_RE.exec(authorization);
+  if (!match) return null;
+  const token = authorization.slice(match[0].length).trim();
   return token.length > 0 ? token : null;
 };
 
@@ -40,10 +45,21 @@ export type WwwAuthenticateOptions = {
   realm: string;
   /** Absolute URL to RFC 9728 protected resource metadata. */
   resourceMetadataUrl: string;
+  /** RFC 6750 §3.1 error code, e.g. `"insufficient_scope"`. Omitted on a plain 401. */
+  error?: string | undefined;
+  /** RFC 6750 §3.1 — the scope(s) that would satisfy the request. Paired with `error`. */
+  scope?: string | undefined;
 };
 
-export const wwwAuthenticateHeader = (options: WwwAuthenticateOptions): string =>
-  `${BEARER_PREFIX}realm="${options.realm}", resource_metadata="${options.resourceMetadataUrl}"`;
+export const wwwAuthenticateHeader = (options: WwwAuthenticateOptions): string => {
+  const parts = [
+    `realm="${options.realm}"`,
+    `resource_metadata="${options.resourceMetadataUrl}"`,
+    ...(options.error ? [`error="${options.error}"`] : []),
+    ...(options.scope ? [`scope="${options.scope}"`] : []),
+  ];
+  return `${BEARER_PREFIX}${parts.join(", ")}`;
+};
 
 /** RFC 6750 §2.3 uses `access_token`; also reject legacy `token`. */
 export const rejectQueryToken = (url: URL): boolean =>

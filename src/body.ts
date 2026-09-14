@@ -40,21 +40,36 @@ const toBytes = (chunk: Uint8Array | string): Uint8Array =>
   typeof chunk === "string" ? new TextEncoder().encode(chunk) : chunk;
 
 /**
- * Reads a Web `Request` body as text, rejecting early on an honest
- * oversized `Content-Length`, then aborting mid-stream — before the whole
- * body is buffered — if a chunked body (no `Content-Length`) exceeds
- * `maxBytes`. Falls back to `request.text()` when `request.body` is null
- * (some runtimes don't expose a streaming body), still enforcing the cap.
+ * Structural subset of `Request`/`Response` that `readBoundedText` actually
+ * needs — both are real `Request`s (every caller inside this package) and,
+ * via `tools.ts`'s `apiTool`, a `Response` from an upstream `fetch` call
+ * capping how much of that body a tool ever buffers into memory.
  */
-export const readBoundedText = async (request: Request, maxBytes: number): Promise<string> => {
-  const declared = declaredContentLength(request.headers);
+export type BoundedBodySource = {
+  headers: { get: (name: string) => string | null };
+  body: ReadableStream<Uint8Array> | null;
+  text: () => Promise<string>;
+};
+
+/**
+ * Reads a bounded body as text, rejecting early on an honest oversized
+ * `Content-Length`, then aborting mid-stream — before the whole body is
+ * buffered — if a chunked body (no `Content-Length`) exceeds `maxBytes`.
+ * Falls back to `source.text()` when `source.body` is null (some runtimes
+ * don't expose a streaming body), still enforcing the cap.
+ */
+export const readBoundedText = async (
+  source: BoundedBodySource,
+  maxBytes: number,
+): Promise<string> => {
+  const declared = declaredContentLength(source.headers);
   if (declared !== null && declared > maxBytes) {
     throw new BodyTooLargeError(maxBytes);
   }
 
-  const reader = request.body?.getReader();
+  const reader = source.body?.getReader();
   if (!reader) {
-    const text = await request.text();
+    const text = await source.text();
     if (new TextEncoder().encode(text).byteLength > maxBytes) {
       throw new BodyTooLargeError(maxBytes);
     }

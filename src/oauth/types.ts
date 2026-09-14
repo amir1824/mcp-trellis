@@ -24,6 +24,13 @@ export type RegisteredClient = {
  */
 export type ClientAssertion = {
   redirectUris: string[];
+  /**
+   * Unix seconds when `/register` sealed this assertion. Informational only
+   * — not enforced as an expiry — so it can help an operator judge how old
+   * a still-valid DCR client is. Optional on read: an assertion sealed
+   * before this field existed still unseals and works.
+   */
+  iat?: number;
 };
 
 export type ClientStore = {
@@ -103,8 +110,22 @@ export type OAuthAuditEntry = {
 };
 
 export type OAuthPorts = {
-  /** HMAC secret for signing auth codes. */
-  codeSecret: string | ((req: Request) => string | Promise<string>);
+  /**
+   * Secret(s) that seal auth codes, consent tickets, and self-issued DCR
+   * client assertions (`sealed.ts`), and key `ClientStore.secretHash`.
+   *
+   * A single string works exactly as before. For key rotation, pass an
+   * array: the **first** entry seals new material and hashes new client
+   * secrets; **every** entry is tried when unsealing/verifying, so material
+   * sealed under an older key keeps working until you drop it from the
+   * array. `ports.audit` sees a `"legacy_code_secret_used"` event whenever
+   * anything but the first entry was the one that actually verified,
+   * so you know when it's safe to remove.
+   */
+  codeSecret:
+    | string
+    | string[]
+    | ((req: Request) => string | string[] | Promise<string | string[]>);
   /** Resolve the logged-in user, or null → redirect to login. */
   resolveUser: (req: Request) => Promise<OAuthUser | null>;
   /** Where to send unauthenticated authorize requests. */

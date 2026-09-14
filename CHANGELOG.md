@@ -3,6 +3,161 @@
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.0] - 2026-09-14
+
+### Upgrading from 1.1.x
+
+Fully additive for the common path — every existing single-scope,
+single-`codeSecret`, default-options server keeps working unchanged. Two
+things are worth a deliberate look before upgrading:
+
+- **An unrecognized `tools/call` tool name is now a JSON-RPC `-32602`
+  protocol error, not a successful result with `isError: true`.** A host
+  that pattern-matched on the old `"Unknown tool: …"` text result needs to
+  read the JSON-RPC `error` field instead. Everything else about
+  `tools/call` (a tool that exists and runs, and its own thrown/returned
+  errors) is unchanged.
+- **A multi-scope `createMcpApp`/`createOAuthRouter` now refuses to
+  construct if any tool omits `scope`.** This only fires when `scopes` has
+  more than one entry — a single-scope server is never affected. Fix it by
+  adding `scope: "<one of your scopes>"` to the named tool(s), or
+  `scope: null` to state the omission on purpose (any authenticated
+  principal, regardless of its scopes, may call it).
+
+### Added
+
+- **`codeSecret` accepts `string[]` for key rotation** (`OAuthPorts.codeSecret`,
+  `McpAppAuth.codeSecret`) — the first entry seals new auth codes, consent
+  tickets, DCR client assertions, and hashes new client secrets; every entry
+  is tried when unsealing/verifying, so material sealed under an older key
+  keeps working until you drop it. `ports.audit` sees a new
+  `"legacy_code_secret_used"` event whenever a non-primary key was the one
+  that actually verified. A single string continues to work exactly as
+  before. See [security.md](docs/security.md#rotating-codesecret) for the
+  full rotation procedure.
+- **`hideToolsOutsideScope`** (`McpHandlerOptions`/`McpAppOptions`, default
+  `false`) filters `tools/list` down to tools the calling principal's scopes
+  actually satisfy. `tools/call` already enforces scope on its own
+  regardless of this setting (403 `insufficient_scope`) — this only changes
+  what's discoverable via `tools/list`.
+- **`ToolDef.scope` accepts `null`** to explicitly state "any authenticated
+  principal may call this, deliberately" — distinct from omitting `scope`
+  entirely, which on a multi-scope server is now a construction-time error
+  (see Upgrading above).
+- **`apiTool` gets `timeoutMs`** (default 30000ms, or `false` to disable) and
+  **`maxResponseBytes`** (default 1 MiB) — an upstream that never responds,
+  or returns an oversized body, previously hung or unboundedly buffered the
+  tool call. Both surface as `isError: true`, not a thrown exception
+  `onToolError` would redact.
+- **`InvalidOriginError`** (`mcp-trellis/node`) — thrown by `resolveOrigin`
+  for a Host/`X-Forwarded-*` header that can't safely become an origin;
+  `asNodeHandler` answers it **400**, not the generic 500 an actual
+  unexpected failure gets.
+
+### Changed
+
+- **`requireRegisteredClients` is now enforced at `/token`'s `refresh_token`
+  grant and at `/revoke`, not just at `/authorize`.** An invented public
+  `client_id` that never went through `/authorize` at all could previously
+  still authenticate at either. The `authorization_code` grant was never
+  actually exposed by this — a redeemable code's `client_id` is bound into
+  its sealed payload at `/authorize` time, where the check already ran.
+- **An unrecognized `tools/call` tool name returns `-32602`
+  (`JSONRPC_INVALID_PARAMS`)** instead of a successful result carrying
+  `isError: true` — see Upgrading above. `ToolRegistry.call`'s own
+  `isError: true` fallback for direct callers, outside the JSON-RPC
+  dispatch, is unchanged.
+- **`resolveOrigin` (`mcp-trellis/node`) validates through `URL`** instead of
+  templating the origin string directly from headers — a Host carrying a
+  path, query, fragment, embedded credentials, or a non-`http(s)`
+  `X-Forwarded-Proto` is now rejected instead of silently building a
+  malformed origin.
+- **`parseBearer` accepts the `Bearer` scheme case-insensitively** (RFC 7235
+  §2.1) — `bearer <token>` / `BEARER <token>` are now recognized, not just
+  the exact-case `Bearer <token>`.
+- **`readOAuthBody` rejects a duplicate form parameter and a non-scalar JSON
+  field value** instead of silently keeping the last value or
+  `String()`-coercing an object/array into `"[object Object]"`.
+- **`/register` returns `400 invalid_client_metadata`** for malformed JSON, a
+  non-object body, a non-array `redirect_uris`, or more than 10 entries —
+  previously the first two silently fell back to a successful registration
+  with the default callback. `redirect_uris` omitted entirely still falls
+  back the same way as before.
+- **`resourcePath: "/"` no longer produces a `//oauth` double slash** in the
+  default `oauthPath`; `oauthPath` itself is now normalized the same way
+  `resourcePath` already was (a trailing slash no longer produces
+  inconsistent routes/metadata/consent-form-action paths).
+
+### Fixed
+
+- **Missing tool scope on `firstClientAuthError`'s auth-mismatch paths no
+  longer returns faster than a real secret check** — closing a timing gap
+  between "wrong auth method" / "no secret presented" (previously free) and
+  every other rejection reason (already fixed-cost).
+- **`validateAgainstSchema`'s `required`/`properties` use `Object.hasOwn`**
+  instead of `key in record`, which also matched inherited
+  `Object.prototype` members (`toString`, `constructor`, …).
+- **`Access-Control-Expose-Headers: WWW-Authenticate`** is now sent — a
+  browser-based MCP client previously couldn't read `WWW-Authenticate` from
+  page JS even though it was on the wire, hiding the RFC 9728
+  `resource_metadata` URL discovery depends on.
+- **`examples/http-server.ts`, `examples/cloudflare-worker.ts`,
+  `examples/multi-tenant.ts` now sign access tokens** (HMAC-SHA256 via
+  WebCrypto, new `examples/signed-token.ts`) instead of encoding them as
+  unsigned `base64(JSON.stringify(payload))` — the previous shape let
+  anyone forge a token for any `userId`/`scope`/`resource`, a full
+  authentication bypass if ever copied into something real.
+
+### Internal
+
+- The in-memory single-use store for auth codes and consent tickets is now
+  shared (one `Map`, one throttled prune pass every 60s) instead of two
+  independent, unthrottled implementations.
+- Derived HKDF `CryptoKey`s (`seal`/`unseal`/`hashClientSecret`) are cached
+  by `(secret, type, usage)` — a bounded 32-entry cache — instead of
+  re-running `importKey` + `deriveKey` on every call.
+
+## [1.1.1] - 2026-09-14
+
+Behavior change worth a look before upgrading: a `tools/call` denied only for
+missing scope now returns **403** instead of **401** (see below) — this
+already matched the documented behavior in `docs/reference.md` and
+`docs/troubleshooting.md`, the code was the one out of sync.
+
+### Fixed
+
+- **Consent interstitial's CSP blocked its own approval redirect in
+  Chromium.** The built-in consent page's `Content-Security-Policy` set
+  `form-action 'self'` only; Chromium enforces `form-action` across the
+  redirect a form submission produces, not just its immediate POST target,
+  so clicking Allow/Deny was silently blocked from ever reaching a
+  `redirect_uri` on another origin — the common case (Claude, Gemini,
+  loopback clients). The built-in page now scopes `form-action` to `'self'`
+  plus the validated `redirect_uri`'s own origin; a custom `consent.render`
+  setting its own CSP needs the same.
+- **`mcp-trellis/node` mis-serialized a pre-parsed body-middleware body.**
+  `express.urlencoded()` (and similar) hands the adapter an already-parsed
+  object in `req.body`; the adapter always `JSON.stringify`-ed it regardless
+  of `Content-Type`, so a form-encoded `/token` or `/consent` POST behind
+  such middleware arrived as one bogus JSON-shaped form key — every OAuth
+  exchange behind it silently failed at `client_id required`. Now
+  re-serialized to `a=1&b=2` when `Content-Type` says
+  `application/x-www-form-urlencoded`, and a stale `Content-Length` is
+  dropped when the body is re-serialized.
+- **`mcp-trellis/node` forwarded only the last `Set-Cookie` header.**
+  `Headers.forEach` yields one `"set-cookie"` pair per cookie; calling
+  `res.setHeader` once per pair made each call overwrite the previous one.
+  Now sets `Set-Cookie` once via `Headers.getSetCookie()`.
+- **Missing tool scope now returns 403 `insufficient_scope`, not 401**
+  (RFC 6750 §3.1) — a `tools/call` from an authenticated principal that
+  lacks the tool's scope was returning 401, which tells a client
+  "authenticate", not "ask for a broader scope". A client implementing
+  OAuth step-up on 401 re-ran the same authorize flow, got back the same
+  scopes, and retried forever. `WWW-Authenticate` now carries
+  `error="insufficient_scope"` and `scope="<required>"` on that response. A
+  request with no principal at all (only reachable if a host explicitly adds
+  `"tools/call"` to `publicMethods`) still gets a plain 401.
+
 ## [1.1.0] - 2026-09-12
 
 Breaking for browser-origin callers — read before upgrading if a browser sends

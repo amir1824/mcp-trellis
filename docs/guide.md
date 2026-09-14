@@ -258,7 +258,7 @@ This is separate from Node Host `allowedOrigins` on `asNodeHandler`.
 
 | Port | Role |
 |------|------|
-| `codeSecret` | HMAC secret for signed auth codes (string or `(req) => string`) |
+| `codeSecret` | Secret(s) sealing auth codes, consent tickets, and DCR client assertions, and keying `secretHash` (string, `string[]`, or `(req) => string \| string[]`). A single string works as before; pass an array to rotate keys — see [security.md](security.md#rotating-codesecret) |
 | `resolveUser` | Consenting user, or `null` → redirect to `loginUrl` |
 | `loginUrl` | Where unauthenticated authorize requests go |
 | `mintAccessToken` | Issue a **user-bound**, **audience-bound** access token (`resource` is the RFC 8707 URI) — never a shared god token |
@@ -321,7 +321,15 @@ createToolRegistry(tools, { validateArgs: false }) // default: off, easy adoptio
 ```
 
 - Handler may return a `string` or `{ content, isError? }`
-- Unknown tools and thrown errors become `isError: true` (not transport errors)
+- A thrown handler exception becomes `isError: true` (not a transport error)
+- `registry.call(name, ...)` itself returns `isError: true` for an unknown
+  `name` too — but the JSON-RPC `tools/call` dispatch (`createMcpHandler` /
+  `createMcpApp`) checks the name against the registry *before* calling it,
+  and answers an unrecognized one with a protocol-level `-32602` error
+  instead: MCP distinguishes "this request doesn't refer to a real tool"
+  from a tool's own execution outcome. The registry's `isError: true`
+  fallback only surfaces to a caller that invokes `registry.call` directly,
+  outside that dispatch.
 - Thrown exceptions are **redacted** by default (`"Tool execution failed"`); pass `onToolError` to map them. An `onToolError` that itself throws or returns a non-string falls back to the redacted default
 - Duplicate tool names throw at registry construction
 - Turn `validateArgs: true` once clients send schema-valid args. The evaluated
@@ -376,6 +384,15 @@ const getWeather = apiTool({
   echoes back). Pass `onError(res)` to shape it yourself, e.g. include a
   redacted version of the body. `fetch` is overridable — testing, request
   signing, a custom agent.
+- **`timeoutMs`** (default `30000`) aborts the upstream call past that many
+  ms — an upstream that never responds otherwise hangs the tool call (and
+  the MCP request behind it) indefinitely. Pass `false` to disable; a
+  timeout firing surfaces as `isError: true` with a clear message, not a
+  thrown exception `onToolError` would redact.
+- **`maxResponseBytes`** (default 1 MiB) caps the upstream response body
+  before `respond`/`onError` ever see it — the same memory-exhaustion shape
+  an unbounded *incoming* request body is. Exceeding it also surfaces as
+  `isError: true`, not a thrown exception.
 - `defineTool` alone (without `request`/`respond`) is just the typed-args
   layer over a regular `ToolDef` — use it for anything, not only REST calls.
 

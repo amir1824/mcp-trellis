@@ -10,6 +10,7 @@ import type { AddressInfo } from "node:net";
 import { asNodeHandler } from "../src/adapters/node.js";
 import { createMcpApp } from "../src/app.js";
 import type { ToolDef } from "../src/registry.js";
+import { signToken, verifyToken } from "./signed-token.js";
 
 type Ctx = { userId: string };
 
@@ -24,8 +25,7 @@ const echo: ToolDef<Ctx> = {
   handler: (_ctx, args) => String(args.text ?? ""),
 };
 
-const encodeToken = (payload: { userId: string; scopes: string[]; audience: string }): string =>
-  Buffer.from(JSON.stringify(payload)).toString("base64url");
+const ACCESS_TOKEN_TTL_MS = 3_600_000;
 
 // ponytail: process-local Set; ceiling is a shared denylist that verifyToken
 // (and refreshAccessToken) read — see examples/stores.ts for the Kv shape.
@@ -38,28 +38,28 @@ const app = createMcpApp<Ctx>({
   auth: {
     // Real deployments: process.env.OAUTH_CODE_SECRET, generated via `openssl rand -base64 32`.
     codeSecret: "example-http-server-code-secret-do-not-reuse",
+    // resolveUser is a placeholder that always succeeds as one fixed user —
+    // this example has no real login system to wire up. A real app's
+    // resolveUser reads the caller's actual session/cookie and returns null
+    // when nobody is logged in (→ redirect to loginUrl).
     resolveUser: async () => ({ id: "u1" }),
     loginUrl: (_req, next) => `/login?next=${encodeURIComponent(next)}`,
+    // A separate secret from codeSecret above — signing access tokens and
+    // sealing auth codes are different jobs; reusing one key for both means
+    // a compromise of either leaks the other's blast radius too.
     mintAccessToken: async ({ userId, scope, resource }) => ({
-      accessToken: encodeToken({
+      accessToken: await signToken("example-http-server-access-token-secret-32c!", {
         userId,
         scopes: scope.split(" "),
         audience: resource,
+        exp: Date.now() + ACCESS_TOKEN_TTL_MS,
       }),
-      expiresIn: 3600,
+      expiresIn: ACCESS_TOKEN_TTL_MS / 1000,
       scope,
     }),
     verifyToken: async (token) => {
       if (revoked.has(token)) return null;
-      try {
-        return JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as {
-          userId: string;
-          scopes: string[];
-          audience: string;
-        };
-      } catch {
-        return null;
-      }
+      return verifyToken("example-http-server-access-token-secret-32c!", token);
     },
     revokeToken: async ({ token }) => {
       revoked.add(token);

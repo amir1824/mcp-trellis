@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { sha256Base64Url } from "../../src/oauth/pkce.js";
+import { seal, unseal } from "../../src/oauth/sealed.js";
+import type { ClientAssertion } from "../../src/oauth/types.js";
 import { expectOAuthError } from "../helpers/http.js";
 import { stubPorts } from "../helpers/ports.js";
 import { createOAuthRouter } from "../helpers/router.js";
@@ -152,6 +154,89 @@ describe("DCR client_id binding", () => {
     });
     await expectOAuthError(res, 400, "invalid_request");
   });
+
+  it("seals iat (issued-at) into the client assertion, informational only", async () => {
+    const secret = "iat-test-code-secret-value-32-characters!";
+    const router = createOAuthRouter({ ports: stubPorts({ codeSecret: secret }) });
+    const before = Math.floor(Date.now() / 1000);
+    const clientId = await register(router, [REDIRECT_A]);
+    const after = Math.floor(Date.now() / 1000);
+
+    const assertion = await unseal<ClientAssertion>(secret, "client", clientId);
+    assert.ok(assertion);
+    assert.ok(typeof assertion.iat === "number");
+    assert.ok(assertion.iat >= before && assertion.iat <= after);
+  });
+
+  it("still binds a client assertion sealed without iat — backward compatible with pre-1.2.0 ids", async () => {
+    const secret = "no-iat-test-code-secret-value-32-chars!";
+    const router = createOAuthRouter({ ports: stubPorts({ codeSecret: secret }) });
+    // Reproduces the exact shape /register sealed before `iat` existed.
+    const legacyClientId = await seal(secret, "client", { redirectUris: [REDIRECT_A] });
+    const challenge = await sha256Base64Url("no-iat-verifier-value-long-enough-for-pkce");
+    const res = await authorizeAndApprove(router, {
+      clientId: legacyClientId,
+      redirectUri: REDIRECT_A,
+      challenge,
+    });
+    assert.equal(res.status, 200, "must still bind and reach consent with no iat present");
+  });
+});
+
+describe("/register — client metadata validation", () => {
+  const registerRequest = (body: string, contentType = "application/json"): Request =>
+    new Request(`${ORIGIN}/mcp/oauth/register`, {
+      method: "POST",
+      headers: { "Content-Type": contentType },
+      body,
+    });
+
+  it("falls back to the Claude callback when redirect_uris is omitted entirely", async () => {
+    const router = createOAuthRouter({ ports: stubPorts() });
+    const res = await router.tryHandle(registerRequest("{}"));
+    assert.ok(res);
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { redirect_uris: string[] };
+    assert.deepEqual(body.redirect_uris, ["https://claude.ai/api/mcp/auth_callback"]);
+  });
+
+  it("rejects malformed JSON with invalid_client_metadata, not a silent successful registration", async () => {
+    const router = createOAuthRouter({ ports: stubPorts() });
+    const res = await router.tryHandle(registerRequest("{not json"));
+    assert.ok(res);
+    await expectOAuthError(res, 400, "invalid_client_metadata");
+  });
+
+  it("rejects a non-object JSON body (an array) with invalid_client_metadata", async () => {
+    const router = createOAuthRouter({ ports: stubPorts() });
+    const res = await router.tryHandle(registerRequest("[1,2,3]"));
+    assert.ok(res);
+    await expectOAuthError(res, 400, "invalid_client_metadata");
+  });
+
+  it("rejects a non-array redirect_uris with invalid_client_metadata", async () => {
+    const router = createOAuthRouter({ ports: stubPorts() });
+    const res = await router.tryHandle(
+      registerRequest(JSON.stringify({ redirect_uris: "not-an-array" })),
+    );
+    assert.ok(res);
+    await expectOAuthError(res, 400, "invalid_client_metadata");
+  });
+
+  it("rejects more than 10 redirect_uris with invalid_client_metadata", async () => {
+    const router = createOAuthRouter({ ports: stubPorts() });
+    const tooMany = Array.from({ length: 11 }, (_, i) => `http://127.0.0.1:${9000 + i}/cb`);
+    const res = await router.tryHandle(registerRequest(JSON.stringify({ redirect_uris: tooMany })));
+    assert.ok(res);
+    await expectOAuthError(res, 400, "invalid_client_metadata");
+  });
+
+  it("still accepts exactly 10 redirect_uris", async () => {
+    const router = createOAuthRouter({ ports: stubPorts() });
+    const ten = Array.from({ length: 10 }, (_, i) => `http://127.0.0.1:${9000 + i}/cb`);
+    const clientId = await register(router, ten);
+    assert.ok(clientId);
+  });
 });
 
 describe("requireRegisteredClients", () => {
@@ -202,6 +287,130 @@ describe("requireRegisteredClients", () => {
       redirectUri: REDIRECT_A,
       challenge,
     });
+    assert.equal(res.status, 200);
+  });
+
+  it("completes a full authorize → consent → token walk with a DCR-issued client_id, even with the guard on", async () => {
+    const router = createOAuthRouter({ ports: stubPorts(), requireRegisteredClients: true });
+    const clientId = await register(router, [REDIRECT_A]);
+    const verifier = "required-registration-full-walk-verifier-value";
+    const challenge = await sha256Base64Url(verifier);
+
+    const authorized = await authorizeAndApprove(router, {
+      clientId,
+      redirectUri: REDIRECT_A,
+      challenge,
+    });
+    const ticket = (await authorized.text()).match(CONSENT_TICKET_RE)?.[1];
+    assert.ok(ticket);
+    const approved = await router.tryHandle(
+      new Request(`${ORIGIN}/mcp/oauth/consent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ consent_ticket: ticket, approved: "true" }).toString(),
+      }),
+    );
+    assert.ok(approved);
+    const code = new URL(approved.headers.get("Location") ?? "").searchParams.get("code");
+    assert.ok(code);
+
+    const tokenRes = await router.tryHandle(
+      new Request(`${ORIGIN}/mcp/oauth/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          code,
+          client_id: clientId,
+          redirect_uri: REDIRECT_A,
+          code_verifier: verifier,
+          resource: RESOURCE,
+        }).toString(),
+      }),
+    );
+    assert.ok(tokenRes);
+    assert.equal(tokenRes.status, 200);
+  });
+
+  it("rejects a self-invented client_id at /token's refresh_token grant, not just at /authorize", async () => {
+    const router = createOAuthRouter({
+      ports: stubPorts({
+        refreshAccessToken: async () => ({ accessToken: "a", expiresIn: 60 }),
+      }),
+      requireRegisteredClients: true,
+    });
+    const res = await router.tryHandle(
+      new Request(`${ORIGIN}/mcp/oauth/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: "some-refresh-token",
+          client_id: "self-invented-client",
+        }).toString(),
+      }),
+    );
+    assert.ok(res);
+    await expectOAuthError(res, 401, "invalid_client");
+  });
+
+  it("rejects a self-invented client_id at /revoke, not just at /authorize", async () => {
+    const router = createOAuthRouter({
+      ports: stubPorts({ revokeToken: async () => {} }),
+      requireRegisteredClients: true,
+    });
+    const res = await router.tryHandle(
+      new Request(`${ORIGIN}/mcp/oauth/revoke`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          token: "some-token",
+          client_id: "self-invented-client",
+        }).toString(),
+      }),
+    );
+    assert.ok(res);
+    await expectOAuthError(res, 401, "invalid_client");
+  });
+
+  it("still accepts a DCR-issued client_id at /token's refresh_token grant", async () => {
+    const router = createOAuthRouter({
+      ports: stubPorts({
+        refreshAccessToken: async () => ({ accessToken: "a", expiresIn: 60 }),
+      }),
+      requireRegisteredClients: true,
+    });
+    const clientId = await register(router, [REDIRECT_A]);
+    const res = await router.tryHandle(
+      new Request(`${ORIGIN}/mcp/oauth/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: "some-refresh-token",
+          client_id: clientId,
+          resource: RESOURCE,
+        }).toString(),
+      }),
+    );
+    assert.ok(res);
+    assert.equal(res.status, 200);
+  });
+
+  it("still accepts a DCR-issued client_id at /revoke", async () => {
+    const router = createOAuthRouter({
+      ports: stubPorts({ revokeToken: async () => {} }),
+      requireRegisteredClients: true,
+    });
+    const clientId = await register(router, [REDIRECT_A]);
+    const res = await router.tryHandle(
+      new Request(`${ORIGIN}/mcp/oauth/revoke`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ token: "some-token", client_id: clientId }).toString(),
+      }),
+    );
+    assert.ok(res);
     assert.equal(res.status, 200);
   });
 });

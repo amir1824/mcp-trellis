@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { consumeAuthCode, issueAuthCode } from "../../src/oauth/codes.js";
+import {
+  consumeAuthCode,
+  consumeAuthCodeDetailed,
+  createMemoryCodeStore,
+  issueAuthCode,
+} from "../../src/oauth/codes.js";
 import { CLAUDE_CALLBACK } from "../../src/oauth/redirect.js";
 
 const RESOURCE = "https://example.test/mcp";
@@ -140,5 +145,72 @@ describe("v1 auth codes are rejected since 1.0", () => {
     const code = await issueAuthCode(secret, baseRecord);
     assert.ok(code.startsWith("v2."));
     assert.ok(await consumeAuthCode(secret, code));
+  });
+});
+
+describe("consumeAuthCode / consumeAuthCodeDetailed (key rotation)", () => {
+  const OLD_SECRET = "old-rotation-secret-32-characters-long!";
+  const NEW_SECRET = "new-rotation-secret-32-characters-long!";
+
+  it("consumeAuthCode redeems a code sealed under a non-primary key in the list", async () => {
+    const code = await issueAuthCode(OLD_SECRET, baseRecord);
+    const record = await consumeAuthCode([NEW_SECRET, OLD_SECRET], code);
+    assert.ok(record);
+    assert.equal(record.clientId, baseRecord.clientId);
+  });
+
+  it("consumeAuthCode still accepts a single secret string (unchanged API)", async () => {
+    const code = await issueAuthCode(OLD_SECRET, baseRecord);
+    assert.ok(await consumeAuthCode(OLD_SECRET, code));
+  });
+
+  it("consumeAuthCodeDetailed reports which key index actually unsealed the code", async () => {
+    const code = await issueAuthCode(OLD_SECRET, baseRecord);
+    const result = await consumeAuthCodeDetailed([NEW_SECRET, OLD_SECRET], code);
+    assert.ok(result);
+    assert.equal(result.keyIndex, 1);
+    assert.equal(result.record.clientId, baseRecord.clientId);
+  });
+
+  it("consumeAuthCodeDetailed reports keyIndex 0 when the primary key sealed it", async () => {
+    const code = await issueAuthCode(NEW_SECRET, baseRecord);
+    const result = await consumeAuthCodeDetailed([NEW_SECRET, OLD_SECRET], code);
+    assert.ok(result);
+    assert.equal(result.keyIndex, 0);
+  });
+
+  it("returns null when the code matches none of the configured keys", async () => {
+    const code = await issueAuthCode("a-third-unrelated-secret-32-chars!!", baseRecord);
+    assert.equal(await consumeAuthCode([NEW_SECRET, OLD_SECRET], code), null);
+  });
+
+  it("returns null for an empty key array", async () => {
+    const code = await issueAuthCode(OLD_SECRET, baseRecord);
+    assert.equal(await consumeAuthCode([], code), null);
+  });
+});
+
+describe("createMemoryCodeStore (shared in-memory replay store)", () => {
+  it("rejects a jti consumed twice", () => {
+    const store = createMemoryCodeStore();
+    const nowMs = Date.now();
+    assert.equal(store.consume("jti-1", nowMs + 60_000), true);
+    assert.equal(store.consume("jti-1", nowMs + 60_000), false);
+  });
+
+  it("keeps separate stores independent — one instance's jti means nothing to another", () => {
+    const a = createMemoryCodeStore();
+    const b = createMemoryCodeStore();
+    assert.equal(a.consume("jti-shared", Date.now() + 60_000), true);
+    // Same jti, unrelated store — a fresh consume, not a collision.
+    assert.equal(b.consume("jti-shared", Date.now() + 60_000), true);
+  });
+
+  it("a code jti and a ct:-prefixed consent-ticket jti coexist without colliding", () => {
+    const store = createMemoryCodeStore();
+    assert.equal(store.consume("abc123", Date.now() + 60_000), true);
+    // Same raw id, but the "ct:" prefix consent.ts always applies makes this
+    // a distinct key — must still succeed, not be treated as a repeat.
+    assert.equal(store.consume("ct:abc123", Date.now() + 60_000), true);
   });
 });

@@ -10,6 +10,8 @@ export const OAUTH_ERRORS = {
   invalidGrant: "invalid_grant",
   unsupportedGrantType: "unsupported_grant_type",
   invalidRedirectUri: "invalid_redirect_uri",
+  /** RFC 7591 §3.2.2 — DCR `/register`: a client metadata field's value itself is invalid. */
+  invalidClientMetadata: "invalid_client_metadata",
   /** Token endpoint — client authentication failed, or the client is unknown. */
   invalidClient: "invalid_client",
   /** Authorization endpoint — this client may not use this method. RFC 6749 §4.1.2.1. */
