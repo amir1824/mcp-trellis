@@ -75,10 +75,16 @@ export const secureRedirect = (location: string): Response =>
     },
   });
 
-export const buildCodeRedirectUrl = (redirectUri: string, code: string, state: string): string => {
+export const buildCodeRedirectUrl = (
+  redirectUri: string,
+  code: string,
+  state: string,
+  issuer?: string,
+): string => {
   const target = new URL(redirectUri);
   target.searchParams.set("code", code);
   if (state) target.searchParams.set("state", state);
+  if (issuer) target.searchParams.set("iss", issuer);
   return target.toString();
 };
 
@@ -88,23 +94,29 @@ export const buildCodeRedirectUrl = (redirectUri: string, code: string, state: s
  * connector never parses. Shared by consent denial (`buildDeniedRedirectUrl`
  * below) and every post-redirect-trust check in `authorize.ts`
  * (`unsupported_response_type`, PKCE, `invalid_scope`, `invalid_target`, …).
+ * RFC 9207: when `issuer` is set, `iss` is included on the redirect.
  */
 export const buildErrorRedirectUrl = (
   redirectUri: string,
   error: string,
   description: string,
   state: string,
+  issuer?: string,
 ): string => {
   const target = new URL(redirectUri);
   target.searchParams.set("error", error);
   if (description) target.searchParams.set("error_description", description);
   if (state) target.searchParams.set("state", state);
+  if (issuer) target.searchParams.set("iss", issuer);
   return target.toString();
 };
 
 /** RFC 6749 §4.1.2.1 — denial goes back to the callback, not a bare JSON error. */
-export const buildDeniedRedirectUrl = (redirectUri: string, state: string): string =>
-  buildErrorRedirectUrl(redirectUri, OAUTH_ERRORS.accessDenied, "", state);
+export const buildDeniedRedirectUrl = (
+  redirectUri: string,
+  state: string,
+  issuer?: string,
+): string => buildErrorRedirectUrl(redirectUri, OAUTH_ERRORS.accessDenied, "", state, issuer);
 
 export const issueConsentTicket = (
   secret: string,
@@ -258,7 +270,9 @@ export const handleConsent = async (
   }
 
   if (body.approved !== "true") {
-    return secureRedirect(buildDeniedRedirectUrl(payload.redirectUri, payload.state));
+    return secureRedirect(
+      buildDeniedRedirectUrl(payload.redirectUri, payload.state, new URL(request.url).origin),
+    );
   }
 
   const code = await issueAuthCode(secrets[0], {
@@ -269,5 +283,7 @@ export const handleConsent = async (
     resource: payload.resource,
     scope: payload.scope,
   });
-  return secureRedirect(buildCodeRedirectUrl(payload.redirectUri, code, payload.state));
+  return secureRedirect(
+    buildCodeRedirectUrl(payload.redirectUri, code, payload.state, new URL(request.url).origin),
+  );
 };

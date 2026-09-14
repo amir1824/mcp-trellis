@@ -33,6 +33,8 @@ export const JSONRPC_INVALID_PARAMS = -32602;
 export const JSONRPC_INTERNAL_ERROR = -32603;
 export const JSONRPC_UNAUTHORIZED = -32001;
 export const JSONRPC_PAYLOAD_TOO_LARGE = -32002;
+/** Authenticated but missing required scope — paired with HTTP 403. */
+export const JSONRPC_INSUFFICIENT_SCOPE = -32003;
 
 export const rpcResult = (id: JsonRpcId, result: unknown): JsonRpcSuccess => ({
   jsonrpc: "2.0",

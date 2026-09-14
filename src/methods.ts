@@ -1,6 +1,12 @@
 import { type WwwAuthenticateOptions, wwwAuthenticateHeader } from "./auth/bearer.js";
 import { jsonResponse } from "./http.js";
-import { JSONRPC_UNAUTHORIZED, type JsonRpcId, type JsonRpcRequest, rpcError } from "./jsonrpc.js";
+import {
+  JSONRPC_INSUFFICIENT_SCOPE,
+  JSONRPC_UNAUTHORIZED,
+  type JsonRpcId,
+  type JsonRpcRequest,
+  rpcError,
+} from "./jsonrpc.js";
 import type { ToolRegistry } from "./registry.js";
 
 export type Principal = {
@@ -142,7 +148,7 @@ export const insufficientScope = (
   id: JsonRpcId = null,
 ): Response =>
   jsonResponse({
-    data: rpcError(id, JSONRPC_UNAUTHORIZED, `Missing scope: ${scope}`),
+    data: rpcError(id, JSONRPC_INSUFFICIENT_SCOPE, `Missing scope: ${scope}`),
     status: 403,
     headers: {
       "WWW-Authenticate": wwwAuthenticateHeader({

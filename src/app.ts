@@ -16,7 +16,8 @@ import {
 } from "./clients.js";
 import { createMcpHandler } from "./dispatch.js";
 import { INTERNAL_ERROR, jsonResponse } from "./http.js";
-import type { Principal } from "./methods.js";
+import { type AuditEntry, type Principal, safeAudit } from "./methods.js";
+import { safeOAuthAudit } from "./oauth/audit.js";
 import { DEFAULT_SCOPE } from "./oauth/constants.js";
 import {
   canonicalResource,
@@ -25,9 +26,15 @@ import {
   resourcesEqual,
 } from "./oauth/resource.js";
 import { createOAuthRouter } from "./oauth/router.js";
+import type { OAuthAuditEntry, OAuthRouterOptions } from "./oauth/types.js";
 import { createToolRegistry, type ToolDef } from "./registry.js";
 
-export type { McpAppAuth, McpAppOptions, VerifiedToken } from "./app-options.js";
+export type {
+  McpAppAuth,
+  McpAppOptions,
+  UnifiedAuditEntry,
+  VerifiedToken,
+} from "./app-options.js";
 
 export type McpApp = {
   fetch: (request: Request) => Promise<Response>;
@@ -97,6 +104,18 @@ export const createMcpApp = <TCtx>(options: McpAppOptions<TCtx>): McpApp => {
     };
   };
 
+  // Top-level `audit` wraps MCP + OAuth; `auth.audit` wins for OAuth if both set.
+  const unifiedAudit = options.audit;
+  const toMcpAudit =
+    unifiedAudit !== undefined
+      ? (entry: AuditEntry) => unifiedAudit({ source: "mcp", ...entry })
+      : undefined;
+  const oauthAudit =
+    options.auth.audit ??
+    (unifiedAudit !== undefined
+      ? (entry: OAuthAuditEntry) => unifiedAudit({ source: "oauth", ...entry })
+      : undefined);
+
   const handler = createMcpHandler<TCtx>({
     registry,
     serverInfo: options.serverInfo,
@@ -115,17 +134,22 @@ export const createMcpApp = <TCtx>(options: McpAppOptions<TCtx>): McpApp => {
     ports: {
       authenticate,
       context: options.context ?? (() => ({}) as TCtx),
-      ...(options.audit !== undefined ? { audit: options.audit } : {}),
+      ...(toMcpAudit !== undefined ? { audit: toMcpAudit } : {}),
     },
   });
 
-  const oauth = createOAuthRouter({
+  const oauthOptions: OAuthRouterOptions = {
     resourcePath,
     oauthPath,
     realm,
     ...(options.scopes !== undefined ? { scopes: options.scopes } : {}),
     ...(options.defaultScopes !== undefined ? { defaultScopes: options.defaultScopes } : {}),
     ...(options.auditTimeoutMs !== undefined ? { auditTimeoutMs: options.auditTimeoutMs } : {}),
+    ...(options.allowInMemoryCodeStore !== undefined
+      ? { allowInMemoryCodeStore: options.allowInMemoryCodeStore }
+      : options.auth.allowInMemoryCodeStore !== undefined
+        ? { allowInMemoryCodeStore: options.auth.allowInMemoryCodeStore }
+        : {}),
     tokenEndpointAuthMethods: authMethodsFor(clients),
     allowUnregisteredClients: hasDynamicClient(clients),
     ...(options.requireRegisteredClients !== undefined
@@ -149,9 +173,11 @@ export const createMcpApp = <TCtx>(options: McpAppOptions<TCtx>): McpApp => {
       ...(options.auth.revokeToken !== undefined ? { revokeToken: options.auth.revokeToken } : {}),
       ...(options.auth.codeStore !== undefined ? { codeStore: options.auth.codeStore } : {}),
       ...(options.auth.clientStore !== undefined ? { clientStore: options.auth.clientStore } : {}),
-      ...(options.auth.audit !== undefined ? { audit: options.auth.audit } : {}),
+      ...(oauthAudit !== undefined ? { audit: oauthAudit } : {}),
     },
-  });
+  };
+
+  const oauth = createOAuthRouter(oauthOptions);
 
   return {
     fetch: async (request: Request): Promise<Response> => {
@@ -164,10 +190,29 @@ export const createMcpApp = <TCtx>(options: McpAppOptions<TCtx>): McpApp => {
           return await handler.fetch(request);
         }
         return jsonResponse({ data: { error: "Not found" }, status: 404 });
-      } catch {
+      } catch (caught) {
         // Both `oauth` and `handler` already turn port failures into a
         // Response themselves — this is defense in depth, not the primary
-        // guard. `fetch` must never reject.
+        // guard. `fetch` must never reject. Audit so the belt-and-suspenders
+        // path is not silent.
+        const reason = caught instanceof Error ? caught.message : String(caught);
+        await safeOAuthAudit(oauthOptions, { event: "server_error", reason });
+        await safeAudit(
+          {
+            registry,
+            ports: {
+              authenticate,
+              context: options.context ?? (() => ({}) as TCtx),
+              ...(toMcpAudit !== undefined ? { audit: toMcpAudit } : {}),
+            },
+            serverInfo: options.serverInfo,
+            wwwAuthenticate: { realm, resourceMetadataUrl: "" },
+            ...(options.auditTimeoutMs !== undefined
+              ? { auditTimeoutMs: options.auditTimeoutMs }
+              : {}),
+          },
+          { method: "", ok: false, error: reason, durationMs: 0 },
+        );
         return jsonResponse({ data: { error: INTERNAL_ERROR }, status: 500 });
       }
     },

@@ -1,4 +1,4 @@
-import type { AuditEntry } from "./methods.js";
+import type { UnifiedAuditEntry } from "./app-options.js";
 
 /**
  * Convenience `audit` sink that logs each entry to the console.
@@ -11,13 +11,26 @@ import type { AuditEntry } from "./methods.js";
  *   createMcpApp({ ..., audit: consoleAudit })
  *   createMcpApp({ ..., audit: (entry) => { void insert(entry) } })
  *
- * Failures (`ok: false`, including transport-level denials and tool
- * exceptions) go to `console.error`; everything else to `console.log`.
- * Entries never carry raw exceptions or stack traces (see `AuditEntry`).
+ * MCP failures (`ok: false`) go to `console.error`; MCP successes and
+ * OAuth events go to `console.log`. Entries never carry raw exceptions or
+ * stack traces (see `AuditEntry` / `OAuthAuditEntry`).
  */
-export const consoleAudit = (entry: AuditEntry): void => {
+export const consoleAudit = (entry: UnifiedAuditEntry): void => {
+  if (entry.source === "oauth") {
+    const line = [
+      `[mcp-trellis] oauth`,
+      entry.event,
+      entry.clientId ? `client=${entry.clientId}` : undefined,
+      `reason=${entry.reason}`,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    console.log(line);
+    return;
+  }
+
   const line = [
-    `[mcp-trellis] ${entry.method || "(transport)"}`,
+    `[mcp-trellis] mcp ${entry.method || "(transport)"}`,
     entry.tool ? `tool=${entry.tool}` : undefined,
     entry.ok ? "ok" : "fail",
     `${entry.durationMs}ms`,
@@ -27,9 +40,9 @@ export const consoleAudit = (entry: AuditEntry): void => {
     .filter(Boolean)
     .join(" ");
 
-  if (entry.ok) {
-    console.log(line);
-  } else {
+  if (!entry.ok) {
     console.error(line);
+    return;
   }
+  console.log(line);
 };

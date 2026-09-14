@@ -133,7 +133,7 @@ validated against their own bound `redirectUris`.
 | `allowLoopback` | `true` | Allow loopback redirects — see the narrowed `http:`-only, no-`localhost` behavior in [security.md](security.md) |
 | `consent` | built-in interstitial | Same as `OAuthRouterOptions.consent` — override the approval page or pre-approve specific client ids |
 | `requireRegisteredClients` | `true` | Same as `OAuthRouterOptions.requireRegisteredClients` — inventing a public `client_id` is rejected unless it comes from `clientStore` or this server's own `/register` |
-| `instructions`, `validateArgs`, `onToolError`, `context`, `audit`, `auditTimeoutMs`, `allowedRequestOrigins` | — | Passed through to the MCP handler. `audit`/`auditTimeoutMs` are the MCP-side (tool-call) hook — the OAuth side has its own, separate `auth.audit` (see [Ports](guide.md#ports--what-you-implement)); `auditTimeoutMs` also applies to OAuth audit |
+| `instructions`, `validateArgs`, `onToolError`, `context`, `audit`, `auditTimeoutMs`, `allowedRequestOrigins` | — | Passed through to the MCP handler. Top-level `audit` is a unified MCP+OAuth sink (`source`); `auth.audit` overrides OAuth only. `auditTimeoutMs` applies to both |
 | `hideToolsOutsideScope` | `false` | Filter `tools/list` to tools the calling principal's scopes actually satisfy (an unscoped tool, or one with `scope: null`, is always listed). `tools/call` already enforces scope on its own (403 `insufficient_scope`) regardless of this setting — turning it on only changes what's discoverable via `tools/list` |
 
 **A tool's `scope` (`ToolDef.scope`):** required scope, `null` for "any authenticated
@@ -151,7 +151,8 @@ A single-scope server has no such ambiguity and is unaffected.
 <summary><code>mcp-trellis</code></summary>
 
 - `createMcpApp`, `createMcpHandler`, `createToolRegistry`
-- `consoleAudit` — convenience `audit` sink that logs to the console (pass any function for metrics / DB / APM)
+- `consoleAudit` — convenience unified `audit` sink that logs to the console (pass any function for metrics / DB / APM)
+- `UnifiedAuditEntry` — `{ source: "mcp" } & AuditEntry` \| `{ source: "oauth" } & OAuthAuditEntry`
 - `defineTool`, `apiTool` — typed, validated tool authoring on top of `ToolDef`. `apiTool`'s `timeoutMs` (default 30000, or `false` to disable) and `maxResponseBytes` (default 1 MiB) bound the upstream call; either surfaces as `isError: true`, not a thrown exception
 - `CLIENT_PROFILES`, `DEFAULT_CLIENTS`, `authMethodsFor`, `redirectUrisFor`, `preRegisteredClients`, `hasDynamicClient`
 - `parseBearer`, `timingSafeEqual`, `matchesAny`, `wwwAuthenticateHeader`, `rejectQueryToken`

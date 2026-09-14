@@ -12,9 +12,13 @@ import {
 } from "../body.js";
 import { INTERNAL_ERROR } from "../http.js";
 import { JSONRPC_PAYLOAD_TOO_LARGE, rpcError } from "../jsonrpc.js";
-import { isAllowedOrigin, type OriginAllowlistOptions } from "./origins.js";
+import { isAllowedOrigin, type OriginAllowlistOptions } from "../origins.js";
 
-export { isAllowedOrigin, type OriginAllowlistOptions };
+export {
+  isAllowedOrigin,
+  isAllowedRequestOrigin,
+  type OriginAllowlistOptions,
+} from "../origins.js";
 
 export type NodeRequestLike = {
   method?: string | undefined;

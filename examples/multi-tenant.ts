@@ -48,6 +48,7 @@ const app = createMcpApp<Ctx>({
   serverInfo: { name: "multi-tenant", version: "1.0.0" },
   tools: [listRows],
   clients: ["claude"],
+  allowInMemoryCodeStore: true,
   auth: {
     // Real deployments: process.env.OAUTH_CODE_SECRET, generated via `openssl rand -base64 32`.
     codeSecret: "example-multi-tenant-code-secret-do-not-reuse",

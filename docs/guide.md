@@ -202,7 +202,7 @@ The library stays protocol-shaped. Your app plugs in the seams:
 `consent?` (approval-page policy — see [Consent](#consent), below) and
 `defaultScopes?` sit as top-level `McpAppOptions`, not under `auth` — they
 are policy, not credentials, the same reasoning as `allowLoopback`.
-| `context?`, `audit?` | Same as the MCP ports below; `context` defaults to an empty object. Receives `principal.claims` when `verifyToken` set them |
+| `context?`, `audit?` | `context` defaults to `{}`. Top-level `audit` is a **unified** sink for MCP and OAuth (`entry.source` is `"mcp"` or `"oauth"`). `auth.audit` overrides OAuth delivery when both are set |
 
 ### MCP (`createMcpHandler`)
 
@@ -233,14 +233,14 @@ createMcpApp({ /* … */, audit: consoleAudit });
 createMcpApp({
   /* … */,
   audit: (entry) => {
-    // entry: { method, tool?, principalId?, ok, error?, durationMs }
+    // entry.source === "mcp" | "oauth"
     void metrics.record(entry);
   },
 });
 ```
 
-Failures (denials and tool exceptions) go to `console.error` when using
-`consoleAudit`; everything else to `console.log`. Entries never carry raw
+Failures (MCP denials and tool exceptions) go to `console.error` when using
+`consoleAudit`; MCP successes and OAuth events go to `console.log`. Entries never carry raw
 exceptions or stack traces, so console output is safe. For anything beyond
 stdout, write your own `audit` function — that is the intended production path.
 

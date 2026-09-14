@@ -1,6 +1,7 @@
 /** Token-endpoint client authentication (RFC 6749 §2.3.1). */
 
 import { safeOAuthAudit } from "./audit.js";
+import { isCimdClientId } from "./cimd.js";
 import {
   oauthError,
   registeredClientsRequired,
@@ -140,6 +141,14 @@ export const firstClientAuthError = async (
       const codeSecretValues = await resolveSecrets(options.ports, request);
       const unsealed = await unsealAny<ClientAssertion>(codeSecretValues, "client", auth.clientId);
       if (!unsealed) {
+        // CIMD URL client_ids were validated at /authorize; the sealed auth
+        // code already binds clientId. Accept URL-shaped ids here so refresh
+        // / revoke / code exchange are not rejected after a successful CIMD
+        // authorize. Re-fetch is intentionally skipped — redirect_uris are
+        // not re-checked at token time.
+        if (options.cimd !== false && isCimdClientId(auth.clientId)) {
+          return null;
+        }
         return invalidClientAudited(
           options,
           auth.clientId,

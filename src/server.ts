@@ -3,6 +3,7 @@ export {
   type McpApp,
   type McpAppAuth,
   type McpAppOptions,
+  type UnifiedAuditEntry,
   type VerifiedToken,
 } from "./app.js";
 export { consoleAudit } from "./audit.js";

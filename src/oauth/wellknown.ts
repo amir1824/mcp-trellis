@@ -44,6 +44,7 @@ export const handleWellKnown = async (
       : {}),
     dcrEnabled: unregisteredClientsAllowed(options),
     revocationEnabled: Boolean(options.ports.revokeToken),
+    cimdSupported: options.cimd !== false,
   };
 
   const body = paths.prmPaths.has(path)

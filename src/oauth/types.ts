@@ -1,3 +1,4 @@
+import type { CimdCache } from "./cimd.js";
 import type { CodeStore } from "./codes.js";
 import type { ConsentOptions } from "./consent.js";
 import type { TokenEndpointAuthMethod } from "./constants.js";
@@ -144,7 +145,7 @@ export type OAuthPorts = {
    * tokens not issued to `clientId` MUST no-op (not throw).
    */
   revokeToken?: ((input: RevokeTokenInput) => Promise<void>) | undefined;
-  /** Shared single-use jti store for multi-instance; in-memory default otherwise. */
+  /** Shared single-use jti store for multi-instance. Required unless `allowInMemoryCodeStore`. */
   codeStore?: CodeStore | undefined;
   /** Pre-registered clients. Required to serve confidential clients. */
   clientStore?: ClientStore | undefined;
@@ -205,6 +206,20 @@ export type OAuthRouterOptions = {
    * 1000ms — same guarantee as `McpHandlerOptions.auditTimeoutMs`.
    */
   auditTimeoutMs?: number;
+  /**
+   * Allow the process-local in-memory jti Map when `ports.codeStore` is
+   * omitted. Default **false** since 2.0 — multi-instance deploys silently
+   * double-redeem auth codes without a shared store. Set true only for
+   * single-process demos and tests.
+   */
+  allowInMemoryCodeStore?: boolean;
+  /**
+   * Resolve Client ID Metadata Documents (HTTPS URL `client_id`s).
+   * Default **true**. Set false only for lock-downs that reject URL ids.
+   */
+  cimd?: boolean;
+  /** Optional CIMD document cache (respects Cache-Control max-age). */
+  cimdCache?: CimdCache;
 };
 
 /**

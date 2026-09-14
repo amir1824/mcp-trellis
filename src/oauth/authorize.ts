@@ -1,5 +1,6 @@
 import { requireHttpMethod } from "../http.js";
 import { safeOAuthAudit } from "./audit.js";
+import { isCimdClientId, resolveCimdClient } from "./cimd.js";
 import { issueAuthCode } from "./codes.js";
 import {
   advertisedScopes,
@@ -100,24 +101,36 @@ export const handleAuthorize = async (
     });
   }
 
-  if (!registered && !assertion) {
+  const cimdEnabled = options.cimd !== false;
+  const cimdDoc =
+    !registered && !assertion && cimdEnabled && isCimdClientId(clientId)
+      ? await resolveCimdClient(clientId, {
+          ...(options.cimdCache !== undefined ? { cache: options.cimdCache } : {}),
+        })
+      : null;
+
+  if (!registered && !assertion && !cimdDoc) {
     const unregistered = unregisteredClientError(options, {
       code: OAUTH_ERRORS.unauthorizedClient,
       status: 400,
     });
     if (unregistered) return unregistered;
-    if (registeredClientsRequired(options)) {
+    if (registeredClientsRequired(options) || (cimdEnabled && isCimdClientId(clientId))) {
       return oauthError(
         OAUTH_ERRORS.unauthorizedClient,
         400,
-        "client_id must come from clientStore or this server's own /register",
+        cimdEnabled && isCimdClientId(clientId)
+          ? "CIMD client_id could not be resolved"
+          : "client_id must come from clientStore or this server's own /register",
       );
     }
   }
 
-  const boundRedirectUris = registered?.redirectUris ?? assertion?.redirectUris ?? null;
+  const boundRedirectUris =
+    registered?.redirectUris ?? assertion?.redirectUris ?? cimdDoc?.redirect_uris ?? null;
   const redirectUri = url.searchParams.get("redirect_uri") ?? "";
   const state = url.searchParams.get("state") ?? "";
+  const issuer = url.origin;
 
   // --- Pre-trust tier: redirect_uri is not yet verified as belonging to a
   // legitimate party, so these two stay direct JSON responses. Redirecting
@@ -142,7 +155,7 @@ export const handleAuthorize = async (
   // error goes back to the client's own callback per RFC 6749 §4.1.2.1
   // instead of a bare JSON body the connector never parses.
   const redirectError = (code: string, description: string): Response =>
-    secureRedirect(buildErrorRedirectUrl(redirectUri, code, description, state));
+    secureRedirect(buildErrorRedirectUrl(redirectUri, code, description, state, issuer));
 
   const responseType = url.searchParams.get("response_type") ?? "";
   if (responseType !== "code") {
@@ -175,7 +188,7 @@ export const handleAuthorize = async (
       resource: expectedResource,
       scope: formatScope(granted),
     });
-    return secureRedirect(buildCodeRedirectUrl(redirectUri, code, state));
+    return secureRedirect(buildCodeRedirectUrl(redirectUri, code, state, issuer));
   }
 
   const ticket = await issueConsentTicket(secrets[0], {

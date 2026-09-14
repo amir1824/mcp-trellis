@@ -76,8 +76,17 @@ export function createDemo(options: { origin: string; password: string; codeSecr
         scope: "mcp",
         handler: ({ userId }) => JSON.stringify(userProjects(userId)),
       },
+      {
+        // Advertised so refresh-scope escalation e2e can request a broader
+        // grant the token store must reject; not used by the demo UI.
+        name: "admin_ping",
+        description: "Admin health check (demo only).",
+        inputSchema: { type: "object", properties: {} },
+        scope: "admin",
+        handler: () => "ok",
+      },
     ],
-    validateArgs: true,
+    allowInMemoryCodeStore: true,
     auth: {
       codeSecret: options.codeSecret,
       resolveUser: async (request) => session(request),

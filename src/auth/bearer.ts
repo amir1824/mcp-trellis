@@ -51,12 +51,16 @@ export type WwwAuthenticateOptions = {
   scope?: string | undefined;
 };
 
+/** RFC 6750 / RFC 7235 quoted-string — escape `\` and `"` so host-controlled values cannot break or inject header params. */
+export const escapeWwwAuthenticateValue = (value: string): string =>
+  value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+
 export const wwwAuthenticateHeader = (options: WwwAuthenticateOptions): string => {
   const parts = [
-    `realm="${options.realm}"`,
-    `resource_metadata="${options.resourceMetadataUrl}"`,
-    ...(options.error ? [`error="${options.error}"`] : []),
-    ...(options.scope ? [`scope="${options.scope}"`] : []),
+    `realm="${escapeWwwAuthenticateValue(options.realm)}"`,
+    `resource_metadata="${escapeWwwAuthenticateValue(options.resourceMetadataUrl)}"`,
+    ...(options.error ? [`error="${escapeWwwAuthenticateValue(options.error)}"`] : []),
+    ...(options.scope ? [`scope="${escapeWwwAuthenticateValue(options.scope)}"`] : []),
   ];
   return `${BEARER_PREFIX}${parts.join(", ")}`;
 };

@@ -68,20 +68,16 @@ npm run test:e2e
 ## Releasing (maintainers)
 
 Publishes to npm from GitHub Actions via **trusted publishing (OIDC)** —
-no long-lived `NPM_TOKEN`. Provenance is attached automatically when the
-trusted publisher is configured.
+no long-lived `NPM_TOKEN`. `package.json` sets `publishConfig.provenance`
+and the workflow also passes `--provenance`. From **2.0.0** onward this is
+the only supported release path.
 
-> **Status note (1.0.0):** the live `1.0.0` on npm was published manually
-> from a local machine while the OIDC path above was still being debugged
-> (see the `fix:`-prefixed commits around `2026-08-21`) — it does **not**
-> carry npm provenance (`npm view mcp-trellis@1.0.0 dist.attestations` is
-> empty). `publishConfig.provenance` was removed from `package.json` for
-> exactly this reason: it blocked the local escape-hatch publish that got
-> `1.0.0` out. The Actions workflow below still passes `--provenance`
-> explicitly and remains the intended path — confirm the trusted-publisher
-> config below is actually correct, then cut the **next** release
-> (`1.0.1`+) through Actions so the npm page shows the Provenance badge.
-> Don't publish locally again once that's confirmed working.
+> **Historical note:** `1.0.0` was published manually without provenance
+> while OIDC was being debugged. Do **not** repeat that for 2.x — if Actions
+> fails with `ENEEDAUTH`, fix the trusted-publisher row on npmjs.com and
+> re-run. Local `npm publish` with a classic token is an emergency escape
+> hatch only; it will not attach provenance and must not be used for a
+> marketed release.
 
 ### One-time setup (required — publish fails with ENEEDAUTH until this exists)
 
@@ -123,13 +119,16 @@ re-run. Do not add a long-lived `NPM_TOKEN`.
 
 `prepublishOnly` still runs build + test inside `npm publish` as a last guard.
 
-### 0.2.0 note
+### 2.0.0 note
 
-`validateArgs: true` now throws at `createToolRegistry` construction when
-`inputSchema` uses unsupported JSON Schema keywords. Pure metadata
-(`description`, `title`, `$schema`, `$id`, `$comment`, `default`, `examples`,
-`deprecated`, `readOnly`, `writeOnly`, `format`) is allowed. Semantically-
-enforcing keywords that generators often emit — especially
-`additionalProperties`, plus `pattern`, `minLength` / `maxLength`, `anyOf`,
-`$ref`, … — will break upgrades until you remove them, enforce them in the
-handler, or turn `validateArgs` off. Default (`validateArgs` off) is unchanged.
+`validateArgs` defaults to **on**. Unsupported JSON Schema keywords throw at
+`createToolRegistry` construction. Pure metadata (`description`, `title`,
+`$schema`, `$id`, `$comment`, `default`, `examples`, `deprecated`,
+`readOnly`, `writeOnly`, `format`) is allowed. Semantically-enforcing
+keywords that generators often emit — especially `additionalProperties`,
+plus `pattern`, `minLength` / `maxLength`, `anyOf`, `$ref`, … — will break
+upgrades until you remove them, enforce them in the handler, or set
+`validateArgs: false`.
+
+`codeStore` is required at construction unless you set
+`allowInMemoryCodeStore: true` (single-process / tests only).

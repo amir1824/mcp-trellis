@@ -3,7 +3,55 @@
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [1.2.0] - 2026-09-14
+## [2.0.0] - 2026-09-14
+
+First npm release after `1.0.0`. Tree commits labeled 1.1.x / 1.2.0 were
+never published; their changes ship here together with fail-closed defaults.
+
+### Upgrading from 1.0.0
+
+**Breaking**
+
+- **`codeStore` is required** unless you set `allowInMemoryCodeStore: true`
+  on `createMcpApp` / `createOAuthRouter`. The silent process-local Map was
+  a multi-instance auth-code replay footgun. Single-process demos and tests
+  opt in explicitly.
+- **`validateArgs` defaults to `true`.** Unsupported JSON Schema keywords
+  and object-shaped schemas missing `type: "object"` throw at construction.
+  Set `validateArgs: false` only when you intentionally skip schema checks.
+- **`insufficient_scope` uses JSON-RPC `-32003`** (`JSONRPC_INSUFFICIENT_SCOPE`),
+  not `-32001` (`JSONRPC_UNAUTHORIZED`). HTTP status remains 403.
+- GET `/mcp` with a query-string token now returns **401** with
+  `WWW-Authenticate` (same shape as POST), not a bare 400 JSON body.
+
+**Also included from unpublished 1.1 / 1.2 tree work**
+
+- `codeSecret` rotation via `string[]`, `hideToolsOutsideScope`,
+  `ToolDef.scope: null`, `apiTool` timeout/byte caps, `InvalidOriginError`,
+  refresh/revoke `requireRegisteredClients` enforcement, unknown tool →
+  `-32602`, Host-derived origin URL validation, case-insensitive `Bearer`,
+  register body hardening, shared in-memory jti store, HKDF key cache.
+
+### Added
+
+- CIMD (Client ID Metadata Documents) with SSRF hardening.
+- RFC 9207 `iss` on authorize redirects.
+- Unified audit sink option (`source: "mcp" | "oauth"`).
+- Framework recipes: Next.js route, Express.
+- README quickstart 15-line CI acceptance check.
+
+### Security
+
+- RFC 6750 quoted-string escaping in `WWW-Authenticate`.
+- Crypto key-cache keys hash the secret; raw secrets no longer sit in Map keys.
+- Outer `createMcpApp` catch audits before returning 500.
+
+### Changed
+
+- `publishConfig.provenance: true` restored; releases via Actions OIDC only.
+- Supported versions window is `2.x` ([SECURITY.md](SECURITY.md)).
+
+## [1.2.0] - 2026-09-14 (unpublished — folded into 2.0.0)
 
 ### Upgrading from 1.1.x
 

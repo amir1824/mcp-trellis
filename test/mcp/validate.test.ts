@@ -310,14 +310,17 @@ describe("unsupportedKeywords / validateArgs construction", () => {
 
   it("accepts the same pattern schema when validateArgs is off", () => {
     assert.doesNotThrow(() =>
-      createToolRegistry([
-        {
-          name: "coded",
-          description: "x",
-          inputSchema: withPattern,
-          handler: () => "ok",
-        },
-      ]),
+      createToolRegistry(
+        [
+          {
+            name: "coded",
+            description: "x",
+            inputSchema: withPattern,
+            handler: () => "ok",
+          },
+        ],
+        { validateArgs: false },
+      ),
     );
   });
 
@@ -341,14 +344,17 @@ describe("unsupportedKeywords / validateArgs construction", () => {
 
   it("accepts the same type-less schema when validateArgs is off", () => {
     assert.doesNotThrow(() =>
-      createToolRegistry([
-        {
-          name: "search",
-          description: "x",
-          inputSchema: { properties: { query: { type: "string" } }, required: ["query"] },
-          handler: () => "ok",
-        },
-      ]),
+      createToolRegistry(
+        [
+          {
+            name: "search",
+            description: "x",
+            inputSchema: { properties: { query: { type: "string" } }, required: ["query"] },
+            handler: () => "ok",
+          },
+        ],
+        { validateArgs: false },
+      ),
     );
   });
 });

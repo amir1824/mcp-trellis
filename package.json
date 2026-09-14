@@ -1,6 +1,6 @@
 {
   "name": "mcp-trellis",
-  "version": "1.2.0",
+  "version": "2.0.0",
   "description": "Build secure remote MCP servers for Claude, ChatGPT and Gemini using your existing auth.",
   "type": "module",
   "license": "MIT",
@@ -52,7 +52,8 @@
     "LICENSE"
   ],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -60,6 +61,7 @@
     "test:e2e": "tsx --test test/e2e/*.test.ts",
     "test:coverage": "node --import tsx --test --experimental-test-coverage --test-coverage-lines=85 --test-coverage-branches=75 --enable-source-maps test/oauth/*.test.ts test/mcp/*.test.ts test/adapters/*.test.ts test/auth/*.test.ts",
     "typecheck": "tsc --noEmit",
+    "check:quickstart": "node scripts/check-quickstart.mjs",
     "lint": "biome check .",
     "prepublishOnly": "npm run build && npm test",
     "demo": "npm run build && tsx examples/saas-demo/server.ts",

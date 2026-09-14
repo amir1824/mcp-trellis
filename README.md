@@ -1,10 +1,19 @@
 # mcp-trellis
 
-**Build a secure remote MCP server using the auth your app already has.**
+**Existing SaaS → authenticated AI connector SDK.**
 
-Claude, ChatGPT and Gemini. No new database. No auth vendor. One TypeScript package.
+Claude, ChatGPT and Gemini against the login and data you already have. No new
+database. No auth vendor. One TypeScript package.
 
-Your app already knows who the user is. Connecting an AI client still means wiring OAuth discovery, registration, consent, PKCE and token exchange. **mcp-trellis handles that protocol work**, while your app keeps login, token verification and data permissions.
+mcp-trellis is the **vendor-neutral embedded BYO-auth** path: MCP handler and
+self-hosted OAuth AS in one npm install. Contrast composition stacks such as
+**xmcp + Scalekit** (or WorkOS / Descope connectors) that split the MCP runtime
+and the identity product across 2–3 packages.
+
+Your app already knows who the user is. Connecting an AI client still means
+wiring OAuth discovery, registration, consent, PKCE and token exchange.
+**mcp-trellis handles that protocol work**, while your app keeps login, token
+verification and data permissions.
 
 ```mermaid
 flowchart LR
@@ -25,6 +34,7 @@ import { existingAuth, projectsForUser } from "./your-app.js";
 export const mcp = createMcpApp<{ userId: string }>({
   serverInfo: { name: "my-saas", version: "1.0.0" },
   clients: ["claude"],
+  // existingAuth must include codeStore (required since 2.0) plus the usual ports.
   auth: existingAuth,
   context: (_request, user) => ({ userId: user!.id }),
   tools: [{
@@ -37,7 +47,7 @@ export const mcp = createMcpApp<{ userId: string }>({
 });
 ```
 
-This shows the integration shape: `your-app.js` is your application's auth/data adapter, not a supplied module. **[Run the complete Node demo](examples/saas-demo/README.md)** for working login, token handling and two users with different projects. Node ≥20 is required.
+This shows the integration shape: `your-app.js` is your application's auth/data adapter, not a supplied module. Production needs a shared `codeStore` (see [examples/stores.ts](examples/stores.ts)). **[Run the complete Node demo](examples/saas-demo/README.md)** for working login, token handling and two users with different projects. Node ≥20 is required.
 
 [![npm](https://img.shields.io/npm/v/mcp-trellis)](https://www.npmjs.com/package/mcp-trellis)
 [![CI](https://github.com/amir1824/mcp-trellis/actions/workflows/ci.yml/badge.svg)](https://github.com/amir1824/mcp-trellis/actions/workflows/ci.yml)

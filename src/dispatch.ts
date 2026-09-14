@@ -88,12 +88,10 @@ const handleGet = async <TCtx>(
 ): Promise<Response> => {
   if (rejectQueryToken(new URL(request.url))) {
     await auditDenial(options, "query_string_token", startedAt);
-    return jsonResponse({
-      data: {
-        error: "Pass token via Authorization: Bearer header, not query string",
-      },
-      status: 400,
-    });
+    return unauthorized(
+      resolveWwwAuthenticate(options, request),
+      "Token in query string is rejected. Use Authorization Bearer.",
+    );
   }
   if (!request.headers.get("authorization")) {
     await auditDenial(options, "unauthorized", startedAt);

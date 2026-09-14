@@ -49,7 +49,11 @@ export type ToolRegistry<TCtx> = {
 };
 
 export type RegistryOptions = {
-  /** Validate tools/call args against inputSchema. Default false. */
+  /**
+   * Validate tools/call args against inputSchema. Default **true** since 2.0 —
+   * forgetting this was a silent injection path into handlers. Set `false`
+   * only when you intentionally skip schema checks.
+   */
   validateArgs?: boolean | undefined;
   /**
    * Map tool exceptions to client-visible text.
@@ -96,7 +100,9 @@ export const createToolRegistry = <TCtx>(
     throw new Error("duplicate tool names in registry");
   }
 
-  if (options.validateArgs) {
+  const validateArgs = options.validateArgs !== false;
+
+  if (validateArgs) {
     const keywordViolations = tools.flatMap((tool) =>
       unsupportedKeywords(tool.inputSchema).map(
         (path) => `${tool.name}: unsupported JSON Schema keyword at ${path}`,
@@ -144,7 +150,7 @@ export const createToolRegistry = <TCtx>(
       const tool = byName.get(name);
       if (!tool) return errorResult(`Unknown tool: ${name}`);
 
-      if (options.validateArgs) {
+      if (validateArgs) {
         const errors = validateAgainstSchema(args, tool.inputSchema);
         if (errors.length > 0) return errorResult(errors.join("; "));
       }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { isAllowedOrigin, isAllowedRequestOrigin } from "../../src/adapters/origins.js";
+import { isAllowedOrigin, isAllowedRequestOrigin } from "../../src/origins.js";
 
 describe("isAllowedOrigin", () => {
   it("admits any origin when the list is empty or omitted", () => {

@@ -13,6 +13,11 @@ import type {
 } from "./oauth/types.js";
 import type { ToolDef } from "./registry.js";
 
+/** One sink for both MCP tool-call and OAuth AS audit events. */
+export type UnifiedAuditEntry =
+  | ({ source: "mcp" } & AuditEntry)
+  | ({ source: "oauth" } & OAuthAuditEntry);
+
 /** What your token verification returns. The library checks the audience. */
 export type VerifiedToken = {
   userId: string;
@@ -51,6 +56,11 @@ export type McpAppAuth = {
   /** RFC 7009 — presence mounts `/revoke` and advertises it. */
   revokeToken?: (input: RevokeTokenInput) => Promise<void>;
   codeStore?: CodeStore;
+  /**
+   * Allow process-local in-memory jti when `codeStore` is omitted.
+   * Default false since 2.0 — see `OAuthRouterOptions.allowInMemoryCodeStore`.
+   */
+  allowInMemoryCodeStore?: boolean;
   /** Required when any configured client is pre-registered (e.g. Gemini). */
   clientStore?: ClientStore;
   /**
@@ -94,16 +104,24 @@ export type McpAppOptions<TCtx> = {
    * Set false only to accept invented public ids (pre-CIMD).
    */
   requireRegisteredClients?: boolean;
+  /**
+   * Validate tools/call args against each tool's `inputSchema`. Default
+   * **true** since 2.0. Set false only to skip schema checks intentionally.
+   */
   validateArgs?: boolean;
+  /**
+   * See `OAuthRouterOptions.allowInMemoryCodeStore`. Default false.
+   */
+  allowInMemoryCodeStore?: boolean;
   onToolError?: (error: unknown) => string;
   /** Per-request context for tools. Defaults to an empty object. */
   context?: (req: Request, principal: Principal | null) => TCtx | Promise<TCtx>;
   /**
-   * Opt-in metrics hook — same as `McpPorts.audit`. Omit for silence. The
-   * library never stores or prints these itself. See `consoleAudit` or
-   * `examples/audit-store.ts`.
+   * Unified metrics hook for MCP and OAuth events (`source: "mcp" | "oauth"`).
+   * Omit for silence. `auth.audit` overrides OAuth delivery when both are set.
+   * See `consoleAudit` or `examples/audit-store.ts`.
    */
-  audit?: (entry: AuditEntry) => void | Promise<void>;
+  audit?: (entry: UnifiedAuditEntry) => void | Promise<void>;
   /** Max time to wait for `audit` above before responding anyway. Default 1000ms. Also applied to `auth.audit`. */
   auditTimeoutMs?: number;
   /**

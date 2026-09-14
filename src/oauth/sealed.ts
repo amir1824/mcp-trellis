@@ -12,6 +12,7 @@
 
 import { bytesToBase64Url, fromBase64Url } from "./base64url.js";
 import { createBoundedCache } from "./keycache.js";
+import { secretCacheFingerprint } from "./secretfingerprint.js";
 
 export type SealedType = "consent" | "client" | "code";
 
@@ -53,12 +54,15 @@ const cachedDeriveKey = (
   type: SealedType,
   usage: "encrypt" | "decrypt",
 ): Promise<CryptoKey> => {
-  const cacheKey = `${type}:${usage}:${secret}`;
-  const cached = keyCache.get(cacheKey);
-  if (cached) return cached;
-  const derived = deriveKey(secret, type, usage);
-  keyCache.set(cacheKey, derived);
-  return derived;
+  const pending = (async () => {
+    const cacheKey = `${type}:${usage}:${await secretCacheFingerprint(secret)}`;
+    const cached = keyCache.get(cacheKey);
+    if (cached) return cached;
+    const derived = deriveKey(secret, type, usage);
+    keyCache.set(cacheKey, derived);
+    return derived;
+  })();
+  return pending;
 };
 
 /** Seals `payload` as an opaque, type-bound string. */

@@ -379,6 +379,7 @@ describe("asNodeHandler", () => {
   it("end-to-end: asNodeHandler + express-style pre-parsed body reaches /token as a real grant, not client_id required", async () => {
     const oauth = createOAuthRouter({
       requireRegisteredClients: false,
+      allowInMemoryCodeStore: true,
       ports: {
         codeSecret: "x".repeat(40),
         resolveUser: async () => ({ id: "u1" }),

@@ -9,12 +9,17 @@ privately rather than in a public issue.
 
 | Version | Supported |
 |---------|-----------|
-| Latest `0.x` minor | ✅ |
-| Older `0.x` minors | ❌ |
+| Latest `2.x` minor | ✅ |
+| Older `2.x` minors | ❌ |
+| `1.x` | ❌ |
+| `0.x` | ❌ |
 
-This project is pre-1.0; only the latest published minor version receives
-security fixes. Once `1.0.0` ships, this table will track a maintained
-major-version window.
+Only the latest published `2.x` minor receives security fixes.
+
+> **Note on 1.0.0:** the live `1.0.0` on npm (published 2026-08-21) was cut
+> manually without npm provenance. From `2.0.0` onward, releases go through
+> GitHub Actions OIDC trusted publishing with provenance attached. Do not
+> treat `1.0.0` as a supported baseline.
 
 ## Reporting a vulnerability
 
@@ -38,32 +43,12 @@ Please include:
 - **Initial assessment:** within 10 business days — confirmed, needs more
   information, or not applicable.
 - **Disclosure:** we aim to publish a fix and a GitHub Security Advisory
-  within **90 days** of a confirmed report. If a fix needs more time, we
-  will coordinate an extended timeline with the reporter rather than
-  disclose an unpatched vulnerability.
+  once a patched release is available. Coordinated disclosure preferred;
+  please do not publish exploit details before a fix ships.
 
-## In scope
+## Security model (short)
 
-- The authorization server (`src/oauth/`) — authorize/token/revoke/consent
-  flows, PKCE, redirect and client validation, auth-code and consent-ticket
-  sealing, scope handling.
-- The MCP protocol handler (`src/dispatch.ts`, `src/methods.ts`,
-  `src/registry.ts`, `src/validate.ts`) — request dispatch, tool
-  invocation, and schema validation.
-- The Node HTTP adapter (`src/adapters/`).
-
-## Out of scope
-
-- **Host-implemented ports** you supply — `resolveUser`, `mintAccessToken`,
-  `verifyToken`, `clientStore`, your login page, your token store, and how
-  you store credentials. This library never sees or persists plaintext
-  credentials; bugs in your implementation of these ports are not
-  mcp-trellis vulnerabilities.
-- **Missing rate limiting** — by design, documented in
-  [docs/security.md](docs/security.md); apply it at your edge or reverse
-  proxy.
-- **Denial of service via infrastructure** (network flooding, etc.) —
-  report to your hosting provider.
-
-For known, accepted risks and the full threat model, see
-[docs/security.md](docs/security.md).
+Host ports own login, token mint/verify/revoke, and data ACLs. The library
+owns OAuth protocol surfaces, audience checks under `createMcpApp`, consent,
+sealed codes, and MCP transport hardening. See [docs/security.md](docs/security.md)
+for the full threat model.

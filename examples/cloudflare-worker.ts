@@ -6,8 +6,8 @@
  * bound to a wildcard route (same Host caveat as Node `allowedOrigins`).
  */
 
-import { isAllowedOrigin } from "../src/adapters/origins.js";
 import { createMcpApp } from "../src/app.js";
+import { isAllowedOrigin } from "../src/origins.js";
 import type { ToolDef } from "../src/registry.js";
 import { signToken, verifyToken } from "./signed-token.js";
 
@@ -36,6 +36,10 @@ const buildApp = (env: Env) =>
     serverInfo: { name: "worker-example", version: "1.0.0" },
     tools: [ping],
     clients: ["claude"],
+    // Demo only — Workers run many isolates; pass a Durable Object / D1
+    // codeStore before production (see examples/stores.ts). This flag makes
+    // the single-isolate footgun explicit instead of silent.
+    allowInMemoryCodeStore: true,
     auth: {
       codeSecret: env.OAUTH_CODE_SECRET,
       // resolveUser is a placeholder that always succeeds as one fixed
@@ -57,14 +61,11 @@ const buildApp = (env: Env) =>
         scope,
       }),
       verifyToken: async (token) => verifyToken(env.ACCESS_TOKEN_SECRET, token),
-      // No `codeStore` is passed, so auth codes and consent tickets fall
-      // back to the library's process-local in-memory store — fine for a
-      // single Worker isolate during development, but Workers can run many
-      // concurrent isolates in production, and an isolate can be evicted
-      // between requests. Pass a `codeStore` backed by a Durable Object or
-      // D1 before deploying — **not** Workers KV alone, which cannot do the
-      // atomic single-use check auth-code redemption needs (see
-      // `examples/stores.ts`'s `kvCodeStore` docstring).
+      // allowInMemoryCodeStore above — auth codes and consent tickets use
+      // the library's process-local Map. Fine for a single isolate during
+      // development; production needs a shared codeStore (Durable Object
+      // or D1 — **not** Workers KV alone, which cannot do the atomic
+      // single-use check; see `examples/stores.ts`).
     },
     context: async (_req, principal) => ({ userId: principal?.id ?? "" }),
   });

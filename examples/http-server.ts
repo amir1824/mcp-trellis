@@ -35,6 +35,8 @@ const app = createMcpApp<Ctx>({
   serverInfo: { name: "example", version: "1.0.0" },
   tools: [echo],
   clients: ["claude"],
+  // Single-process demo — production must pass auth.codeStore (KV/Redis SET NX).
+  allowInMemoryCodeStore: true,
   auth: {
     // Real deployments: process.env.OAUTH_CODE_SECRET, generated via `openssl rand -base64 32`.
     codeSecret: "example-http-server-code-secret-do-not-reuse",

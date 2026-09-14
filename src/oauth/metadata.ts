@@ -1,3 +1,4 @@
+import { wwwAuthenticateHeader } from "../auth/bearer.js";
 import {
   DEFAULT_SCOPE,
   type GrantType,
@@ -31,6 +32,10 @@ export type AuthorizationServerMetadata = {
   /** Omitted when `revokeToken` is not configured. */
   revocation_endpoint?: string;
   revocation_endpoint_auth_methods_supported?: TokenEndpointAuthMethod[];
+  /** RFC 9207 — authorize redirect includes `iss`. */
+  authorization_response_iss_parameter_supported?: boolean;
+  /** Client ID Metadata Documents (MCP 2026-07-28). */
+  client_id_metadata_document_supported?: boolean;
 };
 
 export type MetadataOptions = {
@@ -48,6 +53,8 @@ export type MetadataOptions = {
   dcrEnabled?: boolean | undefined;
   /** Advertise `revocation_endpoint`. Default false. */
   revocationEnabled?: boolean | undefined;
+  /** Advertise CIMD support. Default false. */
+  cimdSupported?: boolean | undefined;
 };
 
 export const protectedResourceMetadata = (options: MetadataOptions): ProtectedResourceMetadata => ({
@@ -83,6 +90,8 @@ export const authorizationServerMetadata = (
     token_endpoint_auth_methods_supported: tokenEndpointAuthMethods,
     scopes_supported: options.scopes ?? [DEFAULT_SCOPE],
     resource_parameter_supported: true,
+    authorization_response_iss_parameter_supported: true,
+    ...(options.cimdSupported ? { client_id_metadata_document_supported: true } : {}),
   };
 };
 
@@ -91,4 +100,7 @@ export const mcpWwwAuthenticate = (
   resourcePath = DEFAULT_RESOURCE_PATH,
   realm = "mcp",
 ): string =>
-  `Bearer realm="${realm}", resource_metadata="${origin}/.well-known/oauth-protected-resource${resourcePath}"`;
+  wwwAuthenticateHeader({
+    realm,
+    resourceMetadataUrl: `${origin}/.well-known/oauth-protected-resource${resourcePath}`,
+  });

@@ -89,4 +89,15 @@ describe("wwwAuthenticateHeader", () => {
         'error="insufficient_scope", scope="ingest"',
     );
   });
+
+  it("escapes quotes and backslashes in realm and resource_metadata", () => {
+    const header = wwwAuthenticateHeader({
+      realm: 'acme\\"corp',
+      resourceMetadataUrl: 'https://example.test/meta"x',
+    });
+    assert.equal(
+      header,
+      'Bearer realm="acme\\\\\\"corp", resource_metadata="https://example.test/meta\\"x"',
+    );
+  });
 });

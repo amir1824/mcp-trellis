@@ -31,6 +31,7 @@
 import { timingSafeEqual } from "../auth/bearer.js";
 import { bytesToBase64Url } from "./base64url.js";
 import { createBoundedCache } from "./keycache.js";
+import { secretCacheFingerprint } from "./secretfingerprint.js";
 
 const HASH_PREFIX = "hmac-sha256$";
 const HKDF_INFO = "mcp-trellis:client-secret-hash";
@@ -61,11 +62,15 @@ const KEY_CACHE_LIMIT = 32;
 const hmacKeyCache = createBoundedCache<Promise<CryptoKey>>(KEY_CACHE_LIMIT);
 
 const cachedDeriveHmacKey = (codeSecretValue: string): Promise<CryptoKey> => {
-  const cached = hmacKeyCache.get(codeSecretValue);
-  if (cached) return cached;
-  const derived = deriveHmacKey(codeSecretValue);
-  hmacKeyCache.set(codeSecretValue, derived);
-  return derived;
+  const pending = (async () => {
+    const cacheKey = await secretCacheFingerprint(codeSecretValue);
+    const cached = hmacKeyCache.get(cacheKey);
+    if (cached) return cached;
+    const derived = deriveHmacKey(codeSecretValue);
+    hmacKeyCache.set(cacheKey, derived);
+    return derived;
+  })();
+  return pending;
 };
 
 /**

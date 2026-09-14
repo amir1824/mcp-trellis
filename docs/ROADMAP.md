@@ -1,24 +1,33 @@
 # mcp-trellis — roadmap
 
-Status: 2026-08-21. Written against MCP spec revision `2026-07-28`.
+Status: 2026-09-14. Written against MCP spec revision `2026-07-28`.
 
 ## What this library is
 
-> **The easy way to build a secure MCP server that works with Claude, Gemini,
-> and Codex** — on any Web-standard runtime, with no database and no vendor.
+> **Existing SaaS → authenticated AI connector SDK** — MCP + self-hosted OAuth
+> AS in one npm install, on any Web-standard runtime, with no database and no
+> vendor.
 
 The differentiating axis is **clients**, not runtimes. Runtime portability is
 table stakes; the official SDK has it too. What nobody in TypeScript ships is
 both halves — the MCP handler *and* a self-hosted OAuth authorization server —
 in one package you can drop into a Next.js route or a Deno server.
 
-| | Portable runtime | Self-hosted | AS included | Zero-dep |
+Contrast composition stacks that split the MCP runtime from the identity
+product (e.g. xmcp + Scalekit): those are 2–3 products to wire; mcp-trellis is
+one package with BYO-auth ports.
+
+| | Portable runtime | Self-hosted AS | One npm install | Zero-dep |
 |---|---|---|---|---|
-| Official SDK v2 | yes | yes | **no** | no |
+| Official SDK v2 | yes | **no** | yes (handler only) | no |
 | `workers-oauth-provider` | Workers only | yes | yes | — |
-| Auth0 / Authlete / Clerk / WorkOS | yes | **no** (SaaS) | yes | — |
+| Auth0 / Authlete / Clerk | yes | **no** (SaaS) | no (IdP + MCP) | — |
 | Better Auth | yes | yes | yes, but full stack + DB | no |
-| **mcp-trellis** | yes | yes | yes | yes |
+| **xmcp** | yes | **no** (compose) | no — pair with IdP | — |
+| **Scalekit** | yes | managed connector IdP | no — pair with MCP runtime | — |
+| **WorkOS Standalone Connect** | yes | managed | no — IdP + your MCP | — |
+| **Descope** | yes | managed | no — IdP + your MCP | — |
+| **mcp-trellis** | yes | yes | **yes** (handler + AS) | yes |
 
 The official SDK explicitly does not provide an authorization server — it offers
 SDK-level opt-ins and expects you to bring the infrastructure. That gap is the
@@ -212,49 +221,25 @@ a proper JSON-RPC error.
   MCP audit hook. Sees the real reason behind a collapsed `invalid_client`
   or a rejected `codeSecret`, which the caller never does.
 
+**2.0 — CIMD, unified audit, recipes.**
+
+- **CIMD (Client ID Metadata Documents)** — HTTPS URL `client_id`s are
+  fetched and validated with SSRF hardening (public hosts only, size /
+  redirect / timeout caps). Advertises
+  `client_id_metadata_document_supported`. Optional `cimdCache` port.
+- **Unified `audit` sink** on `createMcpApp` — one callback for MCP and
+  OAuth events (`source: "mcp" | "oauth"`); `auth.audit` remains an
+  OAuth-only override.
+- **Framework recipes** — `examples/nextjs-route.ts`, `examples/express.ts`.
+- Fail-closed defaults: `allowInMemoryCodeStore` / `validateArgs`.
+- **RFC 9207 `iss`** on authorize / error redirects; AS metadata advertises
+  `authorization_response_iss_parameter_supported`.
+
 ---
 
 ## Next
 
-### 1. CIMD — Client ID Metadata Documents
-
-DCR is deprecated as of `2026-07-28`; CIMD is the recommended replacement and
-the direction Claude and Codex are heading. The client publishes JSON at an
-HTTPS URL and uses that URL as its `client_id`; the AS resolves it on demand.
-
-AS-side requirements: detect URL-formatted `client_id`; fetch it; **MUST**
-validate the document's `client_id` equals the URL exactly; **MUST** validate
-the request's `redirect_uri` against the document's `redirect_uris`; **SHOULD**
-cache respecting HTTP cache headers; advertise
-`client_id_metadata_document_supported: true`.
-
-This slots cleanly into the existing shape — pure `fetch` plus validation, with
-caching as a port. It also completes the picture: the spec defines exactly three
-registration mechanisms, and they map one-to-one onto the three clients.
-
-```
-CIMD             → Claude, Codex     (public + PKCE)
-pre-registration → Gemini Enterprise (confidential)   ← shipped
-DCR              → legacy fallback                    ← shipped
-```
-
-The security work is the real work: an AS that fetches attacker-supplied URLs is
-an SSRF engine unless it blocks private/loopback/link-local ranges and DNS
-rebinding, caps redirects, response size, and timeout, and refuses non-HTTPS.
-Cloudflare's implementation is a useful reference for what "done right" means
-(5 KB cap, 10 s timeout, public clients only).
-
-Note: CIMD is not unclaimed. Authlete, Auth0, Clerk, and `workers-oauth-provider`
-all ship it. The claim here is narrower and still true — none of them is a
-portable, self-hosted, zero-dependency library.
-
-### 2. RFC 9207 — `iss` in the authorization response
-
-Add `iss` to the authorize redirect and
-`authorization_response_iss_parameter_supported` to AS metadata. Small, and a
-spec-level SHOULD.
-
-### 3. Protocol currency — `2026-07-28`
+### 1. Protocol currency — `2026-07-28`
 
 Deferred deliberately: Claude, Gemini, and Codex all work against current
 revisions today, and the official SDK already covers dual-era for anyone who

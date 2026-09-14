@@ -42,6 +42,7 @@ const makeApp = (
     extraRedirectUris: ["https://client.test/cb"],
     // Invented client_id in the PKCE walk — opt out of 1.0's default lock-down.
     requireRegisteredClients: false,
+    allowInMemoryCodeStore: true,
     auth: {
       codeSecret: "app-test-code-secret-value-32-characters-long",
       resolveUser: async () => ({ id: "u1" }),
@@ -325,6 +326,7 @@ describe("createMcpApp", () => {
       tools: [echo],
       resourcePath: "/",
       requireRegisteredClients: false,
+      allowInMemoryCodeStore: true,
       auth: {
         codeSecret: "root-resource-path-code-secret-32-characters!",
         resolveUser: async () => null,
@@ -354,6 +356,7 @@ describe("createMcpApp", () => {
       serverInfo: { name: "gemini-only", version: "1.0.0" },
       tools: [echo],
       clients: ["gemini"],
+      allowInMemoryCodeStore: true,
       auth: {
         codeSecret: "app-test-code-secret-value-32-characters-long",
         resolveUser: async () => ({ id: "u1" }),
@@ -410,6 +413,7 @@ describe("createMcpApp", () => {
           serverInfo: { name: "x", version: "1" },
           tools: [echo],
           clients: ["gemini"],
+          allowInMemoryCodeStore: true,
           auth: {
             codeSecret: "s",
             resolveUser: async () => null,
@@ -432,6 +436,7 @@ describe("createMcpApp", () => {
           serverInfo: { name: "x", version: "1" },
           tools: [echo],
           clients: [],
+          allowInMemoryCodeStore: true,
           auth: {
             codeSecret: "s",
             resolveUser: async () => null,
@@ -464,6 +469,7 @@ describe("createMcpApp", () => {
           tools: [echo, unscoped],
           scopes: ["mcp", "admin"],
           defaultScopes: ["mcp"],
+          allowInMemoryCodeStore: true,
           auth: buildAuth(),
         }),
       /unscoped/,
@@ -477,6 +483,7 @@ describe("createMcpApp", () => {
         tools: [echo],
         scopes: ["mcp", "admin"],
         defaultScopes: ["mcp"],
+        allowInMemoryCodeStore: true,
         auth: buildAuth(),
       }),
     );
@@ -490,6 +497,7 @@ describe("createMcpApp", () => {
         tools: [echo, open],
         scopes: ["mcp", "admin"],
         defaultScopes: ["mcp"],
+        allowInMemoryCodeStore: true,
         auth: buildAuth(),
       }),
     );
@@ -502,6 +510,7 @@ describe("createMcpApp", () => {
         serverInfo: { name: "x", version: "1" },
         tools: [unscoped],
         // scopes omitted → defaults to the single ["mcp"] scope.
+        allowInMemoryCodeStore: true,
         auth: buildAuth(),
       }),
     );
@@ -520,6 +529,7 @@ describe("hideToolsOutsideScope", () => {
       defaultScopes: ["mcp"],
       clients: ["claude"],
       ...(hideToolsOutsideScope !== undefined ? { hideToolsOutsideScope } : {}),
+      allowInMemoryCodeStore: true,
       auth: {
         codeSecret: "hide-tools-test-code-secret-32-characters!!",
         resolveUser: async () => ({ id: "u1" }),

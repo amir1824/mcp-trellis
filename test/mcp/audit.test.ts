@@ -387,6 +387,7 @@ describe("consoleAudit", () => {
     const error = t.mock.method(console, "error", () => {});
 
     consoleAudit({
+      source: "mcp",
       method: "tools/call",
       tool: "echo",
       principalId: "u1",
@@ -398,7 +399,7 @@ describe("consoleAudit", () => {
     assert.equal(error.mock.callCount(), 0);
     assert.match(
       log.mock.calls[0]?.arguments[0] as string,
-      /^\[mcp-trellis\] tools\/call tool=echo ok 12ms user=u1$/,
+      /^\[mcp-trellis\] mcp tools\/call tool=echo ok 12ms user=u1$/,
     );
   });
 
@@ -407,6 +408,7 @@ describe("consoleAudit", () => {
     const error = t.mock.method(console, "error", () => {});
 
     consoleAudit({
+      source: "mcp",
       method: "",
       ok: false,
       error: "unauthorized",
@@ -417,7 +419,7 @@ describe("consoleAudit", () => {
     assert.equal(error.mock.callCount(), 1);
     assert.match(
       error.mock.calls[0]?.arguments[0] as string,
-      /^\[mcp-trellis\] \(transport\) fail 0ms error=unauthorized$/,
+      /^\[mcp-trellis\] mcp \(transport\) fail 0ms error=unauthorized$/,
     );
   });
 
@@ -443,7 +445,7 @@ describe("consoleAudit", () => {
       ports: {
         authenticate: async () => ({ id: "u1", scopes: ["*"] }),
         context: async () => ({}),
-        audit: consoleAudit,
+        audit: (entry) => consoleAudit({ source: "mcp", ...entry }),
       },
     });
 
@@ -467,7 +469,7 @@ describe("consoleAudit", () => {
     const line = error.mock.calls[0]?.arguments[0] as string;
     assert.match(
       line,
-      /^\[mcp-trellis\] tools\/call tool=boom fail \d+ms user=u1 error=Tool execution failed$/,
+      /^\[mcp-trellis\] mcp tools\/call tool=boom fail \d+ms user=u1 error=Tool execution failed$/,
     );
   });
 });

@@ -367,8 +367,9 @@ describe("dispatch", () => {
     );
     assert.equal(res.status, 403);
     assert.match(res.headers.get("WWW-Authenticate") ?? "", /error="insufficient_scope"/);
-    const body = (await res.json()) as { id: unknown };
+    const body = (await res.json()) as { id: unknown; error: { code: number } };
     assert.equal(body.id, 4);
+    assert.equal(body.error.code, -32003);
   });
 
   describe("MCP-Protocol-Version header", () => {

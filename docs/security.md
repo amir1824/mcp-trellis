@@ -108,4 +108,4 @@ Explicitly **out** of this package (do not expect parity with full MCP hosts or 
 - **No rate limiting** — put quotas on `/register` and `/token` at the edge or reverse proxy
 - **No paid external security audit** claimed here — see Threat model above
 
-See [ROADMAP.md](ROADMAP.md) for what is next — CIMD and the `2026-07-28` stateless core are the two open items.
+See [ROADMAP.md](ROADMAP.md) for what is next — the `2026-07-28` stateless core is the open protocol item; CIMD is shipped.
