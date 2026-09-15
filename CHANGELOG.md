@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [2.1.0] - 2026-09-15
 
+### Security
+
+- **CIMD SSRF deny-list covers full-form IPv4-mapped addresses** returned by
+  DNS / `cimdLookup` (e.g. `0:0:0:0:0:ffff:7f00:1`), not only compressed
+  `::ffff:…` forms. Unparseable IPv6 lookup results fail closed. **Ceiling
+  unchanged:** TCP connect is still not pinned to the looked-up addresses
+  (zero-dep Web `fetch`); classic DNS rebinding between lookup and connect
+  remains possible — keep `cimd` off unless you accept that residual risk.
+
 ### Fixed
 
 - **The README quickstart no longer answers `initialize` with a 500.** The
@@ -15,7 +24,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the README example as written.
 - **`apiTool` reports a timeout that fires while the response body is still
   streaming** as `Request timed out after …ms`, instead of the redacted
-  `Tool execution failed`.
+  `Tool execution failed`. The fetch `AbortSignal` is threaded into the body
+  read; `TimeoutError`, `AbortError`, and mid-body abort are all classified
+  as timeouts.
 - **`client_secret_basic` parsing follows the RFCs:** the `Basic` scheme is
   case-insensitive (RFC 7235 §2.1), and id and secret are form-decoded, so `+`
   is a space (RFC 6749 §2.3.1).

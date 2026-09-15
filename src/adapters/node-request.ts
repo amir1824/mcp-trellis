@@ -53,6 +53,8 @@ export class InvalidOriginError extends Error {}
 /** A bare `host[:port]` must not carry any of these — they'd mean a path, query, fragment, or credentials smuggled into what should be just the authority. */
 const HOST_HEADER_STRUCTURAL_CHARS = /[/?#@\\]/;
 
+const ALLOWED_ORIGIN_PROTOCOLS = new Set(["http:", "https:"]);
+
 /**
  * Derive origin from Host, or from forwarded headers when `trustProxy`.
  * Always parsed through `URL` and rejected unless it is a bare `host[:port]`
@@ -84,7 +86,7 @@ export const resolveOrigin = (req: NodeRequestLike, options: ResolveOriginOption
   } catch {
     throw new InvalidOriginError(`Cannot resolve origin: Host header "${host}" is not valid`);
   }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+  if (!ALLOWED_ORIGIN_PROTOCOLS.has(parsed.protocol)) {
     throw new InvalidOriginError(
       `Cannot resolve origin: unsupported protocol "${parsed.protocol}"`,
     );
@@ -133,6 +135,8 @@ const toBodyInit = (body: unknown, contentType?: string): BodyInit | undefined =
   return JSON.stringify(body);
 };
 
+const BODYLESS_METHODS = new Set(["GET", "HEAD"]);
+
 export const toWebRequest = (req: NodeRequestLike, options: ToWebRequestOptions): Request => {
   // Never trust an absolute-form request target — rebase onto the validated origin.
   const target = new URL(req.url ?? "/", options.origin);
@@ -147,7 +151,7 @@ export const toWebRequest = (req: NodeRequestLike, options: ToWebRequestOptions)
   );
 
   const method = (req.method ?? "GET").toUpperCase();
-  if (method === "GET" || method === "HEAD") {
+  if (BODYLESS_METHODS.has(method)) {
     return new Request(url, { method, headers });
   }
 
@@ -191,6 +195,16 @@ const enforcePresetBodySize = (body: unknown, maxBytes: number): void => {
   }
 };
 
+const emptyToUndefined = (bytes: Uint8Array): Uint8Array | undefined =>
+  bytes.byteLength > 0 ? bytes : undefined;
+
+const asBodyStream = (req: NodeRequestLike): AsyncIterable<Uint8Array | string> | undefined => {
+  if (isNodeReadable(req) || isAsyncIterable(req)) {
+    return req as AsyncIterable<Uint8Array | string>;
+  }
+  return undefined;
+};
+
 /**
  * Prefer `req.body`; else drain the stream (raw `http.createServer`), capped
  * at `maxBytes`. Throws `BodyTooLargeError` past the cap without destroying
@@ -205,17 +219,12 @@ export const readNodeBody = async (
     return req.body;
   }
 
-  const opts = { contentLength: headerValue(req.headers["content-length"]) };
-  if (isNodeReadable(req)) {
-    const bytes = await readBoundedNodeBody(req, maxBytes, opts);
-    return bytes.byteLength > 0 ? bytes : undefined;
-  }
-  if (!isAsyncIterable(req)) return undefined;
+  const stream = asBodyStream(req);
+  if (!stream) return undefined;
 
-  const bytes = await readBoundedNodeBody(
-    req as AsyncIterable<Uint8Array | string>,
-    maxBytes,
-    opts,
+  return emptyToUndefined(
+    await readBoundedNodeBody(stream, maxBytes, {
+      contentLength: headerValue(req.headers["content-length"]),
+    }),
   );
-  return bytes.byteLength > 0 ? bytes : undefined;
 };

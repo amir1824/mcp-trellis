@@ -169,8 +169,14 @@ const defaultErrorResult = (res: Response): ToolResult => {
 
 const DEFAULT_API_TOOL_TIMEOUT_MS = 30_000;
 
-const isTimeoutError = (caught: unknown): boolean =>
-  caught instanceof Error && caught.name === "TimeoutError";
+const isTimeoutError = (caught: unknown): boolean => {
+  if (!(caught instanceof Error)) return false;
+  return (
+    caught.name === "TimeoutError" ||
+    caught.name === "AbortError" ||
+    caught.message === "body read aborted"
+  );
+};
 
 const timedOutResult = (timeoutMs: number | false): ToolResult => ({
   content: [{ type: "text", text: `Request timed out after ${timeoutMs}ms` }],
@@ -182,11 +188,11 @@ const fetchWithTimeout = async (
   fetchImpl: typeof fetch,
   input: ApiRequest,
   timeoutMs: number | false,
-): Promise<Response | ToolResult> => {
+): Promise<{ response: Response; signal?: AbortSignal } | ToolResult> => {
+  if (timeoutMs === false) return { response: await fetchImpl(input) };
+  const signal = AbortSignal.timeout(timeoutMs);
   try {
-    return timeoutMs === false
-      ? await fetchImpl(input)
-      : await fetchImpl(input, { signal: AbortSignal.timeout(timeoutMs) });
+    return { response: await fetchImpl(input, { signal }), signal };
   } catch (caught) {
     if (isTimeoutError(caught)) return timedOutResult(timeoutMs);
     throw caught;
@@ -207,10 +213,11 @@ const boundResponse = async (
   res: Response,
   maxResponseBytes: number,
   timeoutMs: number | false,
+  signal?: AbortSignal,
 ): Promise<Response | ToolResult> => {
   let bytes: Uint8Array<ArrayBuffer>;
   try {
-    bytes = (await readBoundedBytes(res, maxResponseBytes)) as Uint8Array<ArrayBuffer>;
+    bytes = (await readBoundedBytes(res, maxResponseBytes, signal)) as Uint8Array<ArrayBuffer>;
   } catch (caught) {
     if (caught instanceof BodyTooLargeError) {
       return {
@@ -218,7 +225,6 @@ const boundResponse = async (
         isError: true,
       };
     }
-    // The fetch signal also governs the body stream, so a slow body times out here.
     if (isTimeoutError(caught)) return timedOutResult(timeoutMs);
     throw caught;
   }
@@ -240,10 +246,15 @@ const runApi = async <TCtx, Args>(
   const timeoutMs = options.timeoutMs ?? DEFAULT_API_TOOL_TIMEOUT_MS;
 
   const fetched = await fetchWithTimeout(fetchImpl, input, timeoutMs);
-  if (!(fetched instanceof Response)) return fetched;
+  if (!("response" in fetched)) return fetched;
 
   const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MCP_BODY_LIMIT;
-  const bounded = await boundResponse(fetched, maxResponseBytes, timeoutMs);
+  const bounded = await boundResponse(
+    fetched.response,
+    maxResponseBytes,
+    timeoutMs,
+    fetched.signal,
+  );
   if (!(bounded instanceof Response)) return bounded;
 
   if (!bounded.ok) return options.onError ? options.onError(bounded) : defaultErrorResult(bounded);

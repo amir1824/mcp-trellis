@@ -307,6 +307,16 @@ describe("resolveCimdClient", () => {
       "2002:7f00:1::",
       "::7f00:1",
       "::127.0.0.1",
+      // Full-form IPv4-mapped — DNS/`cimdLookup` may not compress to `::ffff:…`
+      "0:0:0:0:0:ffff:7f00:1",
+      "0:0:0:0:0:ffff:127.0.0.1",
+      "0:0:0:0:0:ffff:0a00:1",
+      "0:0:0:0:0:ffff:10.0.0.1",
+      // Full-form IPv4-compatible loopback / private
+      "0:0:0:0:0:0:7f00:1",
+      "0:0:0:0:0:0:127.0.0.1",
+      // Garbage IPv6 from a sloppy lookup — fail closed
+      "not:a:valid:ipv6::::::",
     ];
     for (const address of blocked) {
       let fetched = false;
@@ -320,6 +330,14 @@ describe("resolveCimdClient", () => {
       assert.equal(resolved, null, address);
       assert.equal(fetched, false, address);
     }
+  });
+
+  it("still allows a public IPv4-compatible resolution (deprecated form, non-private embed)", async () => {
+    const resolved = await resolveCimdClient(doc.client_id, {
+      fetch: async () => new Response(JSON.stringify(doc)),
+      lookup: async () => ["0:0:0:0:0:0:0808:0808"],
+    });
+    assert.deepEqual(resolved?.redirect_uris, doc.redirect_uris);
   });
 
   it("does not treat a DNS name with a numeric first label as an IP", async () => {
