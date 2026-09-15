@@ -2,6 +2,7 @@
 /**
  * CI acceptance: the README "## The 30-second example" TypeScript fence
  * must stay under 15 non-empty, non-comment lines and reference createMcpApp.
+ * That the fence actually runs is covered by test/mcp/readme-quickstart.test.ts.
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";

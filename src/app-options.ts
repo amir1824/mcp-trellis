@@ -1,9 +1,11 @@
 import type { ClientName } from "./clients.js";
-import type { AuditEntry, Principal, ServerInfo } from "./methods.js";
-import type { CodeStore } from "./oauth/codes.js";
-import type { ConsentOptions } from "./oauth/consent.js";
+import type { AuditEntry, Principal, ServerInfo } from "./mcp/methods.js";
+import type { ToolDef } from "./mcp/registry.js";
+import type { CimdCache } from "./oauth/cimd/types.js";
+import type { CodeStore } from "./oauth/crypto/codes.js";
 import type {
   ClientStore,
+  ConsentOptions,
   MintAccessTokenInput,
   MintedToken,
   OAuthAuditEntry,
@@ -11,7 +13,6 @@ import type {
   RefreshAccessTokenInput,
   RevokeTokenInput,
 } from "./oauth/types.js";
-import type { ToolDef } from "./registry.js";
 
 /** One sink for both MCP tool-call and OAuth AS audit events. */
 export type UnifiedAuditEntry =
@@ -31,8 +32,8 @@ export type VerifiedToken = {
 export type McpAppAuth = {
   /**
    * Secret(s) that seal auth codes, consent tickets, and self-issued DCR
-   * client assertions, and key `ClientStore.secretHash`. A single string
-   * works exactly as before; pass an array for key rotation — the first
+   * client assertions, and key `ClientStore.secretHash`. Pass a string, or
+   * an array for key rotation — the first
    * entry seals new material, every entry is tried when unsealing/verifying.
    * See `OAuthPorts.codeSecret` for the full rotation contract.
    */
@@ -56,11 +57,6 @@ export type McpAppAuth = {
   /** RFC 7009 — presence mounts `/revoke` and advertises it. */
   revokeToken?: (input: RevokeTokenInput) => Promise<void>;
   codeStore?: CodeStore;
-  /**
-   * Allow process-local in-memory jti when `codeStore` is omitted.
-   * Default false since 2.0 — see `OAuthRouterOptions.allowInMemoryCodeStore`.
-   */
-  allowInMemoryCodeStore?: boolean;
   /** Required when any configured client is pre-registered (e.g. Gemini). */
   clientStore?: ClientStore;
   /**
@@ -113,8 +109,23 @@ export type McpAppOptions<TCtx> = {
    * See `OAuthRouterOptions.allowInMemoryCodeStore`. Default false.
    */
   allowInMemoryCodeStore?: boolean;
+  /**
+   * Opt into CIMD (HTTPS URL `client_id`s). Default **false** — see
+   * `OAuthRouterOptions.cimd`.
+   */
+  cimd?: boolean;
+  /**
+   * CIMD document cache. Strongly recommended with `cimd: true` — see
+   * `OAuthRouterOptions.cimdCache`.
+   */
+  cimdCache?: CimdCache;
+  /** Optional DNS lookup for CIMD SSRF checks. */
+  cimdLookup?: (hostname: string) => Promise<string[]>;
   onToolError?: (error: unknown) => string;
-  /** Per-request context for tools. Defaults to an empty object. */
+  /**
+   * Per-call context for tools, built only when a `tools/call` is about to
+   * run (see `McpPorts.context`). Defaults to an empty object.
+   */
   context?: (req: Request, principal: Principal | null) => TCtx | Promise<TCtx>;
   /**
    * Unified metrics hook for MCP and OAuth events (`source: "mcp" | "oauth"`).

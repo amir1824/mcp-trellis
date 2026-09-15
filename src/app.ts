@@ -10,13 +10,15 @@ import { parseBearer } from "./auth/bearer.js";
 import {
   assertClientsConfigured,
   authMethodsFor,
+  type ClientName,
   DEFAULT_CLIENTS,
   hasDynamicClient,
   redirectUrisFor,
 } from "./clients.js";
-import { createMcpHandler } from "./dispatch.js";
-import { INTERNAL_ERROR, jsonResponse } from "./http.js";
-import { type AuditEntry, type Principal, safeAudit } from "./methods.js";
+import { errorReason, INTERNAL_ERROR, jsonResponse } from "./http/http.js";
+import { createMcpHandler, type McpHandler, type McpHandlerOptions } from "./mcp/dispatch.js";
+import { type AuditEntry, type Principal, safeAudit } from "./mcp/methods.js";
+import { createToolRegistry, type ToolDef } from "./mcp/registry.js";
 import { safeOAuthAudit } from "./oauth/audit.js";
 import { DEFAULT_SCOPE } from "./oauth/constants.js";
 import {
@@ -24,10 +26,10 @@ import {
   DEFAULT_RESOURCE_PATH,
   normalizeConfiguredPath,
   resourcesEqual,
-} from "./oauth/resource.js";
-import { createOAuthRouter } from "./oauth/router.js";
+} from "./oauth/policy/resource.js";
+import { createOAuthRouter, type OAuthRouter } from "./oauth/router.js";
 import type { OAuthAuditEntry, OAuthRouterOptions } from "./oauth/types.js";
-import { createToolRegistry, type ToolDef } from "./registry.js";
+import { pickDefined } from "./util/defined.js";
 
 export type {
   McpAppAuth,
@@ -41,15 +43,10 @@ export type McpApp = {
 };
 
 /**
- * On a server advertising more than one scope, a tool with no `scope` is
- * callable by any authenticated principal — including one holding none of
- * the advertised scopes at all. That's rarely the intent: it's what
- * `defaultScopes: []` in the docs describes as "least privilege" defeated
- * by a single unscoped tool. A single-scope server has no such ambiguity —
- * "any authenticated principal" and "any principal holding the one scope
- * this server grants" already coincide in practice — so this only fires
- * once there's more than one scope to have gotten wrong. Pass `scope: null`
- * on a tool to state the omission on purpose.
+ * On a multi-scope server a tool with no `scope` is callable by a principal
+ * holding none of the advertised scopes, silently defeating
+ * `defaultScopes: []`. Single-scope servers have no such ambiguity. Pass
+ * `scope: null` on a tool to state the omission on purpose.
  */
 const assertToolScopesConfigured = <TCtx>(tools: ToolDef<TCtx>[], scopes: string[]): void => {
   if (scopes.length <= 1) return;
@@ -63,31 +60,15 @@ const assertToolScopesConfigured = <TCtx>(tools: ToolDef<TCtx>[], scopes: string
   );
 };
 
-export const createMcpApp = <TCtx>(options: McpAppOptions<TCtx>): McpApp => {
-  // Normalized once here — "/mcp/" and "/mcp" must route identically, not
-  // diverge into a 404 for one of them. See `normalizeConfiguredPath`.
-  const resourcePath = normalizeConfiguredPath(options.resourcePath ?? DEFAULT_RESOURCE_PATH);
-  // `${resourcePath}/oauth` alone produces "//oauth" when resourcePath is
-  // the root "/" — normalizeConfiguredPath only strips a trailing slash,
-  // not this kind of internal double slash from string concatenation.
-  const oauthPath =
-    options.oauthPath ?? (resourcePath === "/" ? "/oauth" : `${resourcePath}/oauth`);
-  const clients = options.clients ?? DEFAULT_CLIENTS;
-  const realm = options.realm ?? options.serverInfo.name;
-
-  assertClientsConfigured(clients, options.auth.clientStore);
-  assertToolScopesConfigured(options.tools, options.scopes ?? [DEFAULT_SCOPE]);
-
-  const registry = createToolRegistry<TCtx>(options.tools, {
-    ...(options.validateArgs !== undefined ? { validateArgs: options.validateArgs } : {}),
-    ...(options.onToolError !== undefined ? { onToolError: options.onToolError } : {}),
-  });
-
-  /**
-   * The audience check lives here, not in user code — a token minted for
-   * another MCP server must never be accepted by this one.
-   */
-  const authenticate = async (request: Request): Promise<Principal | null> => {
+/**
+ * The audience check lives here, not in user code — a token minted for
+ * another MCP server must never be accepted by this one.
+ */
+const buildAuthenticate = <TCtx>(
+  options: McpAppOptions<TCtx>,
+  resourcePath: string,
+): ((request: Request) => Promise<Principal | null>) => {
+  return async (request: Request): Promise<Principal | null> => {
     const token = parseBearer(request.headers.get("authorization"));
     if (!token) return null;
 
@@ -103,8 +84,15 @@ export const createMcpApp = <TCtx>(options: McpAppOptions<TCtx>): McpApp => {
       ...(verified.claims !== undefined ? { claims: verified.claims } : {}),
     };
   };
+};
 
-  // Top-level `audit` wraps MCP + OAuth; `auth.audit` wins for OAuth if both set.
+/** Top-level `audit` wraps MCP + OAuth; `auth.audit` wins for OAuth if both set. */
+const buildAuditAdapters = <TCtx>(
+  options: McpAppOptions<TCtx>,
+): {
+  toMcpAudit: ((entry: AuditEntry) => void | Promise<void>) | undefined;
+  oauthAudit: ((entry: OAuthAuditEntry) => void | Promise<void>) | undefined;
+} => {
   const unifiedAudit = options.audit;
   const toMcpAudit =
     unifiedAudit !== undefined
@@ -115,18 +103,29 @@ export const createMcpApp = <TCtx>(options: McpAppOptions<TCtx>): McpApp => {
     (unifiedAudit !== undefined
       ? (entry: OAuthAuditEntry) => unifiedAudit({ source: "oauth", ...entry })
       : undefined);
+  return { toMcpAudit, oauthAudit };
+};
 
-  const handler = createMcpHandler<TCtx>({
+const buildMcpHandlerOptions = <TCtx>(
+  options: McpAppOptions<TCtx>,
+  input: {
+    resourcePath: string;
+    realm: string;
+    registry: ReturnType<typeof createToolRegistry<TCtx>>;
+    authenticate: (request: Request) => Promise<Principal | null>;
+    toMcpAudit: ((entry: AuditEntry) => void | Promise<void>) | undefined;
+  },
+): McpHandlerOptions<TCtx> => {
+  const { resourcePath, realm, registry, authenticate, toMcpAudit } = input;
+  return {
     registry,
     serverInfo: options.serverInfo,
-    ...(options.instructions !== undefined ? { instructions: options.instructions } : {}),
-    ...(options.auditTimeoutMs !== undefined ? { auditTimeoutMs: options.auditTimeoutMs } : {}),
-    ...(options.allowedRequestOrigins !== undefined
-      ? { allowedRequestOrigins: options.allowedRequestOrigins }
-      : {}),
-    ...(options.hideToolsOutsideScope !== undefined
-      ? { hideToolsOutsideScope: options.hideToolsOutsideScope }
-      : {}),
+    ...pickDefined(options, [
+      "instructions",
+      "auditTimeoutMs",
+      "allowedRequestOrigins",
+      "hideToolsOutsideScope",
+    ]),
     wwwAuthenticate: (request) => ({
       realm,
       resourceMetadataUrl: `${new URL(request.url).origin}/.well-known/oauth-protected-resource${resourcePath}`,
@@ -136,26 +135,38 @@ export const createMcpApp = <TCtx>(options: McpAppOptions<TCtx>): McpApp => {
       context: options.context ?? (() => ({}) as TCtx),
       ...(toMcpAudit !== undefined ? { audit: toMcpAudit } : {}),
     },
-  });
+  };
+};
 
-  const oauthOptions: OAuthRouterOptions = {
+const buildOAuthOptions = <TCtx>(
+  options: McpAppOptions<TCtx>,
+  input: {
+    resourcePath: string;
+    oauthPath: string;
+    realm: string;
+    /** Already resolved to `DEFAULT_CLIENTS` by the caller when unset. */
+    clients: ClientName[];
+    oauthAudit: ((entry: OAuthAuditEntry) => void | Promise<void>) | undefined;
+  },
+): OAuthRouterOptions => {
+  const { resourcePath, oauthPath, realm, clients, oauthAudit } = input;
+  return {
     resourcePath,
     oauthPath,
     realm,
-    ...(options.scopes !== undefined ? { scopes: options.scopes } : {}),
-    ...(options.defaultScopes !== undefined ? { defaultScopes: options.defaultScopes } : {}),
-    ...(options.auditTimeoutMs !== undefined ? { auditTimeoutMs: options.auditTimeoutMs } : {}),
-    ...(options.allowInMemoryCodeStore !== undefined
-      ? { allowInMemoryCodeStore: options.allowInMemoryCodeStore }
-      : options.auth.allowInMemoryCodeStore !== undefined
-        ? { allowInMemoryCodeStore: options.auth.allowInMemoryCodeStore }
-        : {}),
+    ...pickDefined(options, [
+      "scopes",
+      "defaultScopes",
+      "auditTimeoutMs",
+      "allowInMemoryCodeStore",
+      "cimd",
+      "cimdCache",
+      "cimdLookup",
+      "requireRegisteredClients",
+      "consent",
+    ]),
     tokenEndpointAuthMethods: authMethodsFor(clients),
     allowUnregisteredClients: hasDynamicClient(clients),
-    ...(options.requireRegisteredClients !== undefined
-      ? { requireRegisteredClients: options.requireRegisteredClients }
-      : {}),
-    ...(options.consent !== undefined ? { consent: options.consent } : {}),
     redirect: {
       // Client profiles are the source of truth for callbacks.
       extra: [...redirectUrisFor(clients), ...(options.extraRedirectUris ?? [])],
@@ -167,54 +178,96 @@ export const createMcpApp = <TCtx>(options: McpAppOptions<TCtx>): McpApp => {
       resolveUser: options.auth.resolveUser,
       loginUrl: options.auth.loginUrl,
       mintAccessToken: options.auth.mintAccessToken,
-      ...(options.auth.refreshAccessToken !== undefined
-        ? { refreshAccessToken: options.auth.refreshAccessToken }
-        : {}),
-      ...(options.auth.revokeToken !== undefined ? { revokeToken: options.auth.revokeToken } : {}),
-      ...(options.auth.codeStore !== undefined ? { codeStore: options.auth.codeStore } : {}),
-      ...(options.auth.clientStore !== undefined ? { clientStore: options.auth.clientStore } : {}),
+      ...pickDefined(options.auth, [
+        "refreshAccessToken",
+        "revokeToken",
+        "codeStore",
+        "clientStore",
+      ]),
       ...(oauthAudit !== undefined ? { audit: oauthAudit } : {}),
     },
   };
+};
 
-  const oauth = createOAuthRouter(oauthOptions);
+/** The two halves `createMcpApp` routes between, with the options each was built from. */
+type AppParts<TCtx> = {
+  resourcePath: string;
+  oauth: OAuthRouter;
+  oauthOptions: OAuthRouterOptions;
+  handler: McpHandler;
+  mcpHandlerOptions: McpHandlerOptions<TCtx>;
+};
+
+const createAppFetch =
+  <TCtx>(parts: AppParts<TCtx>): McpApp["fetch"] =>
+  async (request) => {
+    try {
+      const oauthResponse = await parts.oauth.tryHandle(request);
+      if (oauthResponse) return oauthResponse;
+
+      const requestPath = normalizeConfiguredPath(new URL(request.url).pathname);
+      if (requestPath === parts.resourcePath) return await parts.handler.fetch(request);
+      return jsonResponse({ data: { error: "Not found" }, status: 404 });
+    } catch (caught) {
+      // Defense in depth: `oauth` and `handler` already turn port failures
+      // into responses, but `fetch` must never reject, and this path is
+      // audited so it is never silent.
+      const reason = errorReason(caught);
+      await safeOAuthAudit(parts.oauthOptions, { event: "server_error", reason });
+      await safeAudit(parts.mcpHandlerOptions, {
+        method: "",
+        ok: false,
+        error: reason,
+        durationMs: 0,
+      });
+      return jsonResponse({ data: { error: INTERNAL_ERROR }, status: 500 });
+    }
+  };
+
+export const createMcpApp = <TCtx>(options: McpAppOptions<TCtx>): McpApp => {
+  // "/mcp/" and "/mcp" must route identically.
+  const resourcePath = normalizeConfiguredPath(options.resourcePath ?? DEFAULT_RESOURCE_PATH);
+  // Avoid "//oauth" when the resource is mounted at "/".
+  const oauthPath =
+    options.oauthPath ?? (resourcePath === "/" ? "/oauth" : `${resourcePath}/oauth`);
+  const clients = options.clients ?? DEFAULT_CLIENTS;
+  const realm = options.realm ?? options.serverInfo.name;
+
+  assertClientsConfigured(clients, options.auth.clientStore);
+  assertToolScopesConfigured(options.tools, options.scopes ?? [DEFAULT_SCOPE]);
+
+  const registry = createToolRegistry<TCtx>(
+    options.tools,
+    pickDefined(options, ["validateArgs", "onToolError"]),
+  );
+
+  const authenticate = buildAuthenticate(options, resourcePath);
+  const { toMcpAudit, oauthAudit } = buildAuditAdapters(options);
+
+  // Built once and shared with the `fetch` catch path below, so the fallback
+  // audit sees exactly the same ports/timeout as the handler itself.
+  const mcpHandlerOptions = buildMcpHandlerOptions(options, {
+    resourcePath,
+    realm,
+    registry,
+    authenticate,
+    toMcpAudit,
+  });
+  const oauthOptions = buildOAuthOptions(options, {
+    resourcePath,
+    oauthPath,
+    realm,
+    clients,
+    oauthAudit,
+  });
 
   return {
-    fetch: async (request: Request): Promise<Response> => {
-      try {
-        const oauthResponse = await oauth.tryHandle(request);
-        if (oauthResponse) return oauthResponse;
-
-        const requestPath = normalizeConfiguredPath(new URL(request.url).pathname);
-        if (requestPath === resourcePath) {
-          return await handler.fetch(request);
-        }
-        return jsonResponse({ data: { error: "Not found" }, status: 404 });
-      } catch (caught) {
-        // Both `oauth` and `handler` already turn port failures into a
-        // Response themselves — this is defense in depth, not the primary
-        // guard. `fetch` must never reject. Audit so the belt-and-suspenders
-        // path is not silent.
-        const reason = caught instanceof Error ? caught.message : String(caught);
-        await safeOAuthAudit(oauthOptions, { event: "server_error", reason });
-        await safeAudit(
-          {
-            registry,
-            ports: {
-              authenticate,
-              context: options.context ?? (() => ({}) as TCtx),
-              ...(toMcpAudit !== undefined ? { audit: toMcpAudit } : {}),
-            },
-            serverInfo: options.serverInfo,
-            wwwAuthenticate: { realm, resourceMetadataUrl: "" },
-            ...(options.auditTimeoutMs !== undefined
-              ? { auditTimeoutMs: options.auditTimeoutMs }
-              : {}),
-          },
-          { method: "", ok: false, error: reason, durationMs: 0 },
-        );
-        return jsonResponse({ data: { error: INTERNAL_ERROR }, status: 500 });
-      }
-    },
+    fetch: createAppFetch({
+      resourcePath,
+      oauth: createOAuthRouter(oauthOptions),
+      oauthOptions,
+      handler: createMcpHandler<TCtx>(mcpHandlerOptions),
+      mcpHandlerOptions,
+    }),
   };
 };

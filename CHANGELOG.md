@@ -3,6 +3,75 @@
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.1.0] - 2026-09-15
+
+### Fixed
+
+- **The README quickstart no longer answers `initialize` with a 500.** The
+  `context` port ran before every JSON-RPC method, including the public
+  `initialize` and `ping` where `principal` is `null`, so
+  `context: (_r, p) => ({ userId: p!.id })` threw. `context` now runs only for
+  a `tools/call` that passed the unknown-tool and scope checks. A new test runs
+  the README example as written.
+- **`apiTool` reports a timeout that fires while the response body is still
+  streaming** as `Request timed out after …ms`, instead of the redacted
+  `Tool execution failed`.
+- **`client_secret_basic` parsing follows the RFCs:** the `Basic` scheme is
+  case-insensitive (RFC 7235 §2.1), and id and secret are form-decoded, so `+`
+  is a space (RFC 6749 §2.3.1).
+- **`/register` answers `201 Created`** (RFC 7591 §3.2.1), not `200`.
+
+### Added
+
+- **`mcp-trellis/advanced`** — low-level primitives (PKCE, auth codes, client
+  auth, scope/resource parsing, schema validation, HTTP utils) for hosts
+  assembling their own flow. Less stable than the other entry points.
+- **Boolean `additionalProperties` is validated.** `additionalProperties: false`
+  (the default output of `zod-to-json-schema`) used to make `validateArgs`
+  throw at construction; it is now enforced. A schema-valued
+  `additionalProperties` is still reported as unsupported.
+
+### Deprecated
+
+- The 35 symbols now in `mcp-trellis/advanced` remain importable from
+  `mcp-trellis` and `mcp-trellis/oauth` as `@deprecated` aliases, identical to
+  the new exports. **Removed in 3.0.** See `docs/reference.md#exports`.
+- Calling `consumeAuthCode` without `codeStore`. It falls back to a
+  process-local map that cannot enforce single use across instances;
+  `codeStore` becomes required in 3.0.
+
+### Changed
+
+- `/token` and `/consent` receive the router-resolved `codeStore` and can no
+  longer fall back to a store of their own. The in-memory store (with
+  `allowInMemoryCodeStore`) remains process-wide, so apps built per request
+  keep single-use.
+- `test:coverage` runs on Node 20 (reporting only; thresholds enforced on
+  Node 22 in CI). Thresholds raised from 85/75 to 94/88 lines/branches.
+- `assertCodeSecret` no longer carries a hardcoded list of example secrets;
+  the 32-character floor and the `do-not-reuse` marker already rejected all
+  of them.
+- `package-lock.json` root version synced (was stuck at `1.0.0`).
+- 405 responses from OAuth endpoints carry `{ "error": "Method not allowed" }`
+  like every other error body, instead of `{ "detail": "method not allowed" }`.
+
+## [2.0.1] - 2026-09-14
+
+### Security
+
+- **CIMD defaults to off** (`cimd: true` to enable). Default-on fetch of
+  attacker-supplied URL `client_id`s was an incomplete SSRF surface.
+- **`createMcpApp` wires `cimd` / `cimdCache` / `cimdLookup`.**
+- **`/token` and `/revoke` re-resolve CIMD** instead of accepting HTTPS-shaped
+  `client_id`s by shape alone under `requireRegisteredClients`.
+- CIMD blocks NAT64 (`64:ff9b::/96`); `http:` redirect_uris must be loopback.
+- Rejected HKDF derive promises are dropped from the key cache (no poison).
+
+### Changed
+
+- **`auth.allowInMemoryCodeStore` removed.** Use top-level
+  `allowInMemoryCodeStore` on `createMcpApp` (same as `createOAuthRouter`).
+
 ## [2.0.0] - 2026-09-14
 
 First npm release after `1.0.0`. Tree commits labeled 1.1.x / 1.2.0 were
@@ -451,7 +520,7 @@ session — see "Changed" below before upgrading.
 - **`OAuthRouterOptions.defaultScopes`** — required at construction once
   `scopes` advertises more than one entry; names what an omitted `scope`
   request grants instead of silently granting everything advertised.
-- **Request body size limits** — new `src/body.ts`
+- **Request body size limits** — new `src/http/body.ts`
   (`DEFAULT_MCP_BODY_LIMIT` 1 MiB, `DEFAULT_OAUTH_BODY_LIMIT` 64 KiB).
   Rejects early on an oversized `Content-Length`, and aborts mid-stream for
   a chunked body with no declared length. Applied to `/mcp`, `/token`,
@@ -536,7 +605,7 @@ No `src/` behavior change. Infrastructure and test coverage only.
   `concurrency` group, and actions pinned to full commit SHAs.
 - `tsconfig.build.json` — `noUncheckedIndexedAccess`, `noImplicitOverride`,
   `verbatimModuleSyntax`; fixed three latent bugs this surfaced in
-  `src/adapters/node.ts`, `src/validate.ts`, and `src/oauth/codes.ts`.
+  `src/adapters/node.ts`, `src/mcp/validate.ts`, and `src/oauth/codes.ts`.
 
 ## [0.2.1] - Prior release
 

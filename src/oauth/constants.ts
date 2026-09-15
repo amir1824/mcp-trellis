@@ -41,3 +41,14 @@ export type TokenEndpointAuthMethod =
   (typeof TOKEN_ENDPOINT_AUTH_METHODS)[keyof typeof TOKEN_ENDPOINT_AUTH_METHODS];
 
 export const DEFAULT_SCOPE = "mcp";
+
+/** Default OAuth path prefix when `oauthPath` is unset. Router, `/authorize`, and metadata must agree. */
+export const DEFAULT_OAUTH_PATH = "/mcp/oauth";
+
+/**
+ * Cap on a client's redirect URIs, self-registered or from a CIMD document.
+ * RFC 7591 sets none, but `/register` seals the whole list into the
+ * `client_id`, which then travels as an `/authorize` query parameter with
+ * real length ceilings (browsers, proxies, logs). A client needs a handful.
+ */
+export const MAX_CLIENT_REDIRECT_URIS = 10;

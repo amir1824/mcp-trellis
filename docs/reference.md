@@ -7,9 +7,10 @@ Ports and recipes: [guide.md](guide.md). Security: [security.md](security.md).
 
 | Import | What you get |
 |--------|----------------|
-| `mcp-trellis` | `createMcpApp`, client profiles, MCP handler, tool registry, bearer helpers, HTTP utils |
-| `mcp-trellis/oauth` | OAuth 2.1 AS router, PKCE, auth codes, client auth, metadata |
+| `mcp-trellis` | `createMcpApp`, client profiles, MCP handler, tool registry, bearer helpers, JSON-RPC helpers |
+| `mcp-trellis/oauth` | OAuth 2.1 AS router, discovery metadata, resource and redirect policy, client-secret hashing |
 | `mcp-trellis/node` | `asNodeHandler` + `resolveOrigin` for Node `(req, res)` |
+| `mcp-trellis/advanced` | Low-level primitives: PKCE, auth codes, client auth, scope/resource parsing, schema validation, HTTP utils. Less stable — may change in a minor release |
 
 `createMcpApp` is the batteries-included layer. `createMcpHandler` and
 `createOAuthRouter` remain exported and unchanged — reach for them when you want
@@ -155,11 +156,10 @@ A single-scope server has no such ambiguity and is unaffected.
 - `UnifiedAuditEntry` — `{ source: "mcp" } & AuditEntry` \| `{ source: "oauth" } & OAuthAuditEntry`
 - `defineTool`, `apiTool` — typed, validated tool authoring on top of `ToolDef`. `apiTool`'s `timeoutMs` (default 30000, or `false` to disable) and `maxResponseBytes` (default 1 MiB) bound the upstream call; either surfaces as `isError: true`, not a thrown exception
 - `CLIENT_PROFILES`, `DEFAULT_CLIENTS`, `authMethodsFor`, `redirectUrisFor`, `preRegisteredClients`, `hasDynamicClient`
-- `parseBearer`, `timingSafeEqual`, `matchesAny`, `wwwAuthenticateHeader`, `rejectQueryToken`
-- `validateAgainstSchema`, `JSON_SCHEMA_TYPES`, `SUPPORTED_SCHEMA_KEYWORDS`, `IGNORED_SCHEMA_KEYWORDS`, `unsupportedKeywords`, `missingObjectType`
+- `parseBearer`, `wwwAuthenticateHeader`, `rejectQueryToken`
 - `rpcResult`, `rpcError`, JSON-RPC error constants
-- `pickProtocolVersion`, `PROTOCOL_VERSIONS`, `DEFAULT_PROTOCOL_VERSION`, `ASSUMED_HEADER_PROTOCOL_VERSION`
-- `jsonResponse({ data, status?, headers?, cors? })`, `emptyResponse`, `optionsResponse`, `corsHeaders`, `methodNotAllowed` — type `JsonResponseInput` exported
+- `PROTOCOL_VERSIONS`, `DEFAULT_PROTOCOL_VERSION`
+- `jsonResponse({ data, status?, headers?, cors? })` — type `JsonResponseInput` exported
 - Types: `McpApp`, `McpAppOptions`, `McpAppAuth`, `VerifiedToken`, `ClientName`, `ClientProfile`, `McpHandler`, `McpHandlerOptions`, `McpPorts`, `Principal`, `AuditEntry`, `ServerInfo`, `ToolDef`, `ToolHandler`, `ToolResult`, `ToolRegistry`, `JsonSchema`, `StandardSchemaV1`, `DefineToolOptions`, `ApiToolOptions`, `ApiRequest`, `ClientStore`, `RegisteredClient`, `CodeStore`, `MintAccessTokenInput`, `RefreshAccessTokenInput`, `RevokeTokenInput`, `MintedToken`, `OAuthUser`, …
 
 </details>
@@ -169,18 +169,34 @@ A single-scope server has no such ambiguity and is unaffected.
 
 - `createOAuthRouter`
 - `authorizationServerMetadata`, `protectedResourceMetadata`, `mcpWwwAuthenticate`
-- `canonicalResource`, `resourcesEqual`, `firstResourceError`, `resourceErrorInfo`, `DEFAULT_RESOURCE_PATH`
+- `canonicalResource`, `resourcesEqual`, `DEFAULT_RESOURCE_PATH`
 - `isAllowedRedirectUri`, `CLAUDE_CALLBACK`
-- `issueAuthCode`, `consumeAuthCode`, `newClientId`
-- `verifyPkceS256`, `sha256Base64Url`, `randomBase64Url`
-- `readClientAuth`, `firstClientAuthError`, `unregisteredClientsAllowed`
-- `parseScope`, `formatScope`, `requestedScopes`, `firstScopeError`, `scopeErrorInfo`
-- `defaultScopes`, `registeredClientsRequired` — resolve the effective option value, same pattern as `unregisteredClientsAllowed`
+- `isCimdClientId`, `resolveCimdClient`
 - `hashClientSecret`, `verifyClientSecret` — for `ClientStore.secretHash` (hash once at registration time; the library verifies)
-- `buildErrorRedirectUrl` — the RFC 6749 §4.1.2.1 helper `/authorize` uses internally, exported for hosts composing their own authorize flow via [compose the primitives](guide.md#advanced-compose-the-primitives)
-- `normalizeConfiguredPath` — strips a trailing slash from a configured path (`resourcePath`, `oauthPath`); `createOAuthRouter` applies this to `resourcePath` internally, exported for hosts composing their own routing
 - `GRANT_TYPES`, `OAUTH_ERRORS`, `DEFAULT_SCOPE`, `TOKEN_ENDPOINT_AUTH_METHODS`
 - Types: `OAuthUser`, `MintedToken`, `OAuthPorts`, `OAuthAuditEntry`, `OAuthRouterOptions`, `OAuthErrorInfo`, `AuthCodeRecord`, `CodeStore`, `ClientStore`, `RegisteredClient`, `ClientAssertion`, `ClientAuth`, `TokenEndpointAuthMethod`, `MintAccessTokenInput`, `RefreshAccessTokenInput`, `RevokeTokenInput`, `ConsentOptions`, `ConsentRequest`
+
+</details>
+
+<details>
+<summary><code>mcp-trellis/advanced</code></summary>
+
+Building blocks for hosts assembling their own transport or OAuth flow. Less stable than the entries above.
+
+- `timingSafeEqual`, `matchesAny`
+- `validateAgainstSchema`, `JSON_SCHEMA_TYPES`, `SUPPORTED_SCHEMA_KEYWORDS`, `IGNORED_SCHEMA_KEYWORDS`, `unsupportedKeywords`, `missingObjectType`
+- `pickProtocolVersion`, `ASSUMED_HEADER_PROTOCOL_VERSION`
+- `emptyResponse`, `optionsResponse`, `corsHeaders`, `methodNotAllowed`
+- `issueAuthCode`, `consumeAuthCode` (pass `codeStore`; omitting it is deprecated), `newClientId`
+- `verifyPkceS256`, `sha256Base64Url`, `randomBase64Url`
+- `readClientAuth`, `firstClientAuthError`
+- `firstResourceError`, `resourceErrorInfo`, `normalizeConfiguredPath`
+- `parseScope`, `formatScope`, `requestedScopes`, `firstScopeError`, `scopeErrorInfo`
+- `advertisedScopes`, `defaultScopes`, `registeredClientsRequired`, `unregisteredClientsAllowed` — resolve the effective option value
+- `buildErrorRedirectUrl` — the RFC 6749 §4.1.2.1 error-redirect builder `/authorize` uses
+- Types: `AuthCodeRecord`, `CodeStore`, `ClientAuth`
+
+**Deprecated in 2.1:** every symbol above is still importable from `mcp-trellis` or `mcp-trellis/oauth`, where it used to live, as a `@deprecated` alias. Those aliases are removed in 3.0.
 
 </details>
 

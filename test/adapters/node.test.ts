@@ -9,9 +9,9 @@ import {
   sendWebResponse,
   toWebRequest,
 } from "../../src/adapters/node.js";
-import { createMcpHandler } from "../../src/dispatch.js";
+import { createMcpHandler } from "../../src/mcp/dispatch.js";
+import { createToolRegistry } from "../../src/mcp/registry.js";
 import { createOAuthRouter } from "../../src/oauth/router.js";
-import { createToolRegistry } from "../../src/registry.js";
 
 type MockRes = NodeResponseLike & {
   headers: Record<string, string | readonly string[]>;

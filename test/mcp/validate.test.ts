@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createToolRegistry } from "../../src/registry.js";
+import { createToolRegistry } from "../../src/mcp/registry.js";
 import {
   missingObjectType,
   unsupportedKeywords,
   validateAgainstSchema,
-} from "../../src/validate.js";
+} from "../../src/mcp/validate.js";
 
 describe("schema validation", () => {
   const schema = {
@@ -279,14 +279,53 @@ describe("unsupportedKeywords / validateArgs construction", () => {
     );
   });
 
-  it("lists additionalProperties as unsupported", () => {
+  it("accepts boolean additionalProperties (zod-to-json-schema output)", () => {
+    assert.deepEqual(
+      unsupportedKeywords({ type: "object", additionalProperties: false, properties: {} }),
+      [],
+    );
+    assert.deepEqual(unsupportedKeywords({ type: "object", additionalProperties: true }), []);
+  });
+
+  it("lists schema-valued additionalProperties as unsupported", () => {
     assert.deepEqual(
       unsupportedKeywords({
         type: "object",
-        additionalProperties: false,
-        properties: {},
+        additionalProperties: { type: "string" },
+        properties: { nested: { type: "object", additionalProperties: { type: "number" } } },
       }),
-      ["args.additionalProperties"],
+      ["args.additionalProperties", "args.properties.nested.additionalProperties"],
+    );
+  });
+
+  it("rejects keys outside properties when additionalProperties is false", () => {
+    const schema = {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        city: { type: "string" },
+        address: { type: "object", additionalProperties: false, properties: {} },
+      },
+    };
+    assert.deepEqual(validateAgainstSchema({ city: "TLV" }, schema), []);
+    assert.deepEqual(
+      validateAgainstSchema({ city: "TLV", admin: true, address: { x: 1 } }, schema),
+      ["args.address.x: not allowed", "args.admin: not allowed"],
+    );
+  });
+
+  it("allows extra keys when additionalProperties is true or absent", () => {
+    const props = { city: { type: "string" } };
+    assert.deepEqual(
+      validateAgainstSchema({ city: "TLV", extra: 1 }, { type: "object", properties: props }),
+      [],
+    );
+    assert.deepEqual(
+      validateAgainstSchema(
+        { city: "TLV", extra: 1 },
+        { type: "object", properties: props, additionalProperties: true },
+      ),
+      [],
     );
   });
 

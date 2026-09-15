@@ -22,8 +22,12 @@ try {
   const check = `
     import { createMcpApp } from "mcp-trellis";
     import { asNodeHandler } from "mcp-trellis/node";
+    import { verifyPkceS256 } from "mcp-trellis/advanced";
+    import { verifyPkceS256 as deprecatedAlias } from "mcp-trellis/oauth";
     if (typeof createMcpApp !== "function") throw new Error("createMcpApp missing");
     if (typeof asNodeHandler !== "function") throw new Error("asNodeHandler missing");
+    if (typeof verifyPkceS256 !== "function") throw new Error("mcp-trellis/advanced missing");
+    if (deprecatedAlias !== verifyPkceS256) throw new Error("deprecated oauth alias diverged");
     console.log("clean-npm-smoke OK", process.env.npm_package_name ?? "mcp-trellis");
   `;
   execFileSync("node", ["--input-type=module", "-e", check], {

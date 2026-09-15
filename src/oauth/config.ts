@@ -1,6 +1,6 @@
 /** OAuth construction asserts and small response helpers. */
 
-import { jsonResponse } from "../http.js";
+import { jsonResponse } from "../http/http.js";
 import { DEFAULT_SCOPE } from "./constants.js";
 import type { MintedToken, OAuthPorts, OAuthRouterOptions } from "./types.js";
 
@@ -54,21 +54,17 @@ export const assertScopeConfig = (options: OAuthRouterOptions): void => {
 /**
  * `codeSecret` can forge an auth code for any userId/scope/resource, so a
  * weak or copy-pasted one is a full authorization bypass, not a footgun.
- * The literals here are the exact strings this package's own docs/examples
- * publish — copy-paste is the realistic failure mode.
+ * Copy-paste from this package's docs is the realistic failure mode: every
+ * published example secret is either under the length floor or carries
+ * the marker below (enforced by test/oauth/crypto/codesecret.test.ts).
  */
 const MIN_CODE_SECRET_LENGTH = 32;
-const DENYLISTED_CODE_SECRETS = new Set([
-  "e2e-code-secret-value",
-  "change-me",
-  "test-secret-value",
-]);
+const DENYLISTED_CODE_SECRET_MARKER = "do-not-reuse";
 const GENERATE_HINT = "generate one with `openssl rand -base64 32`";
 
 export const assertCodeSecret = (secret: string): void => {
-  // Checked before the length rule so a denylisted literal is always named
-  // for what it is, even if a future literal happens to be 32+ characters.
-  if (DENYLISTED_CODE_SECRETS.has(secret)) {
+  // Checked before the length rule so a copied example is named for what it is.
+  if (secret.includes(DENYLISTED_CODE_SECRET_MARKER)) {
     throw new Error(
       `codeSecret must not be a literal published in this package's own docs or examples — ${GENERATE_HINT}`,
     );
@@ -122,16 +118,22 @@ export const unregisteredClientError = (
   return oauthError(reject.code, reject.status, UNREGISTERED_CLIENT_DESCRIPTION);
 };
 
-/** `grantedScope` is what the auth code carried; the port may narrow it further. */
-export const tokenResponse = (minted: MintedToken, grantedScope?: string): Response =>
-  jsonResponse({
+/**
+ * `grantedScope` is what the auth code carried (or a narrowed refresh
+ * request); the port may narrow it further. With neither, `scope` is
+ * omitted (optional when unchanged, RFC 6749 §5.1) rather than guessed.
+ */
+export const tokenResponse = (minted: MintedToken, grantedScope?: string): Response => {
+  const scope = minted.scope ?? grantedScope;
+  return jsonResponse({
     data: {
       access_token: minted.accessToken,
       token_type: minted.tokenType ?? "bearer",
       expires_in: minted.expiresIn,
-      scope: minted.scope ?? grantedScope ?? DEFAULT_SCOPE,
+      ...(scope !== undefined ? { scope } : {}),
       ...(minted.refreshToken ? { refresh_token: minted.refreshToken } : {}),
     },
     status: 200,
     cors: false,
   });
+};

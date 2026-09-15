@@ -1,6 +1,15 @@
 /**
- * Runnable Node recipe (`npx tsx examples/http-server.ts`).
+ * Runnable Node recipe:
+ *
+ *   OAUTH_CODE_SECRET="$(openssl rand -base64 32)" \
+ *   ACCESS_TOKEN_SECRET="$(openssl rand -base64 32)" \
+ *   npx tsx examples/http-server.ts
+ *
  * Also the real-socket e2e fixture — prints `listening http://127.0.0.1:<port>`.
+ *
+ * `resolveUser` below is a fixed-user placeholder: every caller is "u1". That
+ * is only acceptable on loopback, so binding any other HOST refuses to start
+ * unless ALLOW_INSECURE_DEMO=1 states that you accept an unauthenticated server.
  *
  * In an app, import from `mcp-trellis` / `mcp-trellis/node` instead of `../src`.
  */
@@ -9,7 +18,8 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { asNodeHandler } from "../src/adapters/node.js";
 import { createMcpApp } from "../src/app.js";
-import type { ToolDef } from "../src/registry.js";
+import type { ToolDef } from "../src/mcp/registry.js";
+import { requiredSecret } from "./env.js";
 import { signToken, verifyToken } from "./signed-token.js";
 
 type Ctx = { userId: string };
@@ -26,6 +36,20 @@ const echo: ToolDef<Ctx> = {
 };
 
 const ACCESS_TOKEN_TTL_MS = 3_600_000;
+const CODE_SECRET = requiredSecret("OAUTH_CODE_SECRET");
+// A separate secret from CODE_SECRET — signing access tokens and sealing auth
+// codes are different jobs; reusing one key for both means a compromise of
+// either leaks the other's blast radius too.
+const ACCESS_SECRET = requiredSecret("ACCESS_TOKEN_SECRET");
+
+const host = process.env.HOST ?? "127.0.0.1";
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
+if (!LOOPBACK_HOSTS.has(host) && process.env.ALLOW_INSECURE_DEMO !== "1") {
+  throw new Error(
+    `HOST=${host} would expose a demo that authenticates every caller as "u1". ` +
+      "Bind to 127.0.0.1, wire a real resolveUser, or set ALLOW_INSECURE_DEMO=1.",
+  );
+}
 
 // ponytail: process-local Set; ceiling is a shared denylist that verifyToken
 // (and refreshAccessToken) read — see examples/stores.ts for the Kv shape.
@@ -38,19 +62,16 @@ const app = createMcpApp<Ctx>({
   // Single-process demo — production must pass auth.codeStore (KV/Redis SET NX).
   allowInMemoryCodeStore: true,
   auth: {
-    // Real deployments: process.env.OAUTH_CODE_SECRET, generated via `openssl rand -base64 32`.
-    codeSecret: "example-http-server-code-secret-do-not-reuse",
+    codeSecret: CODE_SECRET,
     // resolveUser is a placeholder that always succeeds as one fixed user —
     // this example has no real login system to wire up. A real app's
     // resolveUser reads the caller's actual session/cookie and returns null
-    // when nobody is logged in (→ redirect to loginUrl).
+    // when nobody is logged in (→ redirect to loginUrl). Do not ship this
+    // fixed-user placeholder — it authenticates every caller as "u1".
     resolveUser: async () => ({ id: "u1" }),
     loginUrl: (_req, next) => `/login?next=${encodeURIComponent(next)}`,
-    // A separate secret from codeSecret above — signing access tokens and
-    // sealing auth codes are different jobs; reusing one key for both means
-    // a compromise of either leaks the other's blast radius too.
     mintAccessToken: async ({ userId, scope, resource }) => ({
-      accessToken: await signToken("example-http-server-access-token-secret-32c!", {
+      accessToken: await signToken(ACCESS_SECRET, {
         userId,
         scopes: scope.split(" "),
         audience: resource,
@@ -61,7 +82,7 @@ const app = createMcpApp<Ctx>({
     }),
     verifyToken: async (token) => {
       if (revoked.has(token)) return null;
-      return verifyToken("example-http-server-access-token-secret-32c!", token);
+      return verifyToken(ACCESS_SECRET, token);
     },
     revokeToken: async ({ token }) => {
       revoked.add(token);
@@ -71,7 +92,6 @@ const app = createMcpApp<Ctx>({
 });
 
 const server = http.createServer();
-const host = process.env.HOST ?? "127.0.0.1";
 server.listen(Number(process.env.PORT ?? 0), host, () => {
   const { port } = server.address() as AddressInfo;
   const origin = `http://${host === "0.0.0.0" ? "127.0.0.1" : host}:${port}`;

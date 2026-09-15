@@ -7,14 +7,14 @@ check below is filled in.
 
 | Product | Server profile | Repository evidence | Live evidence |
 |---|---|---|---|
-| Claude custom connector | `claude`: DCR / CIMD, public client, S256 PKCE; built-in callback | `test/oauth/clients.test.ts`, `dcr.test.ts`, `cimd.test.ts`, `pkce.test.ts`; saas-demo e2e + `scripts/prep-claude-oauth.mjs` | Pending (UI) |
+| Claude custom connector | `claude`: DCR / CIMD, public client, S256 PKCE; built-in callback | `test/oauth/policy/clients.test.ts`, `test/oauth/endpoints/dcr.test.ts`, `test/oauth/cimd/cimd.test.ts`, `test/oauth/crypto/pkce.test.ts`; saas-demo e2e + `scripts/prep-claude-oauth.mjs` | Pending (UI) |
 | ChatGPT | `codex`: public-client profile; exact hosted callback must be configured | Profile tests only; no ChatGPT UI test | Pending |
 | Codex | `codex`: public client, PKCE, loopback callbacks allowed | Profile/redirect tests; no actual Codex login run | Pending |
 | Gemini Enterprise | `gemini`: `clientStore`, pre-registration, `client_secret_basic` / `client_secret_post` | Client authentication tests; no Enterprise environment | Pending |
 
 The Gemini profile does not imply compatibility with Gemini CLI or every Gemini product. ChatGPT and Codex need separate live checks even though the package groups them under one profile.
 
-`src/protocol.ts` implements `2024-11-05`, `2025-03-26`, `2025-06-18`. Initialization defaults to `2025-06-18`; absent request headers use `2025-03-26`. This is an implementation inventory, not a claim to implement the latest revision. **CIMD is shipped** (`src/oauth/cimd.ts`, advertised when enabled); newer protocol revisions remain separate work. Live vendor UI evidence stays **Pending** until an operator connects a real client.
+`src/mcp/protocol.ts` implements `2024-11-05`, `2025-03-26`, `2025-06-18`. Initialization defaults to `2025-06-18`; absent request headers use `2025-03-26`. This is an implementation inventory, not a claim to implement the latest revision. **CIMD is shipped opt-in** (`cimd: true` on `createMcpApp` / `createOAuthRouter`; off by default — see [security.md](security.md) SSRF ceiling). Live vendor UI evidence stays **Pending** until an operator connects a real client.
 
 ## Demo deploy (Worker)
 

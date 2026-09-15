@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { type ChildProcess, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import http from "node:http";
 import { createRequire } from "node:module";
 import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { sha256Base64Url } from "../../src/oauth/pkce.js";
+import { sha256Base64Url } from "../../src/oauth/crypto/pkce.js";
 
 const require = createRequire(import.meta.url);
 const tsxCli = require.resolve("tsx/cli");
@@ -25,7 +26,13 @@ const spawnServer = (): Promise<{ origin: string; child: ChildProcess }> =>
   new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [tsxCli, serverPath], {
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, PORT: "0" },
+      env: {
+        ...process.env,
+        PORT: "0",
+        HOST: "127.0.0.1",
+        OAUTH_CODE_SECRET: randomBytes(32).toString("base64"),
+        ACCESS_TOKEN_SECRET: randomBytes(32).toString("base64"),
+      },
     });
 
     let buf = "";
@@ -85,7 +92,7 @@ const authorizeCode = async (origin: string): Promise<{ code: string; clientId: 
     body: JSON.stringify({ redirect_uris: [REDIRECT] }),
     ...noFollow,
   });
-  assert.equal(registered.status, 200);
+  assert.equal(registered.status, 201);
   const { client_id: clientId } = (await registered.json()) as { client_id: string };
   assert.ok(clientId);
 

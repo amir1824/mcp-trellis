@@ -14,7 +14,7 @@
  * than hand-rolled bearer tokens either way.
  */
 
-import { bytesToBase64Url, fromBase64Url } from "../src/oauth/base64url.js";
+import { bytesToBase64Url, fromBase64Url } from "../src/oauth/crypto/base64url.js";
 
 export type SignedTokenPayload = {
   userId: string;

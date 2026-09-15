@@ -223,10 +223,11 @@ a proper JSON-RPC error.
 
 **2.0 — CIMD, unified audit, recipes.**
 
-- **CIMD (Client ID Metadata Documents)** — HTTPS URL `client_id`s are
-  fetched and validated with SSRF hardening (public hosts only, size /
-  redirect / timeout caps). Advertises
+- **CIMD (Client ID Metadata Documents)** — opt-in (`cimd: true`). HTTPS URL
+  `client_id`s are fetched and validated with SSRF hardening (public hosts
+  only, size / redirect / timeout caps). Advertises
   `client_id_metadata_document_supported`. Optional `cimdCache` port.
+  Off by default until connect-pinned fetch closes the DNS-rebinding ceiling.
 - **Unified `audit` sink** on `createMcpApp` — one callback for MCP and
   OAuth events (`source: "mcp" | "oauth"`); `auth.audit` remains an
   OAuth-only override.

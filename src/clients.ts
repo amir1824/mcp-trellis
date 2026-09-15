@@ -7,7 +7,7 @@
  */
 
 import { TOKEN_ENDPOINT_AUTH_METHODS, type TokenEndpointAuthMethod } from "./oauth/constants.js";
-import { CLAUDE_CALLBACK } from "./oauth/redirect.js";
+import { CLAUDE_CALLBACK } from "./oauth/policy/redirect.js";
 import type { ClientStore } from "./oauth/types.js";
 
 export type ClientName = "claude" | "gemini" | "codex";

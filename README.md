@@ -36,7 +36,7 @@ export const mcp = createMcpApp<{ userId: string }>({
   clients: ["claude"],
   // existingAuth must include codeStore (required since 2.0) plus the usual ports.
   auth: existingAuth,
-  context: (_request, user) => ({ userId: user!.id }),
+  context: (_request, principal) => ({ userId: principal!.id }),
   tools: [{
     name: "list_my_projects",
     description: "List the signed-in user's projects",

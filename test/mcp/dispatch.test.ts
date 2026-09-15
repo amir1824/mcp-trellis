@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { DEFAULT_MCP_BODY_LIMIT } from "../../src/body.js";
-import { createMcpHandler } from "../../src/dispatch.js";
-import { createToolRegistry } from "../../src/registry.js";
+import { DEFAULT_MCP_BODY_LIMIT } from "../../src/http/body.js";
+import { createMcpHandler } from "../../src/mcp/dispatch.js";
+import { createToolRegistry } from "../../src/mcp/registry.js";
 
 describe("dispatch", () => {
   type Ctx = { who: string };
@@ -523,5 +523,87 @@ describe("dispatch survives a throwing port", () => {
     });
     const res = await post(handler);
     assert.equal(res.status, 500);
+  });
+});
+
+describe("context port is built only for a tools/call that will run", () => {
+  type Ctx = { userId: string };
+
+  const makeCountingHandler = () => {
+    const contextCalls: Array<string | null> = [];
+    const handler = createMcpHandler<Ctx>({
+      registry: createToolRegistry<Ctx>([
+        {
+          name: "whoami",
+          description: "returns the context user",
+          inputSchema: { type: "object", properties: {} },
+          scope: "read",
+          handler: (ctx) => ctx.userId,
+        },
+        {
+          name: "admin_only",
+          description: "needs admin",
+          inputSchema: { type: "object", properties: {} },
+          scope: "admin",
+          handler: () => "never",
+        },
+      ]),
+      serverInfo: { name: "ctx-test", version: "0.0.1" },
+      wwwAuthenticate: { realm: "test", resourceMetadataUrl: "https://example.test/.well-known/x" },
+      ports: {
+        authenticate: async (req) =>
+          req.headers.get("authorization") === "Bearer tok" ? { id: "u1", scopes: ["read"] } : null,
+        // Mirrors the README quickstart: dereferences the principal unconditionally.
+        context: (_req, principal) => {
+          contextCalls.push(principal?.id ?? null);
+          if (!principal) throw new Error("context called without a principal");
+          return { userId: principal.id };
+        },
+      },
+    });
+    const rpc = (method: string, params?: Record<string, unknown>, token?: string) =>
+      handler.fetch(
+        new Request("https://example.test/mcp", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, ...(params ? { params } : {}) }),
+        }),
+      );
+    return { rpc, contextCalls };
+  };
+
+  it("does not call context for initialize or ping (no principal)", async () => {
+    const { rpc, contextCalls } = makeCountingHandler();
+    const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {} });
+    assert.equal(init.status, 200);
+    const ping = await rpc("ping");
+    assert.equal(ping.status, 200);
+    assert.deepEqual(contextCalls, []);
+  });
+
+  it("does not call context for tools/list", async () => {
+    const { rpc, contextCalls } = makeCountingHandler();
+    const res = await rpc("tools/list", undefined, "tok");
+    assert.equal(res.status, 200);
+    assert.deepEqual(contextCalls, []);
+  });
+
+  it("does not call context for an unknown tool or a missing scope", async () => {
+    const { rpc, contextCalls } = makeCountingHandler();
+    await rpc("tools/call", { name: "nope", arguments: {} }, "tok");
+    const denied = await rpc("tools/call", { name: "admin_only", arguments: {} }, "tok");
+    assert.equal(denied.status, 403);
+    assert.deepEqual(contextCalls, []);
+  });
+
+  it("calls context once, with the principal, for a tools/call that runs", async () => {
+    const { rpc, contextCalls } = makeCountingHandler();
+    const res = await rpc("tools/call", { name: "whoami", arguments: {} }, "tok");
+    const body = (await res.json()) as { result: { content: Array<{ text: string }> } };
+    assert.equal(body.result.content[0]?.text, "u1");
+    assert.deepEqual(contextCalls, ["u1"]);
   });
 });

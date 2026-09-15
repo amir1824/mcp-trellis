@@ -33,7 +33,7 @@ it("existing login → consent + PKCE → tool uses only token owner's projects"
       body: JSON.stringify({ redirect_uris: [callback] }),
     }),
   );
-  assert.equal(registered.status, 200);
+  assert.equal(registered.status, 201);
   const { client_id } = (await registered.json()) as { client_id: string };
   for (const user of ["alice", "bob"]) {
     const auth = new URL(`${origin}/mcp/oauth/authorize`);

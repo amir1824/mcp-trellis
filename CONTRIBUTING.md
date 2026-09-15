@@ -28,7 +28,7 @@ npm run build
 
 1. Branch from `main`.
 2. Keep the change focused — one concern per PR.
-3. Add or update tests under `test/oauth/`, `test/mcp/`, `test/adapters/`, or `test/auth/` (unit) or `test/e2e/` (real-socket) when behavior changes.
+3. Add or update tests under `test/oauth/`, `test/mcp/`, `test/adapters/`, `test/auth/`, or `test/util/` (unit) or `test/e2e/` (real-socket) when behavior changes.
 4. Ensure CI is green: typecheck, test, test:e2e, and build must pass.
 
 ## Scope rules
@@ -37,6 +37,15 @@ npm run build
 - Keep true fail-fast guards (`if (!principal)`, `if (!record)`, …) as early returns.
 - Do not drive-by refactor unrelated files.
 - Match existing naming and file layout under `src/`.
+- At most three parameters per function; group related values into one object (`ClientAuthContext`, `Callback`) rather than threading them separately. Public signatures are the only exception.
+- Reuse the shared building blocks instead of redeclaring them: `util/json.ts` (`isJsonObject`), `util/defined.ts` (`pickDefined`), `http/http.ts` (`GET_ONLY`, `POST_ONLY`, `NO_CORS`, `DEFAULT_AUDIT_TIMEOUT_MS`), `oauth/crypto/hkdf.ts` (every key derived from `codeSecret`).
+- Shared types live in `oauth/types.ts` / `cimd/types.ts`; a types module must not import from an endpoint module.
+
+## Code comments
+
+- Comment the **why**: a security invariant, an RFC requirement, a non-obvious trade-off. Do not restate what the code already says.
+- Do not narrate history ("previously…", "since 1.x we…"). That belongs in `CHANGELOG.md` and commit messages. Public JSDoc may still say when a default changed (`Default **true** since 2.0`), because users need it.
+- `ponytail:` marks a known, deliberate limitation together with its upgrade path, e.g. `ponytail: single-process only; multi-instance → pass ports.codeStore`. Keep the marker when you touch that code; remove it once the limitation is gone.
 
 ## Tests
 
@@ -51,12 +60,14 @@ Unit tests are grouped by topic:
 | `mcp/validate.test.ts` | JSON Schema subset |
 | `mcp/tools.test.ts` | `defineTool` / `apiTool` |
 | `mcp/body.test.ts` | Request body size limits |
+| `mcp/readme-quickstart.test.ts` | README 30-second example runs as written |
 | `auth/bearer.test.ts` | Bearer / timing-safe compare |
 | `adapters/node.test.ts` | Node adapter |
 | `adapters/origins.test.ts` | Origin allowlist (multi-tenant Host checks) |
 | `oauth/*.test.ts` | OAuth AS pieces (`clients`, `consent`, `token`, …) |
+| `util/*.test.ts` | Internal helpers |
 
-`test/helpers/` is shared harness (not matched by the test glob). `test/e2e/` is a separate tier: it spawns [`examples/http-server.ts`](examples/http-server.ts) (`http.createServer` + `asNodeHandler`) and `fetch`es over loopback (header casing, streamed bodies, real redirects). It is not part of `npm test`.
+`test/helpers/` and `test/fixtures/` are shared harness (not matched by the test glob). `test/e2e/` is a separate tier: it spawns [`examples/http-server.ts`](examples/http-server.ts) (`http.createServer` + `asNodeHandler`) and `fetch`es over loopback (header casing, streamed bodies, real redirects). It is not part of `npm test`.
 
 Run with:
 

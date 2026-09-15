@@ -11,14 +11,16 @@
 
 import { asNodeHandler } from "../src/adapters/node.js";
 import { createMcpApp } from "../src/app.js";
-import type { ToolDef } from "../src/registry.js";
+import type { ToolDef } from "../src/mcp/registry.js";
+import { requiredSecret } from "./env.js";
 import { signToken, verifyToken } from "./signed-token.js";
 
 type Ctx = { userId: string };
 
 const ACCESS_TOKEN_TTL_MS = 3_600_000;
-const CODE_SECRET = "example-express-code-secret-do-not-reuse!!!!!!";
-const ACCESS_SECRET = "example-express-access-token-secret-32chars!";
+const CODE_SECRET = requiredSecret("OAUTH_CODE_SECRET");
+// Separate from CODE_SECRET — signing access tokens and sealing auth codes are different jobs.
+const ACCESS_SECRET = requiredSecret("ACCESS_TOKEN_SECRET");
 
 const ping: ToolDef<Ctx> = {
   name: "ping",
@@ -36,6 +38,8 @@ const mcp = createMcpApp<Ctx>({
   allowInMemoryCodeStore: true,
   auth: {
     codeSecret: CODE_SECRET,
+    // Placeholder: every caller is "u1". Do not ship this — read the caller's
+    // real session (cookie/JWT) and return null when nobody is logged in.
     resolveUser: async () => ({ id: "u1" }),
     loginUrl: (_req, next) => `/login?next=${encodeURIComponent(next)}`,
     mintAccessToken: async ({ userId, scope, resource }) => ({

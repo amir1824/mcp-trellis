@@ -8,10 +8,8 @@ export {
 } from "./app.js";
 export { consoleAudit } from "./audit.js";
 export {
-  matchesAny,
   parseBearer,
   rejectQueryToken,
-  timingSafeEqual,
   type WwwAuthenticateOptions,
   wwwAuthenticateHeader,
 } from "./auth/bearer.js";
@@ -26,7 +24,13 @@ export {
   preRegisteredClients,
   redirectUrisFor,
 } from "./clients.js";
-
+// Moved to `mcp-trellis/advanced`; deprecated aliases until 3.0.
+export * from "./deprecated.js";
+export {
+  type JsonResponseInput,
+  type JsonResponseOptions,
+  jsonResponse,
+} from "./http/http.js";
 export {
   type AuditEntry,
   createMcpHandler,
@@ -35,16 +39,7 @@ export {
   type McpPorts,
   type Principal,
   type ServerInfo,
-} from "./dispatch.js";
-export {
-  corsHeaders,
-  emptyResponse,
-  type JsonResponseInput,
-  type JsonResponseOptions,
-  jsonResponse,
-  methodNotAllowed,
-  optionsResponse,
-} from "./http.js";
+} from "./mcp/dispatch.js";
 export {
   JSONRPC_INTERNAL_ERROR,
   JSONRPC_INVALID_PARAMS,
@@ -57,26 +52,8 @@ export {
   type JsonRpcResponse,
   rpcError,
   rpcResult,
-} from "./jsonrpc.js";
-export type { CodeStore } from "./oauth/codes.js";
-export type { ConsentOptions, ConsentRequest } from "./oauth/consent.js";
-/** Auth-port types used by `McpAppAuth` — annotate extracted stores/callbacks. */
-export type {
-  ClientStore,
-  MintAccessTokenInput,
-  MintedToken,
-  OAuthUser,
-  RefreshAccessTokenInput,
-  RegisteredClient,
-  RevokeTokenInput,
-} from "./oauth/types.js";
-
-export {
-  ASSUMED_HEADER_PROTOCOL_VERSION,
-  DEFAULT_PROTOCOL_VERSION,
-  PROTOCOL_VERSIONS,
-  pickProtocolVersion,
-} from "./protocol.js";
+} from "./mcp/jsonrpc.js";
+export { DEFAULT_PROTOCOL_VERSION, PROTOCOL_VERSIONS } from "./mcp/protocol.js";
 export {
   createToolRegistry,
   type RegistryOptions,
@@ -85,7 +62,7 @@ export {
   type ToolListEntry,
   type ToolRegistry,
   type ToolResult,
-} from "./registry.js";
+} from "./mcp/registry.js";
 export {
   type ApiRequest,
   type ApiToolOptions,
@@ -93,13 +70,18 @@ export {
   type DefineToolOptions,
   defineTool,
   type StandardSchemaV1,
-} from "./tools.js";
-export {
-  IGNORED_SCHEMA_KEYWORDS,
-  JSON_SCHEMA_TYPES,
-  type JsonSchema,
-  missingObjectType,
-  SUPPORTED_SCHEMA_KEYWORDS,
-  unsupportedKeywords,
-  validateAgainstSchema,
-} from "./validate.js";
+} from "./mcp/tools.js";
+export type { JsonSchema } from "./mcp/validate.js";
+export type { CodeStore } from "./oauth/crypto/codes.js";
+/** Auth-port types used by `McpAppAuth` — annotate extracted stores/callbacks. */
+export type {
+  ClientStore,
+  ConsentOptions,
+  ConsentRequest,
+  MintAccessTokenInput,
+  MintedToken,
+  OAuthUser,
+  RefreshAccessTokenInput,
+  RegisteredClient,
+  RevokeTokenInput,
+} from "./oauth/types.js";

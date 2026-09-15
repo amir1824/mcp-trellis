@@ -14,6 +14,6 @@
 | Wrong user's data | Data query ignores authenticated identity | Filter by verified principal and tenant; never trust a tool argument for ownership. |
 | Switching login does not switch connector user | Connector retains its previously issued token | Disconnect and reauthorize with the intended account. |
 | Initialization works but tools fail | Initialize is public | Test authenticated `tools/call`; initialize alone proves no auth flow. |
-| Client requests an unsupported protocol | Package supports the revisions in `src/protocol.ts` | Record negotiation; do not claim a live pass from a successful HTTP status alone. |
+| Client requests an unsupported protocol | Package supports the revisions in `src/mcp/protocol.ts` | Record negotiation; do not claim a live pass from a successful HTTP status alone. |
 
 See [security responsibilities](security.md) before replacing production token verification with example code. Share sanitized errors in an issue, never access tokens or session cookies.

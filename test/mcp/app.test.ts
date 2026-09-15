@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createMcpApp, type McpApp } from "../../src/app.js";
-import { sha256Base64Url } from "../../src/oauth/pkce.js";
-import type { ToolDef } from "../../src/registry.js";
+import type { ToolDef } from "../../src/mcp/registry.js";
+import { sha256Base64Url } from "../../src/oauth/crypto/pkce.js";
 
 const ORIGIN = "https://app.test";
 const RESOURCE = `${ORIGIN}/mcp`;

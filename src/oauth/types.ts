@@ -1,8 +1,7 @@
-import type { CimdCache } from "./cimd.js";
-import type { CodeStore } from "./codes.js";
-import type { ConsentOptions } from "./consent.js";
+import type { CimdCache } from "./cimd/types.js";
 import type { TokenEndpointAuthMethod } from "./constants.js";
-import type { RedirectAllowlistOptions } from "./redirect.js";
+import type { CodeStore } from "./crypto/codes.js";
+import type { RedirectAllowlistOptions } from "./policy/redirect.js";
 
 export type OAuthUser = { id: string };
 
@@ -16,6 +15,37 @@ export type RegisteredClient = {
   /** Exact-match redirect URIs. Checked instead of the global allowlist. */
   redirectUris: string[];
   tokenEndpointAuthMethod: TokenEndpointAuthMethod;
+};
+
+export type ConsentRequest = {
+  clientId: string;
+  registeredClient: RegisteredClient | null;
+  redirectUri: string;
+  scope: string[];
+  resource: string;
+  user: OAuthUser;
+  /** Embed this in your form's `consent_ticket` field (hidden input or POST body). */
+  ticket: string;
+  oauthPath: string;
+};
+
+export type ConsentOptions = {
+  /**
+   * Render the approval page yourself. Return any `Response` — HTML, or a
+   * redirect to your own route. Omit for the built-in hardened interstitial.
+   *
+   * If your page sets its own `Content-Security-Policy` with `form-action`,
+   * include `new URL(input.redirectUri).origin` in it — Chromium enforces
+   * `form-action` across the redirect your approval POST triggers, not just
+   * the immediate submission target, so `'self'` alone blocks the eventual
+   * redirect back to the client's own callback.
+   */
+  render?: (input: ConsentRequest) => Response | Promise<Response>;
+  /**
+   * Client ids that skip approval. Only honored when `clientStore` actually
+   * resolves the id — a DCR or self-invented id is never trusted.
+   */
+  preApprovedClientIds?: string[];
 };
 
 /**
@@ -115,8 +145,7 @@ export type OAuthPorts = {
    * Secret(s) that seal auth codes, consent tickets, and self-issued DCR
    * client assertions (`sealed.ts`), and key `ClientStore.secretHash`.
    *
-   * A single string works exactly as before. For key rotation, pass an
-   * array: the **first** entry seals new material and hashes new client
+   * Pass a single string, or for key rotation an array: the **first** entry seals new material and hashes new client
    * secrets; **every** entry is tried when unsealing/verifying, so material
    * sealed under an older key keeps working until you drop it from the
    * array. `ports.audit` sees a `"legacy_code_secret_used"` event whenever
@@ -215,11 +244,30 @@ export type OAuthRouterOptions = {
   allowInMemoryCodeStore?: boolean;
   /**
    * Resolve Client ID Metadata Documents (HTTPS URL `client_id`s).
-   * Default **true**. Set false only for lock-downs that reject URL ids.
+   * Default **false** — opt in with `cimd: true`. Off until connect-pinned
+   * fetch exists; see `cimd.ts` ponytail.
    */
   cimd?: boolean;
-  /** Optional CIMD document cache (respects Cache-Control max-age). */
+  /**
+   * CIMD document cache (respects Cache-Control max-age, capped at 1 h).
+   * **Strongly recommended with `cimd: true`:** without it `/token` and
+   * `/revoke` re-fetch the client's document on every call, so a flaky
+   * document host fails refresh/revoke (audited as `cimd_resolve_failed`).
+   */
   cimdCache?: CimdCache;
+  /** Optional DNS lookup for CIMD SSRF checks — see `CimdFetchOptions.lookup`. */
+  cimdLookup?: (hostname: string) => Promise<string[]>;
+};
+
+/**
+ * `OAuthRouterOptions` after `createOAuthRouter` has resolved them: paths
+ * normalized and `ports.codeStore` always present, so no endpoint handler
+ * can fall back to a store of its own. Internal — not re-exported.
+ */
+export type ResolvedOAuthRouterOptions = OAuthRouterOptions & {
+  resourcePath: string;
+  oauthPath: string;
+  ports: OAuthPorts & { codeStore: CodeStore };
 };
 
 /**

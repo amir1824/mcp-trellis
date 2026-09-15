@@ -10,9 +10,9 @@
  *    different request bodies and exercise different branches.
  */
 
-import type { AuthCodeRecord } from "../../src/oauth/codes.js";
-import { issueAuthCode } from "../../src/oauth/codes.js";
-import { randomBase64Url, sha256Base64Url } from "../../src/oauth/pkce.js";
+import type { AuthCodeRecord } from "../../src/oauth/crypto/codes.js";
+import { issueAuthCode } from "../../src/oauth/crypto/codes.js";
+import { randomBase64Url, sha256Base64Url } from "../../src/oauth/crypto/pkce.js";
 import { asFetch, originOf, type Target } from "./target.js";
 
 export const DEFAULT_CLIENT_ID = "harness-client";
@@ -32,6 +32,9 @@ const applyOverrides = (
   }
   return result;
 };
+
+/** A well-formed S256 challenge (RFC 7636 appendix B) for tests that never redeem it. */
+export const VALID_S256_CHALLENGE = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
 
 export const newPkce = async (): Promise<{
   verifier: string;

@@ -1,6 +1,6 @@
 {
   "name": "mcp-trellis",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Build secure remote MCP servers for Claude, ChatGPT and Gemini using your existing auth.",
   "type": "module",
   "license": "MIT",
@@ -42,6 +42,10 @@
     "./node": {
       "types": "./dist/adapters/node.d.ts",
       "import": "./dist/adapters/node.js"
+    },
+    "./advanced": {
+      "types": "./dist/advanced.d.ts",
+      "import": "./dist/advanced.js"
     }
   },
   "files": [
@@ -57,9 +61,9 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "test": "tsx --test test/oauth/*.test.ts test/mcp/*.test.ts test/adapters/*.test.ts test/auth/*.test.ts",
+    "test": "tsx --test test/oauth/**/*.test.ts test/mcp/*.test.ts test/adapters/*.test.ts test/auth/*.test.ts test/util/*.test.ts test/*.test.ts",
     "test:e2e": "tsx --test test/e2e/*.test.ts",
-    "test:coverage": "node --import tsx --test --experimental-test-coverage --test-coverage-lines=85 --test-coverage-branches=75 --enable-source-maps test/oauth/*.test.ts test/mcp/*.test.ts test/adapters/*.test.ts test/auth/*.test.ts",
+    "test:coverage": "node scripts/test-coverage.mjs",
     "typecheck": "tsc --noEmit",
     "check:quickstart": "node scripts/check-quickstart.mjs",
     "lint": "biome check .",

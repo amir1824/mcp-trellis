@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { consoleAudit } from "../../src/audit.js";
-import { createMcpHandler } from "../../src/dispatch.js";
-import type { AuditEntry } from "../../src/methods.js";
-import { createToolRegistry } from "../../src/registry.js";
+import { runAuditBounded } from "../../src/http/http.js";
+import { createMcpHandler } from "../../src/mcp/dispatch.js";
+import type { AuditEntry } from "../../src/mcp/methods.js";
+import { createToolRegistry } from "../../src/mcp/registry.js";
 
 describe("audit port", () => {
   type Ctx = Record<string, never>;
@@ -187,6 +188,16 @@ describe("audit port", () => {
       params: { name: "echo", arguments: {} },
     });
     assert.equal(denied.status, 401);
+  });
+
+  it("a fast audit sink leaves no pending timeout timer behind", async () => {
+    const timers = () => process.getActiveResourcesInfo().filter((r) => r === "Timeout").length;
+    const before = timers();
+    await runAuditBounded(() => undefined, 60_000);
+    await runAuditBounded(async () => {
+      throw new Error("sink failure is swallowed");
+    }, 60_000);
+    assert.equal(timers(), before);
   });
 
   it("a hanging audit port does not stall the response past auditTimeoutMs", async () => {
@@ -420,6 +431,28 @@ describe("consoleAudit", () => {
     assert.match(
       error.mock.calls[0]?.arguments[0] as string,
       /^\[mcp-trellis\] mcp \(transport\) fail 0ms error=unauthorized$/,
+    );
+  });
+
+  it("logs OAuth events to console.log with client and reason", (t) => {
+    const log = t.mock.method(console, "log", () => {});
+    const error = t.mock.method(console, "error", () => {});
+
+    consoleAudit({
+      source: "oauth",
+      event: "client_auth_failed",
+      clientId: "gemini",
+      reason: "secretHash mismatch",
+    });
+    consoleAudit({ source: "oauth", event: "server_error", reason: "boom" });
+
+    assert.equal(error.mock.callCount(), 0);
+    assert.deepEqual(
+      log.mock.calls.map((call) => call.arguments[0]),
+      [
+        "[mcp-trellis] oauth client_auth_failed client=gemini reason=secretHash mismatch",
+        "[mcp-trellis] oauth server_error reason=boom",
+      ],
     );
   });
 

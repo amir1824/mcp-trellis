@@ -181,7 +181,8 @@ Also mount `.well-known/*` and `/mcp/oauth/*` the same way (or route everything 
 
 Express, Cloud Functions, Cloud Run, `http.createServer` — bridge with
 `asNodeHandler`. Runnable recipe: [`examples/http-server.ts`](../examples/http-server.ts)
-(`npx tsx examples/http-server.ts`).
+(set `OAUTH_CODE_SECRET` and `ACCESS_TOKEN_SECRET`, e.g. from `openssl rand -base64 32`,
+then `npx tsx examples/http-server.ts`).
 
 ## Ports — what you implement
 
@@ -334,12 +335,12 @@ createToolRegistry(tools, { validateArgs: false }) // default: off, easy adoptio
 - Duplicate tool names throw at registry construction
 - Turn `validateArgs: true` once clients send schema-valid args. The evaluated
   subset is `type`, `enum`, `required`, `properties`, `items`, `minimum`,
-  `maximum`. Pure metadata (`description`, `title`, `$schema`, `$id`,
+  `maximum`, and boolean `additionalProperties`. Pure metadata (`description`, `title`, `$schema`, `$id`,
   `$comment`, `default`, `examples`, `deprecated`, `readOnly`, `writeOnly`,
   `format`) is allowed and never evaluated. Any other keyword is not
   evaluated — and with `validateArgs: true` `createToolRegistry` throws at
-  construction so a schema like `pattern` or `additionalProperties` cannot
-  silently look enforced
+  construction so a schema like `pattern` or a schema-valued
+  `additionalProperties` cannot silently look enforced
 
 ### Wrapping an API as a tool
 

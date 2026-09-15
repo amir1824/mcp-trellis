@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createToolRegistry } from "../../src/registry.js";
-import { apiTool, defineTool, type StandardSchemaV1 } from "../../src/tools.js";
+import { createToolRegistry } from "../../src/mcp/registry.js";
+import { apiTool, defineTool, type StandardSchemaV1 } from "../../src/mcp/tools.js";
 
 type Ctx = Record<string, never>;
 type WeatherArgs = { city: string };
@@ -112,6 +112,26 @@ describe("apiTool", () => {
     (response: Response): typeof fetch =>
     async () =>
       response;
+
+  it("keeps binary response bytes intact for respond", async () => {
+    const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0x00, 0x80]);
+    const tool = apiTool<Ctx>({
+      name: "get_image",
+      description: "image",
+      inputSchema: { type: "object", properties: {} },
+      request: () => "https://api.example.test/image",
+      fetch: fakeFetch(
+        new Response(bytes, {
+          status: 200,
+          headers: { "Content-Type": "image/jpeg", "Content-Length": "5" },
+        }),
+      ),
+      respond: async (res) => Array.from(new Uint8Array(await res.arrayBuffer())).join(","),
+    });
+    const registry = createToolRegistry<Ctx>([tool]);
+    const result = await registry.call("get_image", {}, {});
+    assert.equal(result.content[0]?.text, "255,216,255,0,128");
+  });
 
   it("returns the response body as text by default", async () => {
     const tool = apiTool<Ctx, WeatherArgs>({
@@ -290,6 +310,39 @@ describe("apiTool", () => {
             reject(init.signal?.reason);
           });
         })) as typeof fetch,
+    });
+    const registry = createToolRegistry<Ctx>([tool]);
+    const result = await registry.call("get_weather", {}, { city: "Eilat" });
+    assert.equal(result.isError, true);
+    assert.equal(result.content[0]?.text, "Request timed out after 5ms");
+  });
+
+  it("reports a timeout that fires while the response body is still streaming", async () => {
+    // Headers arrive at once; the body stalls past timeoutMs. A real fetch
+    // errors the body stream with the signal's TimeoutError, which must not
+    // fall through to the redacted "Tool execution failed".
+    const tool = apiTool<Ctx, WeatherArgs>({
+      name: "get_weather",
+      description: "weather",
+      inputSchema: { type: "object", properties: {} },
+      input: weatherSchema,
+      request: (_ctx, args) => `https://api.example.test/weather?city=${args.city}`,
+      timeoutMs: 5,
+      fetch: (async (_input, init) =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start: (controller) => {
+              controller.enqueue(new TextEncoder().encode("partial"));
+              // Stands in for the open socket: AbortSignal.timeout's timer is
+              // unref'd and would not keep the event loop alive by itself.
+              const socket = setTimeout(() => controller.close(), 10_000);
+              init?.signal?.addEventListener("abort", () => {
+                clearTimeout(socket);
+                controller.error(init.signal?.reason);
+              });
+            },
+          }),
+        )) as typeof fetch,
     });
     const registry = createToolRegistry<Ctx>([tool]);
     const result = await registry.call("get_weather", {}, { city: "Eilat" });

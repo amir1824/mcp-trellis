@@ -7,8 +7,8 @@
  */
 
 import { createMcpApp } from "../src/app.js";
-import { isAllowedOrigin } from "../src/origins.js";
-import type { ToolDef } from "../src/registry.js";
+import { isAllowedOrigin } from "../src/http/origins.js";
+import type { ToolDef } from "../src/mcp/registry.js";
 import { signToken, verifyToken } from "./signed-token.js";
 
 type Env = {

@@ -9,7 +9,7 @@
  *   Auth-code single-use needs D1 or a Durable Object, not Workers KV alone.
  */
 
-import type { CodeStore } from "../src/oauth/codes.js";
+import type { CodeStore } from "../src/oauth/crypto/codes.js";
 
 /** Minimal TTL key-value surface shared stores need. */
 export type Kv = {

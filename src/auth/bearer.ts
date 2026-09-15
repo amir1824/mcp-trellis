@@ -1,6 +1,6 @@
 /** Bearer auth helpers for MCP (RFC 9728 WWW-Authenticate). */
 
-export const BEARER_PREFIX = "Bearer ";
+const BEARER_PREFIX = "Bearer ";
 
 /** Above any real JWT / HMAC sig; prevents allocation DoS on attacker input. */
 export const MAX_COMPARE_LENGTH = 4096;
@@ -52,7 +52,7 @@ export type WwwAuthenticateOptions = {
 };
 
 /** RFC 6750 / RFC 7235 quoted-string — escape `\` and `"` so host-controlled values cannot break or inject header params. */
-export const escapeWwwAuthenticateValue = (value: string): string =>
+const escapeWwwAuthenticateValue = (value: string): string =>
   value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
 export const wwwAuthenticateHeader = (options: WwwAuthenticateOptions): string => {
