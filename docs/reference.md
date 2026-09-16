@@ -157,6 +157,7 @@ A single-scope server has no such ambiguity and is unaffected.
 - `defineTool`, `apiTool` — typed, validated tool authoring on top of `ToolDef`. `apiTool`'s `timeoutMs` (default 30000, or `false` to disable) and `maxResponseBytes` (default 1 MiB) bound the upstream call; either surfaces as `isError: true`, not a thrown exception
 - `CLIENT_PROFILES`, `DEFAULT_CLIENTS`, `authMethodsFor`, `redirectUrisFor`, `preRegisteredClients`, `hasDynamicClient`
 - `parseBearer`, `wwwAuthenticateHeader`, `rejectQueryToken`
+- `signedTokenAuth` — one-secret convenience `McpAppAuth` (HMAC access tokens via HKDF; no refresh/revoke). Type `SignedTokenAuthOptions`
 - `rpcResult`, `rpcError`, JSON-RPC error constants
 - `PROTOCOL_VERSIONS`, `DEFAULT_PROTOCOL_VERSION`
 - `jsonResponse({ data, status?, headers?, cors? })` — type `JsonResponseInput` exported

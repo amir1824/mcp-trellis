@@ -1,6 +1,16 @@
 # Project desk: existing login → authenticated MCP → your projects
 
-A runnable Node app with an independent browser session and a read-only `list_my_projects` tool. Alice owns two projects; Bob owns a different project. All records are fictional. This is a demonstration of integrating existing auth, not a production identity provider or a real customer integration.
+**Canonical example** for mcp-trellis. A runnable Node app with an independent browser session and a read-only `list_my_projects` tool. Alice owns two projects; Bob owns a different project. All records are fictional. This is a demonstration of integrating existing auth, not a production identity provider or a real customer integration.
+
+For a simpler one-secret setup without refresh tokens, use [`signedTokenAuth`](../../README.md#the-30-second-example) from the package root. This demo keeps an opaque token store so it can show refresh rotation and scope escalation rejection.
+
+## README demo media
+
+The README Demo still lives at [`docs/diagrams/demo-tool-result.png`](../../docs/diagrams/demo-tool-result.png) (tracked; ships in the npm docs diagram set). To replace it with a short GIF after recording:
+
+1. `npm run demo` with `DEMO_PASSWORD` / `OAUTH_CODE_SECRET` set (see below).
+2. Screen-record ~8–15s: Alice login → projects list. No secrets or token panels.
+3. Export as GIF, save as `docs/diagrams/demo-tool-result.gif`, and point the README image at it.
 
 ## Run locally
 

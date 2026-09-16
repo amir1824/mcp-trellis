@@ -7,21 +7,15 @@
  */
 
 import { createMcpApp } from "../src/app.js";
+import { signedTokenAuth } from "../src/auth/signed-token.js";
 import { isAllowedOrigin } from "../src/http/origins.js";
 import type { ToolDef } from "../src/mcp/registry.js";
-import { signToken, verifyToken } from "./signed-token.js";
 
 type Env = {
-  OAUTH_CODE_SECRET: string;
-  // A separate secret from OAUTH_CODE_SECRET — signing access tokens and
-  // sealing auth codes are different jobs; reusing one key for both means a
-  // compromise of either leaks the other's blast radius too.
-  ACCESS_TOKEN_SECRET: string;
+  MCP_SECRET: string;
 };
 
 type Ctx = { userId: string };
-
-const ACCESS_TOKEN_TTL_MS = 3_600_000;
 
 const ping: ToolDef<Ctx> = {
   name: "ping_db",
@@ -40,8 +34,8 @@ const buildApp = (env: Env) =>
     // codeStore before production (see examples/stores.ts). This flag makes
     // the single-isolate footgun explicit instead of silent.
     allowInMemoryCodeStore: true,
-    auth: {
-      codeSecret: env.OAUTH_CODE_SECRET,
+    auth: signedTokenAuth({
+      secret: env.MCP_SECRET,
       // resolveUser is a placeholder that always succeeds as one fixed
       // user — this example has no real login system to wire up. A real
       // Worker's resolveUser reads the caller's actual session (its own
@@ -50,23 +44,7 @@ const buildApp = (env: Env) =>
       // fixed-user placeholder — it authenticates every caller as "u1".
       resolveUser: async () => ({ id: "u1" }),
       loginUrl: (req, next) => `${new URL(req.url).origin}/login?next=${encodeURIComponent(next)}`,
-      mintAccessToken: async ({ userId, scope, resource }) => ({
-        accessToken: await signToken(env.ACCESS_TOKEN_SECRET, {
-          userId,
-          scopes: scope.split(" "),
-          audience: resource,
-          exp: Date.now() + ACCESS_TOKEN_TTL_MS,
-        }),
-        expiresIn: ACCESS_TOKEN_TTL_MS / 1000,
-        scope,
-      }),
-      verifyToken: async (token) => verifyToken(env.ACCESS_TOKEN_SECRET, token),
-      // allowInMemoryCodeStore above — auth codes and consent tickets use
-      // the library's process-local Map. Fine for a single isolate during
-      // development; production needs a shared codeStore (Durable Object
-      // or D1 — **not** Workers KV alone, which cannot do the atomic
-      // single-use check; see `examples/stores.ts`).
-    },
+    }),
     context: async (_req, principal) => ({ userId: principal?.id ?? "" }),
   });
 
@@ -76,9 +54,9 @@ type App = ReturnType<typeof buildApp>;
 let cached: { secret: string; app: App } | null = null;
 
 const appFor = (env: Env): App => {
-  if (cached?.secret === env.OAUTH_CODE_SECRET) return cached.app;
+  if (cached?.secret === env.MCP_SECRET) return cached.app;
   const app = buildApp(env);
-  cached = { secret: env.OAUTH_CODE_SECRET, app };
+  cached = { secret: env.MCP_SECRET, app };
   return app;
 };
 

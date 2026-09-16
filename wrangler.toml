@@ -1,6 +1,6 @@
 # Demo Worker for live client evidence (not a product).
 # Deploy: npx wrangler deploy examples/cloudflare-worker.ts
-# Secrets: OAUTH_CODE_SECRET, ACCESS_TOKEN_SECRET (openssl rand -base64 32)
+# Secrets: MCP_SECRET (openssl rand -base64 32)
 
 name = "mcp-trellis-demo"
 main = "examples/cloudflare-worker.ts"

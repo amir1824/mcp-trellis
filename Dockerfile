@@ -4,17 +4,16 @@ WORKDIR /app
 
 COPY package.json package-lock.json tsconfig.json tsconfig.build.json ./
 COPY src ./src
-COPY examples/http-server.ts examples/env.ts examples/signed-token.ts ./examples/
+COPY examples/http-server.ts examples/env.ts ./examples/
 
 RUN npm ci && npm run build
 
 # examples/http-server.ts is a demo whose resolveUser authenticates every caller
 # as "u1", and it has no built-in secrets. It refuses to start on 0.0.0.0 unless
-# you pass both secrets and explicitly accept an unauthenticated server:
+# you pass MCP_SECRET and explicitly accept an unauthenticated server:
 #
 #   docker run -p 8000:8000 \
-#     -e OAUTH_CODE_SECRET="$(openssl rand -base64 32)" \
-#     -e ACCESS_TOKEN_SECRET="$(openssl rand -base64 32)" \
+#     -e MCP_SECRET="$(openssl rand -base64 32)" \
 #     -e ALLOW_INSECURE_DEMO=1 \
 #     <image>
 #

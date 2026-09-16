@@ -1,7 +1,7 @@
 {
   "name": "mcp-trellis",
   "version": "2.1.0",
-  "description": "Build secure remote MCP servers for Claude, ChatGPT and Gemini using your existing auth.",
+  "description": "Add authenticated remote MCP connectors to existing TypeScript SaaS apps using your existing users and auth.",
   "type": "module",
   "license": "MIT",
   "sideEffects": false,
@@ -27,7 +27,11 @@
     "authorization-server",
     "connector",
     "typescript",
-    "mcp-server"
+    "mcp-server",
+    "saas",
+    "remote-mcp",
+    "byo-auth",
+    "ai-connector"
   ],
   "types": "./dist/server.d.ts",
   "exports": {

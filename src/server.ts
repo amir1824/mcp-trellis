@@ -13,6 +13,10 @@ export {
   type WwwAuthenticateOptions,
   wwwAuthenticateHeader,
 } from "./auth/bearer.js";
+export {
+  type SignedTokenAuthOptions,
+  signedTokenAuth,
+} from "./auth/signed-token.js";
 
 export {
   authMethodsFor,

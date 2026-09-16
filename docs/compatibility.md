@@ -20,12 +20,11 @@ The Gemini profile does not imply compatibility with Gemini CLI or every Gemini 
 
 Compile-checked Worker sketch: [`examples/cloudflare-worker.ts`](../examples/cloudflare-worker.ts).
 
-One-liner after you add a minimal `wrangler.toml` (name, `compatibility_date`, and secrets
-`OAUTH_CODE_SECRET` / `ACCESS_TOKEN_SECRET`):
+One-liner after you add a minimal `wrangler.toml` (name, `compatibility_date`, and secret
+`MCP_SECRET`):
 
 ```bash
-npx wrangler secret put OAUTH_CODE_SECRET
-npx wrangler secret put ACCESS_TOKEN_SECRET
+npx wrangler secret put MCP_SECRET
 npx wrangler deploy examples/cloudflare-worker.ts
 ```
 

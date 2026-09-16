@@ -5,7 +5,8 @@ import { dirname, join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { McpApp } from "../../src/app.js";
-import { encodeToken } from "../fixtures/your-app.js";
+import { signedTokenAuth } from "../../src/auth/signed-token.js";
+import { HARNESS_CODE_SECRET } from "../helpers/ports.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const ORIGIN = "https://example.test";
@@ -30,15 +31,30 @@ const rewriteImports = (source: string): string =>
 describe("README 30-second example runs as written", () => {
   let dir: string;
   let mcp: McpApp;
+  let aliceToken: string;
 
   before(async () => {
+    process.env.MCP_SECRET = HARNESS_CODE_SECRET;
     dir = await mkdtemp(join(tmpdir(), "mcp-trellis-readme-"));
     const file = join(dir, "quickstart.mts");
     await writeFile(file, rewriteImports(await readQuickstartFence()));
     ({ mcp } = (await import(pathToFileURL(file).href)) as { mcp: McpApp });
+    const auth = signedTokenAuth({
+      secret: HARNESS_CODE_SECRET,
+      resolveUser: async () => ({ id: "alice" }),
+      loginUrl: () => "/login",
+    });
+    const minted = await auth.mintAccessToken({
+      userId: "alice",
+      clientId: "readme",
+      scope: "mcp",
+      resource: `${ORIGIN}/mcp`,
+    });
+    aliceToken = minted.accessToken;
   });
 
   after(async () => {
+    delete process.env.MCP_SECRET;
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -53,8 +69,6 @@ describe("README 30-second example runs as written", () => {
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, ...(params ? { params } : {}) }),
       }),
     );
-
-  const aliceToken = encodeToken({ userId: "alice", scopes: ["mcp"], audience: `${ORIGIN}/mcp` });
 
   it("answers initialize without a token", async () => {
     const res = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {} });

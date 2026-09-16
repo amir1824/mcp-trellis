@@ -30,8 +30,7 @@ const spawnServer = (): Promise<{ origin: string; child: ChildProcess }> =>
         ...process.env,
         PORT: "0",
         HOST: "127.0.0.1",
-        OAUTH_CODE_SECRET: randomBytes(32).toString("base64"),
-        ACCESS_TOKEN_SECRET: randomBytes(32).toString("base64"),
+        MCP_SECRET: randomBytes(32).toString("base64"),
       },
     });
 
@@ -76,10 +75,11 @@ const assertDiscovery = async (origin: string): Promise<void> => {
   assert.equal(as.status, 200);
   const asMeta = (await as.json()) as {
     authorization_endpoint: string;
-    revocation_endpoint: string;
+    revocation_endpoint?: string;
   };
   assert.equal(asMeta.authorization_endpoint, `${origin}/mcp/oauth/authorize`);
-  assert.equal(asMeta.revocation_endpoint, `${origin}/mcp/oauth/revoke`);
+  // signedTokenAuth is stateless — no revokeToken, so /revoke is not advertised.
+  assert.equal(asMeta.revocation_endpoint, undefined);
   const prm = await fetch(`${origin}/.well-known/oauth-protected-resource/mcp`, noFollow);
   assert.equal(prm.status, 200);
   assert.equal(((await prm.json()) as { resource: string }).resource, `${origin}/mcp`);
@@ -172,14 +172,6 @@ const callEchoUnauthed = (origin: string): Promise<Response> =>
     ...noFollow,
   });
 
-const revokeAccess = (origin: string, token: string, clientId: string): Promise<Response> =>
-  fetch(`${origin}/mcp/oauth/revoke`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ token, client_id: clientId }).toString(),
-    ...noFollow,
-  });
-
 describe("real-socket connector walk", () => {
   let origin = "";
   let child: ChildProcess | undefined;
@@ -194,9 +186,9 @@ describe("real-socket connector walk", () => {
     child?.kill("SIGTERM");
   });
 
-  it("completes metadata → authorize → token → tools/call → revoke over TCP", async () => {
+  it("completes metadata → authorize → token → tools/call over TCP", async () => {
     await assertDiscovery(origin);
-    const { token, clientId } = await mintViaPkce(origin);
+    const { token } = await mintViaPkce(origin);
     const called = await callEcho(origin, token);
     assert.equal(called.status, 200);
     const body = (await called.json()) as {
@@ -204,10 +196,6 @@ describe("real-socket connector walk", () => {
     };
     assert.equal(body.result.isError, false);
     assert.equal(body.result.content[0]?.text, "hello");
-    const revoked = await revokeAccess(origin, token, clientId);
-    assert.equal(revoked.status, 200);
-    assert.equal(await revoked.text(), "");
-    assert.equal((await callEcho(origin, token)).status, 401);
     const denied = await callEchoUnauthed(origin);
     assert.equal(denied.status, 401);
     assert.ok(denied.headers.get("www-authenticate")?.includes("resource_metadata="));

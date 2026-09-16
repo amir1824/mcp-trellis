@@ -1,7 +1,12 @@
 /**
- * Minimal HMAC-signed bearer token for the runnable examples — WebCrypto
- * only, so the exact same code runs unmodified on Node and Cloudflare
- * Workers (see `http-server.ts` and `cloudflare-worker.ts`).
+ * Minimal HMAC-signed bearer token for **advanced** recipes that wire
+ * `mintAccessToken` / `verifyToken` by hand with a **separate** access-token
+ * secret (see `multi-tenant.ts`). Prefer `signedTokenAuth` from `mcp-trellis`
+ * for new apps — one secret, HKDF-separated from OAuth code sealing.
+ *
+ * Deliberately not shared with `src/auth/signed-token.ts`: this helper uses
+ * the raw `secret` as the HMAC key (two-secret recipe); the library helper
+ * derives via HKDF from `codeSecret`. Different threat models, different keys.
  *
  * This exists because an earlier version of these examples encoded the
  * token as plain `base64(JSON.stringify(payload))` — no signature at all.
@@ -9,9 +14,8 @@
  * base64 blob with any `userId`/`scope`/`resource` they like and `verifyToken`
  * would accept it as genuine, a full authentication bypass. Signing closes
  * that; it does not turn this into something to actually deploy — a real
- * app should use its existing session/token infrastructure (JWT + JWKS, or
- * an opaque server-side store like `examples/saas-demo/tokens.ts`) rather
- * than hand-rolled bearer tokens either way.
+ * app with refresh/revoke should use an opaque server-side store like
+ * `examples/saas-demo/tokens.ts` rather than hand-rolled bearer tokens.
  */
 
 import { bytesToBase64Url, fromBase64Url } from "../src/oauth/crypto/base64url.js";

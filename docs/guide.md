@@ -2,8 +2,10 @@
 
 Practical deep dive: architecture, host recipes, ports, tools, and multi-tenant
 connectors. For a working minimal server, start from the [README](../README.md).
-API tables and exports live in [reference.md](reference.md). Security guarantees
-and threat model: [security.md](security.md).
+The **canonical example** is [`examples/saas-demo`](../examples/saas-demo/)
+(Project desk: login → consent → user-scoped tools). API tables and exports live
+in [reference.md](reference.md). Security guarantees and threat model:
+[security.md](security.md).
 
 [Architecture](#how-it-fits-together) · [Clients](#clients) · [Recipes](#recipes) ·
 [Compose the primitives](#advanced-compose-the-primitives) ·
@@ -69,7 +71,7 @@ registration.
 // Worker
 export default { fetch: (req: Request, env: Env) => buildApp(env).fetch(req) };
 
-// Next.js App Router — app/[[...mcp]]/route.ts
+// Next.js App Router — see examples/nextjs-saas/
 export const GET = (req: Request) => app.fetch(req);
 export const POST = (req: Request) => app.fetch(req);
 export const OPTIONS = (req: Request) => app.fetch(req);
@@ -181,8 +183,7 @@ Also mount `.well-known/*` and `/mcp/oauth/*` the same way (or route everything 
 
 Express, Cloud Functions, Cloud Run, `http.createServer` — bridge with
 `asNodeHandler`. Runnable recipe: [`examples/http-server.ts`](../examples/http-server.ts)
-(set `OAUTH_CODE_SECRET` and `ACCESS_TOKEN_SECRET`, e.g. from `openssl rand -base64 32`,
-then `npx tsx examples/http-server.ts`).
+(set `MCP_SECRET`, e.g. from `openssl rand -base64 32`, then `npx tsx examples/http-server.ts`).
 
 ## Ports — what you implement
 
@@ -191,6 +192,10 @@ The library stays protocol-shaped. Your app plugs in the seams:
 ![Ports: library calls into your authenticate, context, resolveUser, mintAccessToken](diagrams/ports.svg)
 
 ### App (`createMcpApp`)
+
+Prefer `signedTokenAuth({ secret, resolveUser, loginUrl, codeStore })` to fill
+`codeSecret` / `mintAccessToken` / `verifyToken` from one secret. The table
+below is the advanced port surface when you outgrow the helper.
 
 | Port | Role |
 |------|------|

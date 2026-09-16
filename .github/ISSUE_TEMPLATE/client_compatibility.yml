@@ -1,0 +1,73 @@
+name: Client compatibility
+description: Report a live AI-client connection (Claude, ChatGPT, Gemini, …).
+labels: [compatibility]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template after connecting a real vendor client to an mcp-trellis
+        endpoint. Fill the same fields tracked in [docs/compatibility.md](../../docs/compatibility.md).
+        Do **not** paste access tokens, auth codes, or secrets.
+  - type: dropdown
+    id: product
+    attributes:
+      label: Client product
+      options:
+        - Claude
+        - ChatGPT
+        - Codex
+        - Gemini Enterprise
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: client_version
+    attributes:
+      label: Client version / build
+      description: Product version, build number, or "web UI" if unknown.
+      placeholder: "Claude.ai desktop 1.2.3"
+    validations:
+      required: true
+  - type: input
+    id: date
+    attributes:
+      label: Connection date (UTC)
+      placeholder: "2026-09-16"
+    validations:
+      required: true
+  - type: input
+    id: endpoint
+    attributes:
+      label: MCP endpoint (sanitized)
+      description: Public HTTPS URL of `/mcp` — redact tenant-specific path segments if needed.
+      placeholder: "https://example.com/mcp"
+    validations:
+      required: true
+  - type: input
+    id: protocol
+    attributes:
+      label: Negotiated MCP protocol version
+      placeholder: "2025-06-18"
+    validations:
+      required: true
+  - type: input
+    id: trellis_version
+    attributes:
+      label: mcp-trellis version
+      placeholder: "2.2.0"
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: What worked
+      description: Tool name(s) called and a sanitized result summary (no PII, no tokens).
+    validations:
+      required: true
+  - type: textarea
+    id: errors
+    attributes:
+      label: Errors / surprises (sanitized)
+      description: OAuth error codes, HTTP status, client messages — strip secrets and tokens.
+    validations:
+      required: false

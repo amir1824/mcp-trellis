@@ -35,6 +35,7 @@ const STABLE_ROOT = [
   "rejectQueryToken",
   "rpcError",
   "rpcResult",
+  "signedTokenAuth",
   "wwwAuthenticateHeader",
 ];
 

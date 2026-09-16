@@ -231,7 +231,7 @@ a proper JSON-RPC error.
 - **Unified `audit` sink** on `createMcpApp` — one callback for MCP and
   OAuth events (`source: "mcp" | "oauth"`); `auth.audit` remains an
   OAuth-only override.
-- **Framework recipes** — `examples/nextjs-route.ts`, `examples/express.ts`.
+- **Framework recipes** — `examples/nextjs-saas/`, `examples/express.ts`.
 - Fail-closed defaults: `allowInMemoryCodeStore` / `validateArgs`.
 - **RFC 9207 `iss`** on authorize / error redirects; AS metadata advertises
   `authorization_response_iss_parameter_supported`.

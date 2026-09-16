@@ -3,6 +3,39 @@
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.2.0] - Unreleased
+
+User-facing story for this cut: simpler auth setup, a demo-first README, and a
+Next.js starter. **Verified Claude / ChatGPT connector bullets stay out until
+live evidence lands in `docs/compatibility.md`.** Cut the npm release after that
+evidence, not before.
+
+### Added
+
+- **`signedTokenAuth`** — one-secret convenience `McpAppAuth`. Derives the
+  access-token HMAC key via HKDF (`mcp-trellis:signed-access-token:v1`) from the
+  same secret used as `codeSecret`. No refresh/revoke (stateless ceiling).
+  Advanced ports remain for JWT/JWKS, opaque stores, and revocation.
+- **`examples/nextjs-saas`** — App Router catch-all + cookie session +
+  `signedTokenAuth` drop-in starter.
+- **Client compatibility** issue template for live vendor-client reports.
+
+### Changed
+
+- README opens with an outcome hero, ASCII flow, and a demo-first block
+  (install → 30-second example → Project desk). Demo still:
+  `docs/diagrams/demo-tool-result.png`.
+- `examples/saas-demo` labelled the canonical example; other examples demoted
+  to recipes in `examples/README.md`.
+- Runnable recipes (`http-server`, `express`, Worker) use `MCP_SECRET` via
+  `signedTokenAuth` instead of separate code/access secrets.
+- npm `description` and keywords (`saas`, `remote-mcp`, `byo-auth`,
+  `ai-connector`); GitHub About script updated (topics, Discussions).
+
+### Removed
+
+- `examples/nextjs-route.ts` (replaced by `examples/nextjs-saas`).
+
 ## [2.1.0] - 2026-09-15
 
 ### Security

@@ -1,57 +1,53 @@
 # mcp-trellis
 
-**Existing SaaS → authenticated AI connector SDK.**
+Add authenticated AI connectors to your existing SaaS.
+Reuse your users, login and permissions. Trellis handles MCP + OAuth.
 
-Claude, ChatGPT and Gemini against the login and data you already have. No new
-database. No auth vendor. One TypeScript package.
-
-mcp-trellis is the **vendor-neutral embedded BYO-auth** path: MCP handler and
-self-hosted OAuth AS in one npm install. Contrast composition stacks such as
-**xmcp + Scalekit** (or WorkOS / Descope connectors) that split the MCP runtime
-and the identity product across 2–3 packages.
-
-Your app already knows who the user is. Connecting an AI client still means
-wiring OAuth discovery, registration, consent, PKCE and token exchange.
-**mcp-trellis handles that protocol work**, while your app keeps login, token
-verification and data permissions.
-
-```mermaid
-flowchart LR
-  A[Existing app: login + user data] --> B[mcp-trellis: OAuth + MCP]
-  B --> C[AI client: user-scoped tools]
+```
+Existing SaaS
+users + login + data
+       ↓
+  mcp-trellis
+       ↓
+Claude / ChatGPT / Gemini
 ```
 
-## The 30-second example
+[![npm](https://img.shields.io/npm/v/mcp-trellis)](https://www.npmjs.com/package/mcp-trellis)
+[![CI](https://github.com/amir1824/mcp-trellis/actions/workflows/ci.yml/badge.svg)](https://github.com/amir1824/mcp-trellis/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+## Demo
+
+![Project desk local demo — login, consent, user-scoped tool result](docs/diagrams/demo-tool-result.png)
 
 ```bash
 npm install mcp-trellis
 ```
 
+## The 30-second example
+
 ```ts
-import { createMcpApp } from "mcp-trellis";
-import { existingAuth, projectsForUser } from "./your-app.js";
+import { createMcpApp, signedTokenAuth } from "mcp-trellis";
+import { session, projectsForUser, codeStore } from "./your-app.js";
 
 export const mcp = createMcpApp<{ userId: string }>({
   serverInfo: { name: "my-saas", version: "1.0.0" },
-  clients: ["claude"],
-  // existingAuth must include codeStore (required since 2.0) plus the usual ports.
-  auth: existingAuth,
-  context: (_request, principal) => ({ userId: principal!.id }),
-  tools: [{
-    name: "list_my_projects",
-    description: "List the signed-in user's projects",
-    inputSchema: { type: "object", properties: {} },
-    scope: "mcp",
-    handler: async ({ userId }) => JSON.stringify(await projectsForUser(userId)),
-  }],
+  auth: signedTokenAuth({
+    secret: process.env.MCP_SECRET!,
+    resolveUser: (req) => session(req),
+    loginUrl: (_r, n) => `/login?next=${encodeURIComponent(n)}`,
+    codeStore,
+  }),
+  context: (_r, p) => ({ userId: p!.id }),
+  tools: [{ name: "list_my_projects", description: "List projects",
+    inputSchema: { type: "object", properties: {} }, scope: "mcp",
+    handler: async ({ userId }) => JSON.stringify(await projectsForUser(userId)) }],
 });
 ```
 
-This shows the integration shape: `your-app.js` is your application's auth/data adapter, not a supplied module. Production needs a shared `codeStore` (see [examples/stores.ts](examples/stores.ts)). **[Run the complete Node demo](examples/saas-demo/README.md)** for working login, token handling and two users with different projects. Node ≥20 is required.
+`codeStore` must be a shared single-use store (Redis/KV — see [examples/stores.ts](examples/stores.ts)). Advanced ports (`mintAccessToken`, `verifyToken`, refresh, revoke) remain available when you outgrow the helper. Node ≥20.
 
-[![npm](https://img.shields.io/npm/v/mcp-trellis)](https://www.npmjs.com/package/mcp-trellis)
-[![CI](https://github.com/amir1824/mcp-trellis/actions/workflows/ci.yml/badge.svg)](https://github.com/amir1824/mcp-trellis/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+**[View the complete SaaS demo](examples/saas-demo/README.md)** — working login, consent, two users with different projects.
 
 ## When should I use this?
 
@@ -68,7 +64,7 @@ This shows the integration shape: `your-app.js` is your application's auth/data 
 
 ## Run a real tool
 
-The [Project desk demo](examples/saas-demo/README.md) proves the local flow: app login → OAuth consent → access token → `list_my_projects`. Alice sees her two projects; Bob sees his own. It uses fictional data and an independent app session.
+The [Project desk demo](examples/saas-demo/README.md) is the canonical example: app login → OAuth consent → access token → `list_my_projects`. Alice sees her two projects; Bob sees his own. It uses fictional data and an independent app session.
 
 **Live Claude / ChatGPT recordings are still pending.** Automated OAuth tests are not evidence that a current vendor client has connected successfully.
 
@@ -84,9 +80,13 @@ Protocol versions implemented: `2024-11-05`, `2025-03-26`, `2025-06-18`; default
 
 ## Integrate with your app
 
-Implement `resolveUser`, `loginUrl`, `mintAccessToken` and `verifyToken` using your app's existing auth. Mint tokens for the requested MCP resource and return their verified `audience`; the library rejects an audience mismatch before executing tools. A logged-in user still sees an OAuth consent screen. Your data layer must enforce ownership and tenant permissions. Browser callers that send an `Origin` header need `allowedRequestOrigins` (fail-closed by default) — see [security.md](docs/security.md).
+Prefer `signedTokenAuth` for a one-secret start. For refresh, revoke, or your own JWT/JWKS, implement `resolveUser`, `loginUrl`, `mintAccessToken` and `verifyToken` yourself. Mint tokens for the requested MCP resource and return their verified `audience`; the library rejects an audience mismatch before executing tools. A logged-in user still sees an OAuth consent screen. Your data layer must enforce ownership and tenant permissions. Browser callers that send an `Origin` header need `allowedRequestOrigins` (fail-closed by default) — see [security.md](docs/security.md).
 
-[Node demo](examples/saas-demo/README.md) · [Host recipes](docs/guide.md) · [Security responsibilities](docs/security.md) · [npm](https://www.npmjs.com/package/mcp-trellis)
+[SaaS demo](examples/saas-demo/README.md) · [Next.js starter](examples/nextjs-saas/README.md) · [Host recipes](docs/guide.md) · [Security](docs/security.md) · [npm](https://www.npmjs.com/package/mcp-trellis)
+
+## How it compares
+
+mcp-trellis is the **vendor-neutral embedded BYO-auth** path: MCP handler and self-hosted OAuth AS in one npm install. Contrast composition stacks such as **xmcp + Scalekit** (or WorkOS / Descope connectors) that split the MCP runtime and the identity product across 2–3 packages. Full comparison table: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Architecture
 
@@ -107,7 +107,7 @@ Host recipes, ports, tools, and multi-tenant: [docs/guide.md](docs/guide.md).
 | [docs/security.md](docs/security.md) | Protocol promises, threat model, not in scope |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | What's next |
 
-Examples: [`examples/`](examples/) — HTTP server, Worker, multi-tenant, stores, audit.
+Canonical example: [`examples/saas-demo`](examples/saas-demo/). Recipes: [`examples/`](examples/).
 
 ## Contributing
 

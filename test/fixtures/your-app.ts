@@ -1,33 +1,17 @@
 /**
  * Stand-in for the README quickstart's `./your-app.js` — the host app's
- * auth and data adapter. Tokens are opaque base64url JSON; the library
- * still enforces the audience itself.
+ * session resolver, data adapter, and replay store.
  */
-import type { McpAppAuth } from "../../src/app-options.js";
 import { createMemoryCodeStore } from "../../src/oauth/crypto/codes.js";
-import { stubPorts } from "../helpers/ports.js";
+import type { OAuthUser } from "../../src/oauth/types.js";
 
-type TokenPayload = { userId: string; scopes: string[]; audience: string };
+/** Demo session: every request is Alice. A real app reads cookies / JWT. */
+export const session = async (_request: Request): Promise<OAuthUser | null> => ({
+  id: "alice",
+});
 
-export const encodeToken = (payload: TokenPayload): string =>
-  Buffer.from(JSON.stringify(payload)).toString("base64url");
-
-const { codeSecret, resolveUser, loginUrl, mintAccessToken } = stubPorts();
-
-export const existingAuth: McpAppAuth = {
-  codeSecret,
-  resolveUser,
-  loginUrl,
-  mintAccessToken,
-  codeStore: createMemoryCodeStore(),
-  verifyToken: async (token) => {
-    try {
-      return JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as TokenPayload;
-    } catch {
-      return null;
-    }
-  },
-};
+/** Process-local store for the quickstart test; production uses Redis/KV. */
+export const codeStore = createMemoryCodeStore();
 
 const PROJECTS: Record<string, string[]> = {
   alice: ["Apollo", "Borealis"],
