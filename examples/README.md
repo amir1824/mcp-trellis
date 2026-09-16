@@ -2,7 +2,9 @@
 
 ## Canonical: Project desk
 
-**[`saas-demo/`](saas-demo/)** — the official end-to-end example.
+**[`project-desk/`](project-desk/)** — reference remote MCP server (Official MCP
+Registry + `mcp-trellis-project-desk` npm). Local docs:
+[`saas-demo/README.md`](saas-demo/README.md).
 
 Two users (Alice / Bob), independent session login, OAuth consent, user-scoped
 `list_my_projects`, and instructions for connecting a remote AI client.
@@ -11,8 +13,6 @@ Two users (Alice / Bob), independent session login, OAuth consent, user-scoped
 npm run demo
 ```
 
-See [`saas-demo/README.md`](saas-demo/README.md).
-
 ## Starters
 
 | Path | What it shows |
@@ -20,7 +20,7 @@ See [`saas-demo/README.md`](saas-demo/README.md).
 | [`nextjs-saas/`](nextjs-saas/) | Next.js App Router catch-all + `signedTokenAuth` |
 | [`http-server.ts`](http-server.ts) | Raw Node `http.createServer` |
 | [`express.ts`](express.ts) | Express / Cloud Run sketch |
-| [`cloudflare-worker.ts`](cloudflare-worker.ts) | Workers mount |
+| [`cloudflare-worker.ts`](cloudflare-worker.ts) | Minimal Workers recipe (ping); hosted Project desk uses `project-desk/worker.ts` |
 
 ## Recipes
 

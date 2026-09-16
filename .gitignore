@@ -18,3 +18,8 @@ metrics/
 
 # Launch marketing / media — not library source
 docs/launch/
+
+# Nested npm publish staging (must not linger — breaks monorepo mcp-trellis resolve)
+examples/project-desk/package.json
+examples/project-desk/package-lock.json
+examples/project-desk/node_modules/

@@ -1,6 +1,6 @@
 {
   "name": "mcp-trellis",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Add authenticated remote MCP connectors to existing TypeScript SaaS apps using your existing users and auth.",
   "type": "module",
   "license": "MIT",

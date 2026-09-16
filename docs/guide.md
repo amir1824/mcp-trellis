@@ -2,8 +2,9 @@
 
 Practical deep dive: architecture, host recipes, ports, tools, and multi-tenant
 connectors. For a working minimal server, start from the [README](../README.md).
-The **canonical example** is [`examples/saas-demo`](../examples/saas-demo/)
-(Project desk: login → consent → user-scoped tools). API tables and exports live
+The **canonical example** is [`examples/project-desk`](../examples/project-desk/)
+(Project desk: login → consent → user-scoped tools; local docs in
+[`examples/saas-demo`](../examples/saas-demo/)). API tables and exports live
 in [reference.md](reference.md). Security guarantees and threat model:
 [security.md](security.md).
 

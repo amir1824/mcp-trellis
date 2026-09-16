@@ -1,8 +1,9 @@
-# Demo Worker for live client evidence (not a product).
-# Deploy: npx wrangler deploy examples/cloudflare-worker.ts
-# Secrets: MCP_SECRET (openssl rand -base64 32)
+# Project desk — reference remote MCP server for the Official MCP Registry.
+# Deploy: npx wrangler deploy
+# Secrets: DEMO_PASSWORD, OAUTH_CODE_SECRET
+# Optional: wrangler secret / var PUBLIC_ORIGIN (defaults to request origin)
 
-name = "mcp-trellis-demo"
-main = "examples/cloudflare-worker.ts"
+name = "mcp-trellis-project-desk"
+main = "examples/project-desk/worker.ts"
 compatibility_date = "2026-09-14"
 compatibility_flags = ["nodejs_compat"]

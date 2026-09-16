@@ -18,23 +18,25 @@ The Gemini profile does not imply compatibility with Gemini CLI or every Gemini 
 
 ## Demo deploy (Worker)
 
-Compile-checked Worker sketch: [`examples/cloudflare-worker.ts`](../examples/cloudflare-worker.ts).
-
-One-liner after you add a minimal `wrangler.toml` (name, `compatibility_date`, and secret
-`MCP_SECRET`):
+**Project desk** (Registry remotes target): [`examples/project-desk/worker.ts`](../examples/project-desk/worker.ts)
+via root [`wrangler.toml`](../wrangler.toml).
 
 ```bash
-npx wrangler secret put MCP_SECRET
-npx wrangler deploy examples/cloudflare-worker.ts
+npx wrangler secret put DEMO_PASSWORD   # project-desk-demo for the public demo
+npx wrangler secret put OAUTH_CODE_SECRET
+npx wrangler deploy
 ```
 
-Point a connector at `https://YOUR-WORKER/mcp` only after secrets and an origin
-allowlist match your route. This path proves the Worker mounts; it does **not**
-replace the live client rows below.
+MCP URL: `https://mcp-trellis-project-desk.<workers-subdomain>.workers.dev/mcp`.
+Operator checklist: [`examples/project-desk/PUBLISH.md`](../examples/project-desk/PUBLISH.md).
+This does **not** replace the live client rows below.
+
+Minimal ping-only Worker recipe (not the hosted demo):
+[`examples/cloudflare-worker.ts`](../examples/cloudflare-worker.ts).
 
 ## Host contract covered in-repo
 
-`examples/saas-demo` now mints refresh tokens and enforces RFC 6749 §6: requested
+`examples/project-desk` mints refresh tokens and enforces RFC 6749 §6: requested
 refresh `scope` must be ⊆ the scopes originally bound to that refresh token
 (`isScopeSubset` pattern also in `examples/stores.ts`). Escalation →
 `invalid_grant`. Covered by `test/e2e/saas-demo.test.ts`.
@@ -57,10 +59,11 @@ release; it does **not** replace the live client row.
 
 Record client product, version/build (or web UI and test date), account tier, package version/commit, hosting environment and configured callback. Capture discovery → registration → app login → consent → token exchange → initialize → tools/list → `list_my_projects`. Verify wrong audience/invalid token rejection and user isolation separately. Save sanitized output or recording; exclude cookies, passwords, codes and tokens.
 
-Against a public HTTPS demo (`PUBLIC_ORIGIN` + `DEMO_PASSWORD`):
+Against a public HTTPS demo (`PUBLIC_ORIGIN` + `DEMO_PASSWORD=project-desk-demo`):
 
 ```bash
 npm run demo   # reverse-proxy to HTTPS; set PUBLIC_ORIGIN
+# or use the deployed Worker from examples/project-desk/PUBLISH.md
 node scripts/prep-claude-oauth.mjs   # scripted OAuth + refresh scope + tool
 # Then open the vendor UI with MCP URL https://YOUR-HOST/mcp and record below.
 ```

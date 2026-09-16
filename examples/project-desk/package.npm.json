@@ -1,0 +1,38 @@
+{
+  "name": "mcp-trellis-project-desk",
+  "version": "1.0.0",
+  "description": "Reference remote MCP server built with mcp-trellis — existing login → OAuth → user-scoped list_my_projects (fictional Project desk data).",
+  "type": "module",
+  "license": "MIT",
+  "mcpName": "io.github.amir1824/project-desk",
+  "author": "AmirBenShimol",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/amir1824/mcp-trellis.git",
+    "directory": "examples/project-desk"
+  },
+  "homepage": "https://www.npmjs.com/package/mcp-trellis",
+  "bugs": {
+    "url": "https://github.com/amir1824/mcp-trellis/issues"
+  },
+  "keywords": ["mcp", "mcp-server", "remote-mcp", "oauth", "mcp-trellis", "reference-server"],
+  "bin": {
+    "mcp-trellis-project-desk": "./dist/server.js"
+  },
+  "files": ["dist", "server.json", "README.md"],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/server.js",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "mcp-trellis": "^2.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0"
+  }
+}

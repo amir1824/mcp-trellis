@@ -15,7 +15,7 @@
  * would accept it as genuine, a full authentication bypass. Signing closes
  * that; it does not turn this into something to actually deploy — a real
  * app with refresh/revoke should use an opaque server-side store like
- * `examples/saas-demo/tokens.ts` rather than hand-rolled bearer tokens.
+ * `examples/project-desk/src/tokens.ts` rather than hand-rolled bearer tokens.
  */
 
 import { bytesToBase64Url, fromBase64Url } from "../src/oauth/crypto/base64url.js";

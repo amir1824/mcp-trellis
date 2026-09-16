@@ -7,7 +7,7 @@
  * ponytail: stateless tokens cannot be revoked before `exp`. No
  * `refreshAccessToken` / `revokeToken` — `/revoke` stays unmounted and
  * refresh unadvertised. Upgrade: supply those ports plus a store (see
- * `examples/saas-demo/tokens.ts`).
+ * `examples/project-desk/src/tokens.ts`).
  */
 
 import type { McpAppAuth, VerifiedToken } from "../app-options.js";

@@ -1,6 +1,9 @@
 /** In-memory access + refresh token store for the Project desk demo. */
 import { randomBytes } from "node:crypto";
-import { isScopeSubset } from "../stores.js";
+
+/** RFC 6749 §6 — refresh scopes must be ⊆ the originally granted set. */
+const isScopeSubset = (requested: string[], granted: string[]): boolean =>
+  requested.every((scope) => granted.includes(scope) || granted.includes("*"));
 
 export const randomOpaqueToken = () => randomBytes(32).toString("base64url");
 

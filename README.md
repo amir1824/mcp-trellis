@@ -49,6 +49,8 @@ export const mcp = createMcpApp<{ userId: string }>({
 
 **[View the complete SaaS demo](examples/saas-demo/README.md)** — working login, consent, two users with different projects.
 
+Also listed on the Official MCP Registry as **Project desk** (reference remote server; not the SDK) — see [`examples/project-desk`](examples/project-desk/).
+
 ## When should I use this?
 
 - Your TypeScript app already has login and user data, and you want to expose user-scoped tools through remote MCP.
@@ -64,7 +66,7 @@ export const mcp = createMcpApp<{ userId: string }>({
 
 ## Run a real tool
 
-The [Project desk demo](examples/saas-demo/README.md) is the canonical example: app login → OAuth consent → access token → `list_my_projects`. Alice sees her two projects; Bob sees his own. It uses fictional data and an independent app session.
+The [Project desk demo](examples/saas-demo/README.md) is the canonical example ([`examples/project-desk`](examples/project-desk/) implementation): app login → OAuth consent → access token → `list_my_projects`. Alice sees her two projects; Bob sees his own. It uses fictional data and an independent app session.
 
 **Live Claude / ChatGPT recordings are still pending.** Automated OAuth tests are not evidence that a current vendor client has connected successfully.
 
@@ -107,7 +109,7 @@ Host recipes, ports, tools, and multi-tenant: [docs/guide.md](docs/guide.md).
 | [docs/security.md](docs/security.md) | Protocol promises, threat model, not in scope |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | What's next |
 
-Canonical example: [`examples/saas-demo`](examples/saas-demo/). Recipes: [`examples/`](examples/).
+Canonical example: [`examples/project-desk`](examples/project-desk/) ([local docs](examples/saas-demo/)). Recipes: [`examples/`](examples/).
 
 ## Contributing
 

@@ -3,12 +3,12 @@
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [2.2.0] - Unreleased
+## [2.2.0] - 2026-09-16
 
-User-facing story for this cut: simpler auth setup, a demo-first README, and a
-Next.js starter. **Verified Claude / ChatGPT connector bullets stay out until
-live evidence lands in `docs/compatibility.md`.** Cut the npm release after that
-evidence, not before.
+User-facing story for this cut: simpler auth setup, a demo-first README, Next.js
+starter, and Project desk as the Official MCP Registry reference server.
+**Verified Claude / ChatGPT connector bullets stay out of the release notes
+until live evidence lands in `docs/compatibility.md`.**
 
 ### Added
 
@@ -19,14 +19,21 @@ evidence, not before.
 - **`examples/nextjs-saas`** — App Router catch-all + cookie session +
   `signedTokenAuth` drop-in starter.
 - **Client compatibility** issue template for live vendor-client reports.
+- **`examples/project-desk`** — reference remote MCP server for the Official
+  MCP Registry (`io.github.amir1824/project-desk`, remotes `streamable-http`)
+  and npm companion `mcp-trellis-project-desk`. Points `websiteUrl` at the SDK;
+  the `mcp-trellis` package itself is **not** a Registry server.
 
 ### Changed
 
 - README opens with an outcome hero, ASCII flow, and a demo-first block
   (install → 30-second example → Project desk). Demo still:
   `docs/diagrams/demo-tool-result.png`.
-- `examples/saas-demo` labelled the canonical example; other examples demoted
-  to recipes in `examples/README.md`.
+- `examples/project-desk` is the Project desk implementation; `saas-demo`
+  remains the local docs entry (`npm run demo`). Other examples demoted to
+  recipes in `examples/README.md`.
+- Root `wrangler.toml` deploys Project desk (`mcp-trellis-project-desk`) instead
+  of the ping-only Worker sketch.
 - Runnable recipes (`http-server`, `express`, Worker) use `MCP_SECRET` via
   `signedTokenAuth` instead of separate code/access secrets.
 - npm `description` and keywords (`saas`, `remote-mcp`, `byo-auth`,

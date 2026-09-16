@@ -44,4 +44,4 @@ add matching rewrite rules so OAuth metadata reaches Trellis.
 - Shows the integration shape: one catch-all route + one secret + your session.
 - Not a full Next app (no `package.json`, no login UI). For the full fictional
   SaaS with Alice/Bob and consent walkthrough, use
-  [`examples/saas-demo`](../saas-demo/).
+  [`examples/project-desk`](../project-desk/) ([local docs](../saas-demo/)).

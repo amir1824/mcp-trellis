@@ -232,6 +232,8 @@ a proper JSON-RPC error.
   OAuth events (`source: "mcp" | "oauth"`); `auth.audit` remains an
   OAuth-only override.
 - **Framework recipes** — `examples/nextjs-saas/`, `examples/express.ts`.
+- **Reference MCP Registry server** — `examples/project-desk/`
+  (`io.github.amir1824/project-desk`, remotes only; not the SDK package).
 - Fail-closed defaults: `allowInMemoryCodeStore` / `validateArgs`.
 - **RFC 9207 `iss`** on authorize / error redirects; AS metadata advertises
   `authorization_response_iss_parameter_supported`.

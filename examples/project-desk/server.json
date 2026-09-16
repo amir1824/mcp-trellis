@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.amir1824/project-desk",
+  "title": "Project desk",
+  "description": "Reference remote MCP server built with mcp-trellis: existing login → OAuth consent → user-scoped list_my_projects (fictional data).",
+  "version": "1.0.0",
+  "websiteUrl": "https://www.npmjs.com/package/mcp-trellis",
+  "repository": {
+    "url": "https://github.com/amir1824/mcp-trellis",
+    "source": "github"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp-trellis-project-desk.amir1824.workers.dev/mcp"
+    }
+  ]
+}
