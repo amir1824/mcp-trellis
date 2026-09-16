@@ -50,6 +50,19 @@ describe("schema validation", () => {
     assert.ok(maxErrors.some((e) => /maximum/.test(e)));
   });
 
+  it("compares object and array enum values structurally", () => {
+    const schema = {
+      type: "object",
+      enum: [{ tags: ["a", "b"], enabled: true }],
+    };
+    assert.deepEqual(validateAgainstSchema({ enabled: true, tags: ["a", "b"] }, schema), []);
+    assert.ok(
+      validateAgainstSchema({ enabled: true, tags: ["b", "a"] }, schema).some((e) =>
+        /enum/.test(e),
+      ),
+    );
+  });
+
   it("collects multiple errors", () => {
     const errors = validateAgainstSchema({ query: 1, limit: 0, status: "nope" }, schema);
     assert.ok(errors.length >= 2);

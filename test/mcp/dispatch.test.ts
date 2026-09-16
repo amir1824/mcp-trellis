@@ -127,6 +127,90 @@ describe("dispatch", () => {
     assert.equal(body.error.message, "Unknown tool: no-such-tool");
   });
 
+  it("rejects malformed tools/call arguments instead of treating them as an empty object", async () => {
+    const res = await post(
+      {
+        jsonrpc: "2.0",
+        id: 12,
+        method: "tools/call",
+        params: { name: "secret_write", arguments: 42 },
+      },
+      "ingest-tok",
+    );
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { id: unknown; error: { code: number; message: string } };
+    assert.equal(body.id, 12);
+    assert.equal(body.error.code, -32602);
+    assert.equal(body.error.message, "tools/call params.arguments must be an object");
+  });
+
+  it("rejects tools/call when arguments is null", async () => {
+    const res = await post(
+      {
+        jsonrpc: "2.0",
+        id: 15,
+        method: "tools/call",
+        params: { name: "secret_write", arguments: null },
+      },
+      "ingest-tok",
+    );
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { id: unknown; error: { code: number; message: string } };
+    assert.equal(body.id, 15);
+    assert.equal(body.error.code, -32602);
+    assert.equal(body.error.message, "tools/call params.arguments must be an object");
+  });
+
+  it("rejects tools/call when params is null", async () => {
+    const res = await post(
+      {
+        jsonrpc: "2.0",
+        id: 13,
+        method: "tools/call",
+        params: null,
+      },
+      "ingest-tok",
+    );
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { id: unknown; error: { code: number; message: string } };
+    assert.equal(body.id, 13);
+    assert.equal(body.error.code, -32602);
+    assert.equal(body.error.message, "tools/call params must be an object");
+  });
+
+  it("rejects tools/call when params is an array", async () => {
+    const res = await post(
+      {
+        jsonrpc: "2.0",
+        id: 14,
+        method: "tools/call",
+        params: [],
+      },
+      "ingest-tok",
+    );
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { id: unknown; error: { code: number; message: string } };
+    assert.equal(body.id, 14);
+    assert.equal(body.error.code, -32602);
+    assert.equal(body.error.message, "tools/call params must be an object");
+  });
+
+  it("treats toString as an unknown RPC method", async () => {
+    const res = await post({ jsonrpc: "2.0", id: "toString", method: "toString" }, "read-tok");
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { id: unknown; error: { code: number } };
+    assert.equal(body.id, "toString");
+    assert.equal(body.error.code, -32601);
+  });
+
+  it("treats __proto__ as an unknown RPC method", async () => {
+    const res = await post({ jsonrpc: "2.0", id: "__proto__", method: "__proto__" }, "read-tok");
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { id: unknown; error: { code: number } };
+    assert.equal(body.id, "__proto__");
+    assert.equal(body.error.code, -32601);
+  });
+
   it("rejects a missing jsonrpc field with -32600, echoing the id", async () => {
     const res = await post({ id: 10, method: "ping" });
     assert.equal(res.status, 400);

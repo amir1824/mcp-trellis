@@ -41,13 +41,22 @@ const auditToolCall = <TCtx>(
     durationMs: Date.now() - input.startedAt,
   });
 
-const parseToolCallArgs = (
-  body: JsonRpcRequest,
-): { name: string; args: Record<string, unknown> } => {
-  const params = body.params ?? {};
+type ParsedToolCall =
+  | { name: string; args: Record<string, unknown> }
+  | { error: string };
+
+const parseToolCallArgs = (body: JsonRpcRequest): ParsedToolCall => {
+  // Omitted params default to {}; null/array/primitive must fail — do not coerce.
+  const params = body.params === undefined ? {} : body.params;
+  if (!isJsonObject(params)) return { error: "tools/call params must be an object" };
   const name = String(params.name ?? "");
-  const args = isJsonObject(params.arguments) ? params.arguments : {};
-  return { name, args };
+  // `arguments` may be absent, but once supplied it must be an object. Coercing
+  // a malformed value to `{}` can invoke an otherwise valid no-argument tool.
+  if (params.arguments === undefined) return { name, args: {} };
+  if (!isJsonObject(params.arguments)) {
+    return { error: "tools/call params.arguments must be an object" };
+  }
+  return { name, args: params.arguments };
 };
 
 type ToolCallDenialInput = {
@@ -133,7 +142,13 @@ const METHODS = {
   },
 
   "tools/call": async ({ req, body, id, principal, options, startedAt }) => {
-    const { name, args } = parseToolCallArgs(body);
+    const parsed = parseToolCallArgs(body);
+    if ("error" in parsed) {
+      return jsonResponse({
+        data: rpcError(id, JSONRPC_INVALID_PARAMS, parsed.error),
+      });
+    }
+    const { name, args } = parsed;
 
     const tool = options.registry.get(name);
     if (!tool) return unknownToolResponse(options, { name, principal, id, startedAt });
@@ -195,7 +210,11 @@ export const dispatchRpc = async <TCtx>(input: {
     }
   }
 
-  const handler = (METHODS as Record<string, RpcMethodHandler<TCtx> | undefined>)[method];
+  // Do not let a client-selected method name reach Object.prototype (e.g.
+  // `toString` or `__proto__`): only own entries in METHODS are RPC methods.
+  const handler = Object.hasOwn(METHODS, method)
+    ? (METHODS as Record<string, RpcMethodHandler<TCtx>>)[method]
+    : undefined;
   if (!handler) {
     return jsonResponse({
       data: rpcError(id, JSONRPC_METHOD_NOT_FOUND, `Method not found: ${method}`),

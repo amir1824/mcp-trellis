@@ -1,3 +1,5 @@
+import { areJsonValuesEqual } from "../util/json.js";
+
 export type JsonSchema = {
   /** A single type, or a union (`["string", "null"]`) — both are evaluated. */
   type?: string | string[];
@@ -139,7 +141,7 @@ const typeMismatch = (value: unknown, schema: JsonSchema, path: string): string[
 };
 
 const enumErrors = (value: unknown, schema: JsonSchema, path: string): string[] => {
-  if (!schema.enum || schema.enum.includes(value)) return [];
+  if (!schema.enum || schema.enum.some((entry) => areJsonValuesEqual(entry, value))) return [];
   return [`${path}: value not in enum`];
 };
 
