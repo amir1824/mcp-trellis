@@ -8,6 +8,7 @@ import {
   registeredClientsRequired,
   resolveSecrets,
   unregisteredClientError,
+  unregisteredClientsAllowed,
 } from "../config.js";
 import { OAUTH_ERRORS } from "../constants.js";
 import { issueAuthCode } from "../crypto/codes.js";
@@ -87,6 +88,17 @@ const resolveAuthorizeClient = async (
   secrets: readonly [string, ...string[]],
 ): Promise<AuthorizeClient | Response> => {
   const registered = (await options.ports.clientStore?.get(clientId)) ?? null;
+  // A router that does not serve unknown clients (no `/register` route, and
+  // `/token` rejects any id `clientStore` does not know) must not honour a
+  // sealed DCR assertion minted by a sibling instance sharing the codeSecret,
+  // nor fetch a CIMD document, for a client it would reject one step later.
+  if (!registered && !unregisteredClientsAllowed(options)) {
+    const rejection = unregisteredClientError(options, {
+      code: OAUTH_ERRORS.unauthorizedClient,
+      status: 400,
+    });
+    if (rejection) return rejection;
+  }
   const assertion = registered ? null : await unsealClientAssertion(options, clientId, secrets);
   const isCimdId = options.cimd === true && isCimdClientId(clientId);
   const cimdDoc =

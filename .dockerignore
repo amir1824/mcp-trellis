@@ -1,0 +1,12 @@
+.git
+.github
+.vscode
+node_modules
+dist
+docs
+test
+scripts
+*.md
+*.tgz
+.env
+.env.*

@@ -113,6 +113,9 @@ export const defineTool = <TCtx, Input = Record<string, unknown>>(
 
 export type ApiRequest = string | URL | Request;
 
+/** See `ApiExtra.redirect`. */
+export type RedirectMode = "manual" | "error" | "follow";
+
 type ApiExtra<TCtx, Args> = {
   request: (ctx: TCtx, args: Args) => ApiRequest | Promise<ApiRequest>;
   respond?: (res: Response) => Promise<ToolResult | string> | ToolResult | string;
@@ -144,6 +147,18 @@ type ApiExtra<TCtx, Args> = {
    * as `isError: true`, not a thrown exception `onToolError` would redact.
    */
   maxResponseBytes?: number;
+  /**
+   * What to do when the upstream answers with a redirect. Default
+   * `"manual"`: the 3xx is returned as-is and surfaces as an ordinary failed
+   * request (status only), so credentials in custom headers (`X-Api-Key`,
+   * which `fetch` forwards cross-origin on a redirect), a POST body, and a
+   * request into an internal address are never handed to a `Location` the
+   * upstream picked. `"error"` makes any redirect throw. `"follow"` restores
+   * the platform default — only for an upstream you fully trust, since an
+   * open redirect or compromised upstream can then reach any URL the server
+   * can, and the response comes back to the model.
+   */
+  redirect?: RedirectMode;
 };
 
 export type ApiToolOptions<TCtx, Input = Record<string, unknown>> =
@@ -161,8 +176,12 @@ const defaultRespond = (res: Response): Promise<string> => res.text();
  */
 const defaultErrorResult = (res: Response): ToolResult => {
   const status = [res.status, res.statusText].filter(Boolean).join(" ");
+  // A redirect is not followed by default; an opaque one (some runtimes) has
+  // status 0. Say so, or a previously working http→https hop just "fails".
+  const isRedirect = res.type === "opaqueredirect" || (res.status >= 300 && res.status < 400);
+  const hint = isRedirect ? ' (redirect not followed; set redirect: "follow" to allow it)' : "";
   return {
-    content: [{ type: "text", text: `Request failed: ${status}` }],
+    content: [{ type: "text", text: `Request failed: ${status}${hint}` }],
     isError: true,
   };
 };
@@ -179,22 +198,127 @@ const isTimeoutError = (caught: unknown): boolean => {
 };
 
 const timedOutResult = (timeoutMs: number | false): ToolResult => ({
-  content: [{ type: "text", text: `Request timed out after ${timeoutMs}ms` }],
+  content: [
+    {
+      type: "text",
+      text: timeoutMs === false ? "Request timed out" : `Request timed out after ${timeoutMs}ms`,
+    },
+  ],
   isError: true,
 });
 
-/** A timed-out fetch becomes a `ToolResult`; every other throw still propagates. */
-const fetchWithTimeout = async (
-  fetchImpl: typeof fetch,
-  input: ApiRequest,
+const cancelledResult = (): ToolResult => ({
+  content: [{ type: "text", text: "Request was cancelled" }],
+  isError: true,
+});
+
+/**
+ * The `ToolResult` for a caller abort or a timeout, or `null` for any other
+ * error. A caller abort is checked first and by signal state, not by error
+ * shape: `fetch` rejects with the abort *reason*, which is whatever the
+ * caller passed to `abort(...)` — not necessarily an `AbortError`.
+ */
+const abortResult = (
+  caught: unknown,
   timeoutMs: number | false,
-): Promise<{ response: Response; signal?: AbortSignal } | ToolResult> => {
-  if (timeoutMs === false) return { response: await fetchImpl(input) };
-  const signal = AbortSignal.timeout(timeoutMs);
+  callerSignal: AbortSignal | undefined,
+): ToolResult | null => {
+  if (callerSignal?.aborted) return cancelledResult();
+  return isTimeoutError(caught) ? timedOutResult(timeoutMs) : null;
+};
+
+/** A signal that fires when any of `signals` does, plus a `dispose` that detaches its listeners. */
+type CombinedSignal = { signal: AbortSignal; dispose: () => void };
+
+const NOOP = (): void => {};
+
+/**
+ * `AbortSignal.any` is Node >= 20.3; `engines` allows 20.0. The fallback
+ * follows whichever signal fires first and removes its listeners on
+ * `dispose` — a long-lived caller signal shared across many calls must not
+ * accumulate one listener per call.
+ */
+const anySignal = (signals: AbortSignal[]): CombinedSignal => {
+  if (typeof AbortSignal.any === "function") {
+    return { signal: AbortSignal.any(signals), dispose: NOOP };
+  }
+  const controller = new AbortController();
+  const listeners: Array<[AbortSignal, () => void]> = [];
+  const dispose = (): void => {
+    for (const [signal, listener] of listeners) signal.removeEventListener("abort", listener);
+    listeners.length = 0;
+  };
+  for (const signal of signals) {
+    if (signal.aborted) {
+      controller.abort(signal.reason);
+      break;
+    }
+    const listener = (): void => {
+      controller.abort(signal.reason);
+      dispose();
+    };
+    signal.addEventListener("abort", listener, { once: true });
+    listeners.push([signal, listener]);
+  }
+  return { signal: controller.signal, dispose };
+};
+
+type Fetched = {
+  response: Response;
+  /** Aborts on the timeout *or* the caller's own signal — governs the body read too. */
+  signal?: AbortSignal | undefined;
+  callerSignal?: AbortSignal | undefined;
+  dispose: () => void;
+};
+
+type FetchPlan = {
+  fetchImpl: typeof fetch;
+  input: ApiRequest;
+  timeoutMs: number | false;
+  redirect: RedirectMode;
+};
+
+/** An aborted or timed-out fetch becomes a `ToolResult`; every other throw still propagates. */
+const fetchWithTimeout = async ({
+  fetchImpl,
+  input,
+  timeoutMs,
+  redirect,
+}: FetchPlan): Promise<Fetched | ToolResult> => {
+  const callerSignal = input instanceof Request ? input.signal : undefined;
+  if (timeoutMs === false) {
+    // Nothing to combine: `fetch` keeps the `Request`'s own signal, and the
+    // same signal is handed to the body read so a later abort stops it too.
+    try {
+      return {
+        response: await fetchImpl(input, { redirect }),
+        signal: callerSignal,
+        callerSignal,
+        dispose: NOOP,
+      };
+    } catch (caught) {
+      const aborted = abortResult(caught, timeoutMs, callerSignal);
+      if (aborted) return aborted;
+      throw caught;
+    }
+  }
+  // `init.signal` replaces a `Request`'s own signal — combine both so a
+  // caller's abort still cancels the call.
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const combined = callerSignal
+    ? anySignal([timeoutSignal, callerSignal])
+    : { signal: timeoutSignal, dispose: NOOP };
   try {
-    return { response: await fetchImpl(input, { signal }), signal };
+    return {
+      response: await fetchImpl(input, { signal: combined.signal, redirect }),
+      signal: combined.signal,
+      callerSignal,
+      dispose: combined.dispose,
+    };
   } catch (caught) {
-    if (isTimeoutError(caught)) return timedOutResult(timeoutMs);
+    combined.dispose();
+    const aborted = abortResult(caught, timeoutMs, callerSignal);
+    if (aborted) return aborted;
     throw caught;
   }
 };
@@ -206,14 +330,14 @@ const fetchWithTimeout = async (
  * raw bytes — not decoded text — so `respond`/`onError` can still call
  * res.arrayBuffer()/res.blob() on binary bodies as well as res.text()/
  * res.json(), exactly as if they'd read the original response themselves.
- * An oversized body, or the timeout signal firing mid-body, becomes a
- * `ToolResult`; every other throw still propagates.
+ * An oversized body, or the timeout or caller signal firing mid-body, becomes
+ * a `ToolResult`; every other throw still propagates.
  */
 const boundResponse = async (
   res: Response,
   maxResponseBytes: number,
   timeoutMs: number | false,
-  signal?: AbortSignal,
+  { signal, callerSignal }: Pick<Fetched, "signal" | "callerSignal">,
 ): Promise<Response | ToolResult> => {
   let bytes: Uint8Array<ArrayBuffer>;
   try {
@@ -225,7 +349,8 @@ const boundResponse = async (
         isError: true,
       };
     }
-    if (isTimeoutError(caught)) return timedOutResult(timeoutMs);
+    const aborted = abortResult(caught, timeoutMs, callerSignal);
+    if (aborted) return aborted;
     throw caught;
   }
   // The buffered body is already decoded and re-framed — the upstream
@@ -245,16 +370,21 @@ const runApi = async <TCtx, Args>(
   const input = await options.request(ctx, args);
   const timeoutMs = options.timeoutMs ?? DEFAULT_API_TOOL_TIMEOUT_MS;
 
-  const fetched = await fetchWithTimeout(fetchImpl, input, timeoutMs);
+  const fetched = await fetchWithTimeout({
+    fetchImpl,
+    input,
+    timeoutMs,
+    redirect: options.redirect ?? "manual",
+  });
   if (!("response" in fetched)) return fetched;
 
   const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MCP_BODY_LIMIT;
-  const bounded = await boundResponse(
-    fetched.response,
-    maxResponseBytes,
-    timeoutMs,
-    fetched.signal,
-  );
+  let bounded: Response | ToolResult;
+  try {
+    bounded = await boundResponse(fetched.response, maxResponseBytes, timeoutMs, fetched);
+  } finally {
+    fetched.dispose();
+  }
   if (!(bounded instanceof Response)) return bounded;
 
   if (!bounded.ok) return options.onError ? options.onError(bounded) : defaultErrorResult(bounded);

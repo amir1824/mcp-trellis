@@ -107,6 +107,7 @@ export const DENIAL_REASONS = {
   originNotAllowed: "origin_not_allowed",
   unknownTool: "unknown_tool",
   missingScope: "missing_scope",
+  invalidParams: "invalid_params",
 } as const;
 
 export const DEFAULT_PUBLIC_METHODS = new Set([

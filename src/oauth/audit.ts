@@ -5,7 +5,18 @@
  */
 
 import { DEFAULT_AUDIT_TIMEOUT_MS, runAuditBounded } from "../http/http.js";
+import { clipText } from "../util/clip.js";
 import type { OAuthAuditEntry, OAuthRouterOptions } from "./types.js";
+
+/**
+ * Longest `clientId` / `reason` an audit sink is handed. Both can carry
+ * caller-chosen text (`client_id` is read straight off an unauthenticated
+ * request, up to the 64 KiB body cap), and a sink writing to a database or log
+ * pipeline should not have to defend itself against that.
+ */
+const MAX_AUDIT_FIELD_LENGTH = 512;
+
+const clip = (value: string): string => clipText(value, MAX_AUDIT_FIELD_LENGTH, "…");
 
 export const safeOAuthAudit = async (
   options: OAuthRouterOptions,
@@ -14,7 +25,12 @@ export const safeOAuthAudit = async (
   const audit = options.ports.audit;
   if (!audit) return;
 
-  await runAuditBounded(() => audit(entry), options.auditTimeoutMs ?? DEFAULT_AUDIT_TIMEOUT_MS);
+  const bounded: OAuthAuditEntry = {
+    ...entry,
+    ...(entry.clientId !== undefined ? { clientId: clip(entry.clientId) } : {}),
+    reason: clip(entry.reason),
+  };
+  await runAuditBounded(() => audit(bounded), options.auditTimeoutMs ?? DEFAULT_AUDIT_TIMEOUT_MS);
 };
 
 /**

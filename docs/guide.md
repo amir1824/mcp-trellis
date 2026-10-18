@@ -248,8 +248,15 @@ createMcpApp({
 
 Failures (MCP denials and tool exceptions) go to `console.error` when using
 `consoleAudit`; MCP successes and OAuth events go to `console.log`. Entries never carry raw
-exceptions or stack traces, so console output is safe. For anything beyond
-stdout, write your own `audit` function — that is the intended production path.
+exceptions or stack traces from your tools, so console output is safe: each
+caller-chosen value (`client_id`, tool name, error text) is cut to 200
+characters, control and invisible characters are escaped, and a value
+containing a space, `=` or a quote is printed as a quoted string, so it cannot
+forge a log line or a `key=value` field (`error="Tool execution failed"`,
+`reason="secretHash mismatch"`). Host-level failures that reach `audit` carry
+the exception's message. For anything beyond stdout, write your own `audit`
+function — that is the intended production path; the entries it receives
+are not escaped, so escape or parameterize them for your sink.
 
 `wwwAuthenticate` can be a static object or `(req) => …` when the PRM URL depends on origin.
 
@@ -323,7 +330,7 @@ authorization code, or vice versa.
 Schema and handler live in one place — no parallel "defs" and "handlers" lists to keep in sync:
 
 ```ts
-createToolRegistry(tools, { validateArgs: false }) // default: off, easy adoption
+createToolRegistry(tools) // validateArgs defaults to true; pass { validateArgs: false } to skip it
 // onToolError?: (exc) => string — default redacts to "Tool execution failed"
 ```
 
@@ -389,7 +396,11 @@ const getWeather = apiTool({
   — **status only by default, the upstream body is never forwarded** (it
   could contain internal detail, tokens, or SQL an upstream error page
   echoes back). Pass `onError(res)` to shape it yourself, e.g. include a
-  redacted version of the body. `fetch` is overridable — testing, request
+  redacted version of the body. Redirects are **not followed** by default
+  (`redirect: "manual"`; `"error"` and `"follow"` are available): `fetch`
+  forwards custom headers such as `X-Api-Key`, and a POST body on a 307/308,
+  to whatever `Location` the upstream names, and would let an open redirect
+  reach internal addresses. `fetch` is overridable — testing, request
   signing, a custom agent.
 - **`timeoutMs`** (default `30000`) aborts the upstream call past that many
   ms — an upstream that never responds otherwise hangs the tool call (and

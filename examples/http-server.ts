@@ -68,7 +68,16 @@ const server = http.createServer();
 server.listen(Number(process.env.PORT ?? 0), host, () => {
   const { port } = server.address() as AddressInfo;
   const origin = `http://${host === "0.0.0.0" ? "127.0.0.1" : host}:${port}`;
-  const handler = asNodeHandler(app, { origin });
+  // Loopback origins only answer to 127.0.0.1 / localhost / [::1] on this port
+  // (DNS-rebinding guard). Reaching the container by another name or a remapped
+  // port: ALLOWED_HOSTS="localhost:9000,192.168.1.9:9000".
+  const allowedHosts = process.env.ALLOWED_HOSTS?.split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const handler = asNodeHandler(app, {
+    origin,
+    ...(allowedHosts?.length ? { allowedHosts } : {}),
+  });
   server.on("request", (req, res) => {
     void handler(req, res);
   });

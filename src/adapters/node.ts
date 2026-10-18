@@ -50,6 +50,21 @@ export type AsNodeHandlerOptions = OriginAllowlistOptions & {
    */
   origin?: string;
   trustProxy?: boolean;
+  /**
+   * Exact `Host` header values (`host[:port]`, case-insensitive) this handler
+   * answers to. A request whose `Host` is anything else gets a 400 before any
+   * route runs.
+   *
+   * A fixed `origin` otherwise ignores `Host` entirely, so a DNS-rebinding
+   * page (`attacker.test` re-pointed at your server) can drive the whole
+   * OAuth flow — including reading the consent ticket and approving it —
+   * from a victim's browser. When `origin` is a loopback address the check
+   * is on by default (`127.0.0.1`, `localhost` and `[::1]` on the origin's
+   * port); set `allowedHosts` for anything else, or to widen the loopback
+   * default (a LAN IP, a container hostname). `:authority` (HTTP/2) counts as
+   * `Host`; a request with neither header is not affected.
+   */
+  allowedHosts?: string[];
 };
 
 /**
@@ -88,6 +103,47 @@ const sendJsonError = (
 };
 
 const ORIGIN_NOT_ALLOWED = { status: 400, body: JSON.stringify({ error: "origin not allowed" }) };
+const HOST_NOT_ALLOWED = { status: 400, body: JSON.stringify({ error: "host not allowed" }) };
+
+const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "localhost", "[::1]"]);
+
+const loopbackOriginOf = (value: string): URL | null => {
+  try {
+    const url = new URL(value);
+    return LOOPBACK_HOSTNAMES.has(url.hostname) ? url : null;
+  } catch {
+    return null;
+  }
+};
+
+/** Every `Host` value a client of the loopback `origin` can legitimately send. */
+const loopbackHosts = (origin: URL): Set<string> => {
+  const defaultPort = origin.protocol === "https:" ? "443" : "80";
+  const ports = origin.port ? [origin.port] : ["", defaultPort];
+  return new Set(
+    [...LOOPBACK_HOSTNAMES].flatMap((name) =>
+      ports.map((port) => (port ? `${name}:${port}` : name)),
+    ),
+  );
+};
+
+/**
+ * True when the request's `Host` header is not one this handler answers to —
+ * see `AsNodeHandlerOptions.allowedHosts`. An absent `Host` is never denied:
+ * a browser (and so a rebinding page) always sends one.
+ */
+const hostDenied = (req: NodeRequestLike, options: AsNodeHandlerOptions | undefined): boolean => {
+  // HTTP/2 carries the authority as `:authority`; `host` is then usually absent.
+  const header = req.headers.host ?? req.headers[":authority"];
+  const host = (Array.isArray(header) ? header[0] : header)?.toLowerCase();
+  if (host === undefined || host === "") return false;
+
+  if (options?.allowedHosts?.length) {
+    return !options.allowedHosts.some((entry) => entry.toLowerCase() === host);
+  }
+  const origin = options?.origin ? loopbackOriginOf(options.origin) : null;
+  return origin !== null && !loopbackHosts(origin).has(host);
+};
 
 const payloadTooLargeBody = (path: string): string =>
   isOAuthPath(path)
@@ -130,6 +186,10 @@ export const asNodeHandler = (
   return async (req: NodeRequestLike, res: NodeResponseLike): Promise<void> => {
     const path = requestPath(req);
     try {
+      if (hostDenied(req, options)) {
+        sendJsonError(res, HOST_NOT_ALLOWED);
+        return;
+      }
       const origin = options?.origin ?? resolveOrigin(req, { trustProxy: true });
       if (!isAllowedOrigin(origin, options)) {
         sendJsonError(res, ORIGIN_NOT_ALLOWED);

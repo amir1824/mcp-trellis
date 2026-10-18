@@ -143,6 +143,9 @@ export const toWebRequest = (req: NodeRequestLike, options: ToWebRequestOptions)
   const url = `${options.origin}${target.pathname}${target.search}`;
   const headers = new Headers(
     Object.entries(req.headers)
+      // HTTP/2 pseudo-headers (`:authority`, `:path`, …) are not valid Fetch
+      // header names — `new Headers` throws on them.
+      .filter(([key]) => !key.startsWith(":"))
       .map(([key, value]): [string, string] | null => {
         const resolved = headerValue(value);
         return resolved === undefined ? null : [key, resolved];
@@ -177,7 +180,19 @@ const isAsyncIterable = (value: unknown): value is AsyncIterable<unknown> =>
   typeof (value as { [Symbol.asyncIterator]?: unknown } | null)?.[Symbol.asyncIterator] ===
   "function";
 
-export const requestPath = (req: NodeRequestLike): string => (req.url ?? "/").split("?")[0] ?? "/";
+/**
+ * The pathname the router will see: `toWebRequest` parses `req.url` the same
+ * way, so a form the URL parser normalizes (`\` as `/`, an absolute-form
+ * target) cannot pick a different body cap than the route it reaches.
+ */
+export const requestPath = (req: NodeRequestLike): string => {
+  const raw = req.url ?? "/";
+  try {
+    return new URL(raw, "http://localhost").pathname;
+  } catch {
+    return raw.split("?")[0] ?? "/";
+  }
+};
 
 /** True for a path under an `…/oauth` segment — the default OAuth mount. */
 export const isOAuthPath = (path: string): boolean => /\/oauth(?:\/|$)/.test(path);

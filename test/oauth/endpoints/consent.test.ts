@@ -98,6 +98,59 @@ describe("consent interstitial hardening", () => {
     },
   );
 
+  it("form-action allows the scheme of a custom-scheme redirect_uri, whose origin is opaque", async () => {
+    const router = createOAuthRouter({
+      allowUnregisteredClients: true,
+      redirect: { extra: ["myapp://callback"] },
+      ports: stubPorts(),
+    });
+    const res = await router.tryHandle(
+      new Request(authorizeUrl({ redirect_uri: "myapp://callback" }), { method: "GET" }),
+    );
+    assert.ok(res);
+    const csp = res.headers.get("Content-Security-Policy") ?? "";
+    assert.match(csp, /form-action 'self' myapp:(?:\s|;|$)/);
+    assert.doesNotMatch(csp, /\bnull\b/);
+  });
+
+  it("allows a redirect host containing an underscore (it cannot end a directive)", async () => {
+    const router = createOAuthRouter({
+      allowUnregisteredClients: true,
+      redirect: { extra: ["https://my_app.example.com/cb"] },
+      ports: stubPorts(),
+    });
+    const res = await router.tryHandle(
+      new Request(authorizeUrl({ redirect_uri: "https://my_app.example.com/cb" })),
+    );
+    assert.match(
+      res?.headers.get("Content-Security-Policy") ?? "",
+      /form-action 'self' https:\/\/my_app\.example\.com;/,
+    );
+  });
+
+  for (const [label, redirect] of [
+    ["a host carrying a CSP directive separator", "https://a.example;sandbox/cb"],
+    ["a host carrying a comma", "https://a.example,b.example/cb"],
+    ["a javascript: URI", "javascript:alert(1)"],
+    ["a data: URI", "data:text/html,x"],
+    ["a file: URI", "file:///etc/passwd"],
+  ] as const) {
+    it(`never turns ${label} into a form-action source (falls back to 'self' alone)`, async () => {
+      const router = createOAuthRouter({
+        allowUnregisteredClients: true,
+        redirect: { extra: [redirect] },
+        ports: stubPorts(),
+      });
+      const res = await router.tryHandle(
+        new Request(authorizeUrl({ redirect_uri: redirect }), { method: "GET" }),
+      );
+      assert.ok(res);
+      assert.equal(res.status, 200);
+      const csp = res.headers.get("Content-Security-Policy") ?? "";
+      assert.match(csp, /; form-action 'self'; frame-ancestors 'none'$/);
+    });
+  }
+
   it("HTML-escapes an attacker-controlled client_id — no raw markup reflected", async () => {
     const router = makeRouter();
     const res = await router.tryHandle(

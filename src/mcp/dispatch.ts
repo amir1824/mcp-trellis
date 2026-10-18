@@ -9,6 +9,7 @@ import {
   optionsResponse,
 } from "../http/http.js";
 import { reflectCorsIfNeeded, requestOriginDenied } from "../http/origins.js";
+import { ownValue } from "../util/own.js";
 import {
   JSONRPC_INTERNAL_ERROR,
   JSONRPC_PARSE_ERROR,
@@ -142,7 +143,7 @@ export const createMcpHandler = <TCtx>(handlerOptions: McpHandlerOptions<TCtx>):
         );
         if (originDenied) return originDenied;
 
-        const handler = HTTP_METHODS[request.method];
+        const handler = ownValue(HTTP_METHODS, request.method);
         const response = await (handler ? handler(request, startedAt) : methodNotAllowed());
         return reflectCorsIfNeeded(response, request, options.allowedRequestOrigins);
       } catch (caught) {

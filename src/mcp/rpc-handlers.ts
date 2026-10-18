@@ -1,7 +1,9 @@
 /** JSON-RPC method handlers and authenticated dispatch. */
 
 import { jsonResponse } from "../http/http.js";
+import { clipText } from "../util/clip.js";
 import { isJsonObject } from "../util/json.js";
+import { ownValue } from "../util/own.js";
 import {
   JSONRPC_INVALID_PARAMS,
   JSONRPC_METHOD_NOT_FOUND,
@@ -41,20 +43,35 @@ const auditToolCall = <TCtx>(
     durationMs: Date.now() - input.startedAt,
   });
 
-type ParsedToolCall = { name: string; args: Record<string, unknown> } | { error: string };
+/** Longest tool-failure text copied into an audit entry — it is tool- or caller-supplied. */
+const MAX_AUDIT_ERROR_LENGTH = 1000;
 
+const auditText = (text: string | undefined): string | undefined =>
+  text === undefined ? undefined : clipText(text, MAX_AUDIT_ERROR_LENGTH, "…");
+
+/** A tool name as echoed back or audited — the name is whatever the caller sent. */
+const MAX_TOOL_NAME_LENGTH = 200;
+const shownToolName = (name: string): string => clipText(name, MAX_TOOL_NAME_LENGTH, "…");
+
+/** `args` is `null` when `arguments` is present but not an object. */
+type ParsedToolCall = { name: string; args: Record<string, unknown> | null } | { error: string };
+
+const INVALID_ARGUMENTS_MESSAGE = "tools/call params.arguments must be an object";
+
+/**
+ * Omitted params default to `{}`; null, an array or a primitive fail rather
+ * than being coerced. `name` is only ever a string: `String(params.name)`
+ * would throw on an object with a hostile `toString`, and coerce `["a"]` or
+ * `1` into a real-looking tool name. An absent `arguments` is `{}` (it is
+ * optional); a malformed one must not silently become `{}` and run the tool
+ * with every optional argument unset.
+ */
 const parseToolCallArgs = (body: JsonRpcRequest): ParsedToolCall => {
-  // Omitted params default to {}; null/array/primitive must fail — do not coerce.
   const params = body.params === undefined ? {} : body.params;
   if (!isJsonObject(params)) return { error: "tools/call params must be an object" };
-  const name = String(params.name ?? "");
-  // `arguments` may be absent, but once supplied it must be an object. Coercing
-  // a malformed value to `{}` can invoke an otherwise valid no-argument tool.
+  const name = typeof params.name === "string" ? params.name : "";
   if (params.arguments === undefined) return { name, args: {} };
-  if (!isJsonObject(params.arguments)) {
-    return { error: "tools/call params.arguments must be an object" };
-  }
-  return { name, args: params.arguments };
+  return { name, args: isJsonObject(params.arguments) ? params.arguments : null };
 };
 
 type ToolCallDenialInput = {
@@ -62,6 +79,21 @@ type ToolCallDenialInput = {
   principal: Principal | null;
   id: JsonRpcId;
   startedAt: number;
+};
+
+const invalidArgumentsResponse = async <TCtx>(
+  options: McpHandlerOptions<TCtx>,
+  input: ToolCallDenialInput,
+): Promise<Response> => {
+  await auditToolCall(options, {
+    ...input,
+    tool: shownToolName(input.name),
+    ok: false,
+    error: DENIAL_REASONS.invalidParams,
+  });
+  return jsonResponse({
+    data: rpcError(input.id, JSONRPC_INVALID_PARAMS, INVALID_ARGUMENTS_MESSAGE),
+  });
 };
 
 /**
@@ -78,12 +110,12 @@ const unknownToolResponse = async <TCtx>(
 ): Promise<Response> => {
   await auditToolCall(options, {
     ...input,
-    tool: input.name,
+    tool: shownToolName(input.name),
     ok: false,
     error: DENIAL_REASONS.unknownTool,
   });
   return jsonResponse({
-    data: rpcError(input.id, JSONRPC_INVALID_PARAMS, `Unknown tool: ${input.name}`),
+    data: rpcError(input.id, JSONRPC_INVALID_PARAMS, `Unknown tool: ${shownToolName(input.name)}`),
   });
 };
 
@@ -160,6 +192,10 @@ const METHODS = {
       });
     }
 
+    // After the scope check, so a caller without the scope is told so (403 +
+    // step-up challenge), not that its arguments are malformed.
+    if (args === null) return invalidArgumentsResponse(options, { name, principal, id, startedAt });
+
     // Built only for a call that will actually run: `initialize`, `ping`,
     // `tools/list` and denied calls never reach the host's `context` port.
     const ctx = await options.ports.context(req, principal);
@@ -169,7 +205,7 @@ const METHODS = {
       tool: name,
       principal,
       ok: !result.isError,
-      error: result.isError ? result.content[0]?.text : undefined,
+      error: result.isError ? auditText(result.content[0]?.text) : undefined,
       startedAt: toolStartedAt,
     });
     return jsonResponse({ data: rpcResult(id, result) });
@@ -188,7 +224,12 @@ export const dispatchRpc = async <TCtx>(input: {
   const method = typeof body.method === "string" ? body.method : "";
   // Notifications omit `id`; explicit null is a valid request id (JSON-RPC).
   const id = body.id === undefined ? null : body.id;
-  const toolName = method === "tools/call" ? String(body.params?.name ?? "") : undefined;
+  const toolName =
+    method === "tools/call"
+      ? typeof body.params?.name === "string"
+        ? body.params.name
+        : ""
+      : undefined;
 
   // Notifications (including every `notifications/*`) already got 202 in `handlePost`.
   const isPublic = options.publicMethods.has(method);
@@ -199,7 +240,7 @@ export const dispatchRpc = async <TCtx>(input: {
     if (!principal) {
       await safeAudit(options, {
         method,
-        tool: toolName,
+        tool: toolName === undefined ? undefined : shownToolName(toolName),
         ok: false,
         error: DENIAL_REASONS.unauthorized,
         durationMs: Date.now() - startedAt,
@@ -208,11 +249,9 @@ export const dispatchRpc = async <TCtx>(input: {
     }
   }
 
-  // Do not let a client-selected method name reach Object.prototype (e.g.
+  // A client-selected method name must not reach Object.prototype (e.g.
   // `toString` or `__proto__`): only own entries in METHODS are RPC methods.
-  const handler = Object.hasOwn(METHODS, method)
-    ? (METHODS as Record<string, RpcMethodHandler<TCtx>>)[method]
-    : undefined;
+  const handler = ownValue(METHODS as Record<string, RpcMethodHandler<TCtx>>, method);
   if (!handler) {
     return jsonResponse({
       data: rpcError(id, JSONRPC_METHOD_NOT_FOUND, `Method not found: ${method}`),
