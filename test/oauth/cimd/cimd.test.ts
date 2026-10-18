@@ -305,6 +305,13 @@ describe("resolveCimdClient", () => {
       "255.255.255.255",
       "ff02::1",
       "2002:7f00:1::",
+      // Link-local is fe80::/10 (fe80–febf), not only the `fe80:` prefix
+      "fe80::1",
+      "fe90::1",
+      "febf::1",
+      // Deprecated site-local fec0::/10, and Teredo 2001::/32
+      "fec0::1",
+      "2001::1",
       "::7f00:1",
       "::127.0.0.1",
       // Full-form IPv4-mapped — DNS/`cimdLookup` may not compress to `::ffff:…`

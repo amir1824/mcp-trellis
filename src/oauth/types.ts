@@ -35,7 +35,9 @@ export type ConsentOptions = {
    * redirect to your own route. Omit for the built-in hardened interstitial.
    *
    * If your page sets its own `Content-Security-Policy` with `form-action`,
-   * include `new URL(input.redirectUri).origin` in it — Chromium enforces
+   * include the redirect target's origin in it (`new URL(input.redirectUri).origin`;
+   * for a custom-scheme URI such as `myapp://cb` that origin is the opaque
+   * `"null"`, so use the scheme `myapp:` instead) — Chromium enforces
    * `form-action` across the redirect your approval POST triggers, not just
    * the immediate submission target, so `'self'` alone blocks the eventual
    * redirect back to the client's own callback.

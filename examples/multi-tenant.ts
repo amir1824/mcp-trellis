@@ -35,7 +35,9 @@ const listRows: ToolDef<Ctx> = {
   description: "List this tenant's rows only",
   inputSchema: { type: "object", properties: {} },
   scope: "mcp",
-  handler: (ctx) => JSON.stringify(ROWS[ctx.tenantId] ?? []),
+  // `tenantId` comes from the Host header: `Object.hasOwn`, so a tenant named
+  // `constructor` or `toString` is "no rows", not an Object.prototype member.
+  handler: (ctx) => JSON.stringify(Object.hasOwn(ROWS, ctx.tenantId) ? ROWS[ctx.tenantId] : []),
 };
 
 const tenantOf = (origin: string): string | null => {

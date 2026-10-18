@@ -154,7 +154,7 @@ A single-scope server has no such ambiguity and is unaffected.
 - `createMcpApp`, `createMcpHandler`, `createToolRegistry`
 - `consoleAudit` — convenience unified `audit` sink that logs to the console (pass any function for metrics / DB / APM)
 - `UnifiedAuditEntry` — `{ source: "mcp" } & AuditEntry` \| `{ source: "oauth" } & OAuthAuditEntry`
-- `defineTool`, `apiTool` — typed, validated tool authoring on top of `ToolDef`. `apiTool`'s `timeoutMs` (default 30000, or `false` to disable) and `maxResponseBytes` (default 1 MiB) bound the upstream call; either surfaces as `isError: true`, not a thrown exception
+- `defineTool`, `apiTool` — typed, validated tool authoring on top of `ToolDef`. `apiTool`'s `timeoutMs` (default 30000, or `false` to disable) and `maxResponseBytes` (default 1 MiB) bound the upstream call; either surfaces as `isError: true`, not a thrown exception. `redirect` (`"manual"` by default, `"error"`, or `"follow"`) controls upstream redirects — see the guide before enabling `"follow"`. An abort on the `Request` your `request` callback returns surfaces as `Request was cancelled`
 - `CLIENT_PROFILES`, `DEFAULT_CLIENTS`, `authMethodsFor`, `redirectUrisFor`, `preRegisteredClients`, `hasDynamicClient`
 - `parseBearer`, `wwwAuthenticateHeader`, `rejectQueryToken`
 - `signedTokenAuth` — one-secret convenience `McpAppAuth` (HMAC access tokens via HKDF; no refresh/revoke). Type `SignedTokenAuthOptions`
@@ -205,6 +205,7 @@ Building blocks for hosts assembling their own transport or OAuth flow. Less sta
 <summary><code>mcp-trellis/node</code></summary>
 
 - `asNodeHandler`, `resolveOrigin`, `isAllowedOrigin`, `toWebRequest`, `sendWebResponse`, `readNodeBody`
+- `asNodeHandler` options: `origin`, `trustProxy`, `allowedOrigins`, and `allowedHosts` — the exact `Host` values to answer to (**400** otherwise). On by default for a loopback `origin` (`127.0.0.1` / `localhost` / `[::1]` on its port), to stop DNS rebinding; set it yourself for any other fixed origin or to add a LAN address
 - Types: `NodeRequestLike`, `NodeResponseLike`, `ToWebRequestOptions`, `ResolveOriginOptions`, `AsNodeHandlerOptions`, `OriginAllowlistOptions`
 - `InvalidOriginError` — thrown by `resolveOrigin` for a Host/`X-Forwarded-*` header that can't safely become an origin (missing, carrying a path/query/fragment/credentials, malformed, or a non-`http(s)` scheme). `asNodeHandler` answers it with **400**, not the generic 500 it gives an actual unexpected failure
 

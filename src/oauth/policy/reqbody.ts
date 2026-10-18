@@ -44,10 +44,15 @@ const readFormBody = async (request: Request): Promise<Record<string, string>> =
   return body;
 };
 
-/** JSON when `Content-Type` says so; form-encoded otherwise (the RFC 6749 default). */
+/**
+ * JSON when the *media type* is `application/json` (parameters such as
+ * `charset` are ignored); form-encoded otherwise (the RFC 6749 default). A
+ * substring match would also take `text/plain; x=application/json`, a
+ * "simple" content type a cross-site page can send without a preflight.
+ */
 export const readOAuthBody = async (request: Request): Promise<Record<string, string>> => {
-  const ctype = request.headers.get("Content-Type") ?? "";
-  return ctype.includes("application/json") ? readJsonBody(request) : readFormBody(request);
+  const mediaType = (request.headers.get("Content-Type") ?? "").split(";")[0]?.trim().toLowerCase();
+  return mediaType === "application/json" ? readJsonBody(request) : readFormBody(request);
 };
 
 /**

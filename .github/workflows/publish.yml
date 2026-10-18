@@ -4,14 +4,77 @@ on:
   # Manual only — Actions → Release → Run workflow
   workflow_dispatch:
 
-# Top-level + job-level: npm OIDC needs id-token on the job that publishes.
+# Read-only by default; the publish job below opts into what it needs.
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 jobs:
-  publish:
+  # Everything that executes repo code or dev-dependency code (linter, test
+  # runner, bundler) runs here, in a job that has no OIDC token and cannot
+  # publish. A compromised dev dependency can fail this job; it cannot mint
+  # the token npm trusted publishing accepts.
+  verify:
+    # Guards against publishing from the wrong ref by accident only: a run
+    # uses the copy of this file on the ref it was started from, so anyone who
+    # can push a branch or a `v*` tag can edit this line away. The enforced
+    # control is the `release` Environment on the publish job (see there).
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.ver.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+
+      - name: Resolve version
+        id: ver
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "tag=${REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "version=${REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            version="$(node -p "require('./package.json').version")"
+            echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+            echo "version=${version}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check version matches tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          TAG_VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          pkg="$(node -p "require('./package.json').version")"
+          test "$TAG_VERSION" = "$pkg"
+
+      # No lifecycle scripts: nothing in the build needs a dependency's
+      # install script.
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:e2e
+      - run: npm run build
+      - run: npm run smoke:pack
+
+  publish:
+    needs: verify
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    # The enforced control. Create it once under Settings → Environments →
+    # New environment "release": deployment branches and tags = `main` and
+    # `v*`, required reviewers = you. A run from any other ref, or without
+    # approval, never starts this job — whatever its copy of this file says.
+    # Then set "Environment name" to `release` on the npm trusted publisher
+    # (below) so npm refuses a token minted outside it.
+    environment: release
+    # npm OIDC needs id-token on the job that publishes.
     permissions:
       contents: write
       id-token: write
@@ -19,11 +82,13 @@ jobs:
     #   Organization or user: amir1824   ← GitHub login, NOT npm "amir-b"
     #   Repository:          mcp-trellis
     #   Workflow filename:   publish.yml   ← filename only, not "Release"
-    #   Environment name:    (leave blank)
+    #   Environment name:    release   ← leave blank until the Environment exists
     #   Allowed actions:     npm publish
     # npm does NOT validate that form on save — mismatches only show at publish.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # Do NOT set registry-url: setup-node then writes
       # //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN} into NPM_CONFIG_USERCONFIG.
@@ -35,31 +100,10 @@ jobs:
       # Trusted publishing needs npm >= 11.5.1 (Node 24 may still ship older).
       - run: npm install -g npm@11.6.2
 
-      - name: Resolve version
-        id: ver
-        run: |
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-          else
-            version="$(node -p "require('./package.json').version")"
-            echo "tag=v${version}" >> "$GITHUB_OUTPUT"
-            echo "version=${version}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Check version matches tag
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          pkg="$(node -p "require('./package.json').version")"
-          test "${{ steps.ver.outputs.version }}" = "$pkg"
-
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run test:e2e
+      # Only what building needs: no linter, no test runner executes in this
+      # job. (`tsc` is still a dev dependency — the residual surface here.)
+      - run: npm ci --ignore-scripts
       - run: npm run build
-      - run: npm run smoke:pack
 
       - name: Prove OIDC is available to this job
         run: |
@@ -80,18 +124,23 @@ jobs:
           done
           unset NODE_AUTH_TOKEN NPM_TOKEN
           npm config delete "//registry.npmjs.org/:_authToken" || true
-          npm publish --access public --provenance
+          # --ignore-scripts: package.json's `prepublishOnly` runs the build and the
+          # whole test suite, which must not execute in the job holding the OIDC
+          # token. The `verify` job already ran them.
+          npm publish --access public --provenance --ignore-scripts
 
       - name: GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.verify.outputs.tag }}
+          REF_TYPE: ${{ github.ref_type }}
         run: |
-          tag="${{ steps.ver.outputs.tag }}"
+          tag="$TAG"
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "Release $tag already exists"
             exit 0
           fi
-          if [ "${{ github.ref_type }}" = "tag" ]; then
+          if [ "$REF_TYPE" = "tag" ]; then
             gh release create "$tag" --generate-notes --verify-tag
           else
             gh release create "$tag" --generate-notes --target "$GITHUB_SHA"

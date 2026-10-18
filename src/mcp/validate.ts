@@ -114,7 +114,24 @@ export const missingObjectType = (schema: JsonSchema, path = "args"): string[] =
   ];
 };
 
-type TypeChecker = (value: unknown, schema: JsonSchema, path: string) => string[];
+/** Errors reported for one value before validation stops looking for more. */
+export const MAX_VALIDATION_ERRORS = 20;
+
+/**
+ * Counts down as errors are collected. A walk stops as soon as it is spent:
+ * collecting every violation of a 500k-element array against `items: {type:
+ * "string"}` would answer a 1 MB request with a ~24 MB error message, after
+ * seconds of CPU.
+ */
+type Budget = { remaining: number };
+
+const spend = (budget: Budget, errors: string[]): string[] => {
+  const kept = errors.slice(0, Math.max(0, budget.remaining));
+  budget.remaining -= kept.length;
+  return kept;
+};
+
+type TypeChecker = (value: unknown, schema: JsonSchema, path: string, budget: Budget) => string[];
 
 const runtimeTypeOf = (value: unknown): string => {
   if (value === null) return JSON_SCHEMA_TYPES.null;
@@ -160,16 +177,19 @@ const RANGE_BOUNDS: Array<{
   },
 ];
 
-const rangeErrors: TypeChecker = (value, schema, path) => {
+const rangeErrors: TypeChecker = (value, schema, path, budget) => {
   if (typeof value !== "number") return [];
-  return RANGE_BOUNDS.flatMap(({ key, fails, message }) => {
-    const bound = schema[key];
-    if (bound === undefined || !fails(value, bound)) return [];
-    return [message(path, bound)];
-  });
+  return spend(
+    budget,
+    RANGE_BOUNDS.flatMap(({ key, fails, message }) => {
+      const bound = schema[key];
+      if (bound === undefined || !fails(value, bound)) return [];
+      return [message(path, bound)];
+    }),
+  );
 };
 
-const objectErrors: TypeChecker = (value, schema, path) => {
+const objectErrors: TypeChecker = (value, schema, path, budget) => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return [];
   const record = value as Record<string, unknown>;
   // `Object.hasOwn`, not `key in record` — `in` also matches inherited
@@ -178,25 +198,38 @@ const objectErrors: TypeChecker = (value, schema, path) => {
   // `properties: { constructor: {...} }` entry would validate against the
   // prototype's own `constructor`, neither of which is an actual argument
   // the caller supplied.
-  const requiredErrors = (schema.required ?? [])
-    .filter((key) => !Object.hasOwn(record, key))
-    .map((key) => `${path}.${key}: required`);
-  const propertyErrors = Object.entries(schema.properties ?? {})
-    .filter(([key]) => Object.hasOwn(record, key))
-    .flatMap(([key, propSchema]) => validateNode(record[key], propSchema, `${path}.${key}`));
-  const extraErrors =
-    schema.additionalProperties === false
-      ? Object.keys(record)
-          .filter((key) => !Object.hasOwn(schema.properties ?? {}, key))
-          .map((key) => `${path}.${key}: not allowed`)
-      : [];
-  return [...requiredErrors, ...propertyErrors, ...extraErrors];
+  const errors = spend(
+    budget,
+    (schema.required ?? [])
+      .filter((key) => !Object.hasOwn(record, key))
+      .map((key) => `${path}.${key}: required`),
+  );
+  for (const [key, propSchema] of Object.entries(schema.properties ?? {})) {
+    if (budget.remaining <= 0) return errors;
+    if (Object.hasOwn(record, key)) {
+      errors.push(...validateNode(record[key], propSchema, `${path}.${key}`, budget));
+    }
+  }
+  if (schema.additionalProperties === false) {
+    for (const key of Object.keys(record)) {
+      if (budget.remaining <= 0) return errors;
+      if (!Object.hasOwn(schema.properties ?? {}, key)) {
+        errors.push(...spend(budget, [`${path}.${key}: not allowed`]));
+      }
+    }
+  }
+  return errors;
 };
 
-const arrayErrors: TypeChecker = (value, schema, path) => {
+const arrayErrors: TypeChecker = (value, schema, path, budget) => {
   const items = schema.items;
   if (!Array.isArray(value) || !items) return [];
-  return value.flatMap((entry, index) => validateNode(entry, items, `${path}[${index}]`));
+  const errors: string[] = [];
+  for (const [index, entry] of value.entries()) {
+    if (budget.remaining <= 0) break;
+    errors.push(...validateNode(entry, items, `${path}[${index}]`, budget));
+  }
+  return errors;
 };
 
 const TYPE_CHECKERS: Record<string, TypeChecker> = {
@@ -206,9 +239,14 @@ const TYPE_CHECKERS: Record<string, TypeChecker> = {
   [JSON_SCHEMA_TYPES.integer]: rangeErrors,
 };
 
-const validateNode = (value: unknown, schema: JsonSchema, path: string): string[] => {
+const validateNode = (
+  value: unknown,
+  schema: JsonSchema,
+  path: string,
+  budget: Budget,
+): string[] => {
   const typeErrors = typeMismatch(value, schema, path);
-  if (typeErrors.length > 0) return typeErrors;
+  if (typeErrors.length > 0) return spend(budget, typeErrors);
   // Dispatch on the value's own runtime shape, not the declared type
   // string(s). By this point `typeMismatch` has already confirmed `value`
   // is consistent with whatever was declared (or nothing was declared at
@@ -220,11 +258,22 @@ const validateNode = (value: unknown, schema: JsonSchema, path: string): string[
   // backstop for a schema that reaches validation unchecked).
   const actual = runtimeTypeOf(value);
   return [
-    ...enumErrors(value, schema, path),
-    ...(TYPE_CHECKERS[actual]?.(value, schema, path) ?? []),
+    ...spend(budget, enumErrors(value, schema, path)),
+    ...(TYPE_CHECKERS[actual]?.(value, schema, path, budget) ?? []),
   ];
 };
 
-/** Minimal JSON Schema subset used by MCP tool inputSchema. Empty = valid. */
-export const validateAgainstSchema = (value: unknown, schema: JsonSchema): string[] =>
-  validateNode(value, schema, "args");
+/**
+ * Minimal JSON Schema subset used by MCP tool inputSchema. Empty = valid.
+ * Reports at most `MAX_VALIDATION_ERRORS` violations — enough to fix a call,
+ * bounded however large or hostile the arguments are.
+ */
+export const validateAgainstSchema = (value: unknown, schema: JsonSchema): string[] => {
+  const budget: Budget = { remaining: MAX_VALIDATION_ERRORS };
+  const errors = validateNode(value, schema, "args", budget);
+  // A spent budget means the walk stopped early: say so, so a caller does not
+  // read the list as complete and loop on "fix these, find more".
+  return budget.remaining <= 0
+    ? [...errors, `(stopped after ${MAX_VALIDATION_ERRORS} errors; more may follow)`]
+    : errors;
+};

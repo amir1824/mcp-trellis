@@ -68,3 +68,30 @@ describe("isAllowedRequestOrigin", () => {
     assert.equal(isAllowedRequestOrigin("https://evil.example", ["https://app.example"]), false);
   });
 });
+
+describe("custom-scheme origins", () => {
+  const allow = (origin: string, allowedOrigins: string[]) =>
+    isAllowedRequestOrigin(origin, allowedOrigins);
+
+  it('distinguishes custom-scheme origins instead of collapsing them all to "null"', () => {
+    assert.equal(allow("tauri://localhost", ["tauri://localhost"]), true);
+    assert.equal(allow("chrome-extension://evil", ["tauri://localhost"]), false);
+    assert.equal(allow("vscode-webview://attacker", ["capacitor://localhost"]), false);
+    assert.equal(allow("capacitor://localhost", ["capacitor://localhost"]), true);
+  });
+
+  it("does not let a scheme-less allowlist entry admit custom-scheme origins", () => {
+    assert.equal(allow("chrome-extension://x", ["localhost:3000"]), false);
+  });
+
+  it("rejects opaque origins and hostless schemes", () => {
+    assert.equal(allow("null", ["https://app.example"]), false);
+    assert.equal(allow("data:text/html,x", ["https://app.example"]), false);
+    assert.equal(allow("javascript:alert(1)", ["https://app.example"]), false);
+  });
+
+  it("compares the host of a custom scheme exactly", () => {
+    assert.equal(allow("tauri://localhost.evil", ["tauri://localhost"]), false);
+    assert.equal(allow("tauri://LOCALHOST", ["tauri://localhost"]), true);
+  });
+});

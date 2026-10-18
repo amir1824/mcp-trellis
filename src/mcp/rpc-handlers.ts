@@ -1,7 +1,9 @@
 /** JSON-RPC method handlers and authenticated dispatch. */
 
 import { jsonResponse } from "../http/http.js";
+import { clipText } from "../util/clip.js";
 import { isJsonObject } from "../util/json.js";
+import { ownValue } from "../util/own.js";
 import {
   JSONRPC_INVALID_PARAMS,
   JSONRPC_METHOD_NOT_FOUND,
@@ -41,13 +43,45 @@ const auditToolCall = <TCtx>(
     durationMs: Date.now() - input.startedAt,
   });
 
+/** Longest tool-failure text copied into an audit entry — it is tool- or caller-supplied. */
+const MAX_AUDIT_ERROR_LENGTH = 1000;
+
+const auditText = (text: string | undefined): string | undefined =>
+  text === undefined ? undefined : clipText(text, MAX_AUDIT_ERROR_LENGTH, "…");
+
+/** A tool name as echoed back or audited — the name is whatever the caller sent. */
+const MAX_TOOL_NAME_LENGTH = 200;
+const shownToolName = (name: string): string => clipText(name, MAX_TOOL_NAME_LENGTH, "…");
+
+/**
+ * `name` is only ever a string: `String(params.name)` would throw on an object
+ * with a hostile `toString`, and coerce `["a"]` or `1` into a real-looking
+ * tool name. `arguments` is `null` when it is present but not an object — an
+ * absent one is `{}` (it is optional), a malformed one must not silently
+ * become `{}` and run the tool with every optional argument unset.
+ */
 const parseToolCallArgs = (
   body: JsonRpcRequest,
-): { name: string; args: Record<string, unknown> } => {
-  const params = body.params ?? {};
-  const name = String(params.name ?? "");
-  const args = isJsonObject(params.arguments) ? params.arguments : {};
-  return { name, args };
+): { name: string; args: Record<string, unknown> | null } => {
+  const params = isJsonObject(body.params) ? body.params : {};
+  const name = typeof params.name === "string" ? params.name : "";
+  if (params.arguments === undefined) return { name, args: {} };
+  return { name, args: isJsonObject(params.arguments) ? params.arguments : null };
+};
+
+const invalidArgumentsResponse = async <TCtx>(
+  options: McpHandlerOptions<TCtx>,
+  input: ToolCallDenialInput,
+): Promise<Response> => {
+  await auditToolCall(options, {
+    ...input,
+    tool: input.name,
+    ok: false,
+    error: DENIAL_REASONS.invalidParams,
+  });
+  return jsonResponse({
+    data: rpcError(input.id, JSONRPC_INVALID_PARAMS, "arguments must be an object"),
+  });
 };
 
 type ToolCallDenialInput = {
@@ -71,12 +105,12 @@ const unknownToolResponse = async <TCtx>(
 ): Promise<Response> => {
   await auditToolCall(options, {
     ...input,
-    tool: input.name,
+    tool: shownToolName(input.name),
     ok: false,
     error: DENIAL_REASONS.unknownTool,
   });
   return jsonResponse({
-    data: rpcError(input.id, JSONRPC_INVALID_PARAMS, `Unknown tool: ${input.name}`),
+    data: rpcError(input.id, JSONRPC_INVALID_PARAMS, `Unknown tool: ${shownToolName(input.name)}`),
   });
 };
 
@@ -147,6 +181,10 @@ const METHODS = {
       });
     }
 
+    // After the scope check, so a caller without the scope is told so (403 +
+    // step-up challenge), not that its arguments are malformed.
+    if (args === null) return invalidArgumentsResponse(options, { name, principal, id, startedAt });
+
     // Built only for a call that will actually run: `initialize`, `ping`,
     // `tools/list` and denied calls never reach the host's `context` port.
     const ctx = await options.ports.context(req, principal);
@@ -156,7 +194,7 @@ const METHODS = {
       tool: name,
       principal,
       ok: !result.isError,
-      error: result.isError ? result.content[0]?.text : undefined,
+      error: result.isError ? auditText(result.content[0]?.text) : undefined,
       startedAt: toolStartedAt,
     });
     return jsonResponse({ data: rpcResult(id, result) });
@@ -175,7 +213,12 @@ export const dispatchRpc = async <TCtx>(input: {
   const method = typeof body.method === "string" ? body.method : "";
   // Notifications omit `id`; explicit null is a valid request id (JSON-RPC).
   const id = body.id === undefined ? null : body.id;
-  const toolName = method === "tools/call" ? String(body.params?.name ?? "") : undefined;
+  const toolName =
+    method === "tools/call"
+      ? typeof body.params?.name === "string"
+        ? body.params.name
+        : ""
+      : undefined;
 
   // Notifications (including every `notifications/*`) already got 202 in `handlePost`.
   const isPublic = options.publicMethods.has(method);
@@ -186,7 +229,7 @@ export const dispatchRpc = async <TCtx>(input: {
     if (!principal) {
       await safeAudit(options, {
         method,
-        tool: toolName,
+        tool: toolName === undefined ? undefined : shownToolName(toolName),
         ok: false,
         error: DENIAL_REASONS.unauthorized,
         durationMs: Date.now() - startedAt,
@@ -195,7 +238,7 @@ export const dispatchRpc = async <TCtx>(input: {
     }
   }
 
-  const handler = (METHODS as Record<string, RpcMethodHandler<TCtx> | undefined>)[method];
+  const handler = ownValue(METHODS as Record<string, RpcMethodHandler<TCtx>>, method);
   if (!handler) {
     return jsonResponse({
       data: rpcError(id, JSONRPC_METHOD_NOT_FOUND, `Method not found: ${method}`),
