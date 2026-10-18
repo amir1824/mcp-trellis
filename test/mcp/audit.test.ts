@@ -393,6 +393,150 @@ describe("tool error redaction", () => {
 });
 
 describe("consoleAudit", () => {
+  it("escapes control characters so a caller-chosen value cannot forge a log line", (t) => {
+    const log = t.mock.method(console, "log", () => {});
+
+    consoleAudit({
+      source: "oauth",
+      event: "client_auth_failed",
+      clientId: "evil\n[mcp-trellis] mcp tools/call tool=delete_all ok 3ms user=admin",
+      reason: "x\r\ny",
+    });
+
+    const line = log.mock.calls[0]?.arguments[0] as string;
+    assert.doesNotMatch(line, /[\r\n]/);
+    assert.equal(
+      line,
+      '[mcp-trellis] oauth client_auth_failed client="evil\\n[mcp-trellis] mcp tools/call tool=delete_all ok 3ms user=admin" reason="x\\r\\ny"',
+    );
+  });
+
+  it("keeps a space or = inside the field it arrived in, so no key=value can be forged", (t) => {
+    const log = t.mock.method(console, "log", () => {});
+
+    consoleAudit({
+      source: "oauth",
+      event: "client_auth_failed",
+      clientId: "x reason=ok",
+      reason: "bad_secret",
+    });
+
+    assert.equal(
+      log.mock.calls[0]?.arguments[0],
+      '[mcp-trellis] oauth client_auth_failed client="x reason=ok" reason=bad_secret',
+    );
+  });
+
+  it("escapes C1 controls, Unicode separators and bidi overrides", (t) => {
+    const log = t.mock.method(console, "log", () => {});
+
+    consoleAudit({
+      source: "oauth",
+      event: "client_auth_failed",
+      clientId: "a\u0085b\u2028c\u202ed\u007fe",
+      reason: "r",
+    });
+
+    const line = log.mock.calls[0]?.arguments[0] as string;
+    assert.doesNotMatch(line, /[\u0085\u2028\u202e\u007f]/);
+    assert.match(line, /client="a\\u0085b\\u2028c\\u202ed\\u007fe"/);
+  });
+
+  it("never throws on a non-string field, and never loses the line", (t) => {
+    const log = t.mock.method(console, "log", () => {});
+    const error = t.mock.method(console, "error", () => {});
+
+    consoleAudit({
+      source: "mcp",
+      method: "tools/call",
+      tool: 123 as unknown as string,
+      ok: false,
+      error: {} as unknown as string,
+      durationMs: 1,
+    });
+    consoleAudit({
+      source: "oauth",
+      event: "client_auth_failed",
+      clientId: undefined,
+      reason: undefined as unknown as string,
+    });
+
+    assert.equal(
+      error.mock.calls[0]?.arguments[0],
+      '[mcp-trellis] mcp tools/call tool=123 fail 1ms error="[object Object]"',
+    );
+    assert.equal(log.mock.callCount(), 1);
+  });
+
+  it("still logs a field whose string form throws", (t) => {
+    const log = t.mock.method(console, "log", () => {});
+
+    consoleAudit({
+      source: "oauth",
+      event: "e",
+      clientId: Object.create(null) as unknown as string,
+      reason: "r",
+    });
+
+    assert.equal(
+      log.mock.calls[0]?.arguments[0],
+      "[mcp-trellis] oauth e client=[unprintable] reason=r",
+    );
+  });
+
+  it("escapes zero-width and no-break characters that make values look alike", (t) => {
+    const log = t.mock.method(console, "log", () => {});
+
+    consoleAudit({
+      source: "oauth",
+      event: "e",
+      clientId: "a\u200bb\u2060c\u00a0d\ufeffe",
+      reason: "r",
+    });
+
+    const line = log.mock.calls[0]?.arguments[0] as string;
+    assert.match(line, /client="a\\u200bb\\u2060c\\u00a0d\\ufeffe"/);
+  });
+
+  it("does not leave half a surrogate pair at the truncation point", (t) => {
+    const log = t.mock.method(console, "log", () => {});
+
+    consoleAudit({
+      source: "oauth",
+      event: "e",
+      clientId: `${"a".repeat(199)}😀tail`,
+      reason: "r",
+    });
+
+    const line = log.mock.calls[0]?.arguments[0] as string;
+    assert.match(line, / client=a{199} reason=r$/);
+  });
+
+  it("keeps the unquoted format for a plain value of exactly the maximum length", (t) => {
+    const log = t.mock.method(console, "log", () => {});
+
+    consoleAudit({ source: "oauth", event: "e", clientId: "a".repeat(250), reason: "r" });
+
+    assert.equal(
+      log.mock.calls[0]?.arguments[0],
+      `[mcp-trellis] oauth e client=${"a".repeat(200)} reason=r`,
+    );
+  });
+
+  it("truncates an oversized value", (t) => {
+    const log = t.mock.method(console, "log", () => {});
+
+    consoleAudit({
+      source: "oauth",
+      event: "client_auth_failed",
+      clientId: "a".repeat(100_000),
+      reason: "r",
+    });
+
+    const line = log.mock.calls[0]?.arguments[0] as string;
+    assert.ok(line.length < 400);
+  });
+
   it("logs successes to console.log", (t) => {
     const log = t.mock.method(console, "log", () => {});
     const error = t.mock.method(console, "error", () => {});
@@ -450,7 +594,7 @@ describe("consoleAudit", () => {
     assert.deepEqual(
       log.mock.calls.map((call) => call.arguments[0]),
       [
-        "[mcp-trellis] oauth client_auth_failed client=gemini reason=secretHash mismatch",
+        '[mcp-trellis] oauth client_auth_failed client=gemini reason="secretHash mismatch"',
         "[mcp-trellis] oauth server_error reason=boom",
       ],
     );
@@ -502,7 +646,7 @@ describe("consoleAudit", () => {
     const line = error.mock.calls[0]?.arguments[0] as string;
     assert.match(
       line,
-      /^\[mcp-trellis\] mcp tools\/call tool=boom fail \d+ms user=u1 error=Tool execution failed$/,
+      /^\[mcp-trellis\] mcp tools\/call tool=boom fail \d+ms user=u1 error="Tool execution failed"$/,
     );
   });
 });

@@ -113,6 +113,193 @@ describe("apiTool", () => {
     async () =>
       response;
 
+  it("a caller abort that lands while the body streams stops the body read", async () => {
+    const controller = new AbortController();
+    const tool = apiTool<Ctx>({
+      name: "stream",
+      description: "stream",
+      inputSchema: { type: "object", properties: {} },
+      request: () => new Request("https://api.example.test/stream", { signal: controller.signal }),
+      fetch: (async () =>
+        new Response(
+          new ReadableStream({
+            start(stream) {
+              stream.enqueue(new TextEncoder().encode("partial"));
+              queueMicrotask(() => controller.abort());
+            },
+          }),
+        )) as typeof fetch,
+    });
+    const registry = createToolRegistry<Ctx>([tool]);
+    const result = await registry.call("stream", {}, {});
+    assert.equal(result.isError, true);
+    assert.equal(result.content[0]?.text, "Request was cancelled");
+  });
+
+  describe("caller cancellation", () => {
+    const slowTool = (
+      controller: AbortController,
+      options: { timeoutMs?: number | false; abort: () => void },
+    ) =>
+      apiTool<Ctx>({
+        name: "slow",
+        description: "slow",
+        inputSchema: { type: "object", properties: {} },
+        ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+        request: () => new Request("https://api.example.test/slow", { signal: controller.signal }),
+        // Like a real fetch: reject with the abort *reason*, whatever it is.
+        fetch: ((_input: unknown, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            const signal = init?.signal ?? controller.signal;
+            signal.addEventListener("abort", () => reject(signal.reason));
+            options.abort();
+          })) as typeof fetch,
+      });
+
+    for (const [label, reason] of [
+      ["a string", "user left"],
+      ["an Error", new Error("boom")],
+      ["nothing (default AbortError)", undefined],
+    ] as const) {
+      it(`reports an abort with ${label} as the reason as a cancellation`, async () => {
+        const controller = new AbortController();
+        const tool = slowTool(controller, { abort: () => controller.abort(reason) });
+        const result = await createToolRegistry<Ctx>([tool]).call("slow", {}, {});
+        assert.equal(result.content[0]?.text, "Request was cancelled");
+        assert.equal(result.isError, true);
+      });
+    }
+
+    it("reports a caller abort even with timeoutMs: false", async () => {
+      const controller = new AbortController();
+      const tool = slowTool(controller, { timeoutMs: false, abort: () => controller.abort("x") });
+      const result = await createToolRegistry<Ctx>([tool]).call("slow", {}, {});
+      assert.equal(result.content[0]?.text, "Request was cancelled");
+    });
+
+    it("an already-aborted caller signal never reaches the network", async () => {
+      const controller = new AbortController();
+      controller.abort();
+      let fetched = false;
+      const tool = apiTool<Ctx>({
+        name: "gone",
+        description: "gone",
+        inputSchema: { type: "object", properties: {} },
+        request: () => new Request("https://api.example.test/x", { signal: controller.signal }),
+        fetch: (async (_input: unknown, init?: RequestInit) => {
+          fetched = true;
+          init?.signal?.throwIfAborted();
+          return new Response("late");
+        }) as typeof fetch,
+      });
+      const result = await createToolRegistry<Ctx>([tool]).call("gone", {}, {});
+      assert.equal(result.content[0]?.text, "Request was cancelled");
+      assert.equal(fetched, true, "the fetch impl is still asked; it must see an aborted signal");
+    });
+
+    it("a Request without its own signal still gets the timeout, and says 'timed out'", async () => {
+      const tool = apiTool<Ctx>({
+        name: "timeout",
+        description: "timeout",
+        inputSchema: { type: "object", properties: {} },
+        timeoutMs: 5,
+        request: () => new Request("https://api.example.test/x"),
+        fetch: ((_input: unknown, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+          })) as typeof fetch,
+      });
+      const result = await createToolRegistry<Ctx>([tool]).call("timeout", {}, {});
+      assert.equal(result.content[0]?.text, "Request timed out after 5ms");
+    });
+
+    it("without AbortSignal.any, completed calls leave no listeners on a shared signal", async (t) => {
+      const original = AbortSignal.any;
+      Object.defineProperty(AbortSignal, "any", { value: undefined, configurable: true });
+      t.after(() =>
+        Object.defineProperty(AbortSignal, "any", { value: original, configurable: true }),
+      );
+      const shared = new AbortController();
+      let added = 0;
+      let removed = 0;
+      const tool = apiTool<Ctx>({
+        name: "ok",
+        description: "ok",
+        inputSchema: { type: "object", properties: {} },
+        request: () => {
+          // A `Request` carries its own follower of the signal it was given.
+          const request = new Request("https://api.example.test/x", { signal: shared.signal });
+          const add = request.signal.addEventListener.bind(request.signal);
+          const remove = request.signal.removeEventListener.bind(request.signal);
+          request.signal.addEventListener = ((...args: Parameters<typeof add>) => {
+            added += 1;
+            return add(...args);
+          }) as typeof add;
+          request.signal.removeEventListener = ((...args: Parameters<typeof remove>) => {
+            removed += 1;
+            return remove(...args);
+          }) as typeof remove;
+          return request;
+        },
+        fetch: (async () => new Response("fine")) as typeof fetch,
+      });
+      const registry = createToolRegistry<Ctx>([tool]);
+      for (let i = 0; i < 5; i += 1) await registry.call("ok", {}, {});
+      assert.equal(added, 5);
+      assert.equal(removed, added);
+    });
+  });
+
+  describe("redirects", () => {
+    const seen = async (redirect?: "manual" | "error" | "follow") => {
+      let init: RequestInit | undefined;
+      const tool = apiTool<Ctx>({
+        name: "r",
+        description: "r",
+        inputSchema: { type: "object", properties: {} },
+        request: () => "https://api.example.test/x",
+        ...(redirect ? { redirect } : {}),
+        fetch: (async (_input: unknown, i?: RequestInit) => {
+          init = i;
+          return new Response("ok");
+        }) as typeof fetch,
+      });
+      await createToolRegistry<Ctx>([tool]).call("r", {}, {});
+      return init;
+    };
+
+    it("does not follow redirects by default, with or without a timeout", async () => {
+      assert.equal((await seen())?.redirect, "manual");
+    });
+
+    it("passes an explicit redirect mode through", async () => {
+      assert.equal((await seen("follow"))?.redirect, "follow");
+      assert.equal((await seen("error"))?.redirect, "error");
+    });
+
+    it("surfaces an upstream redirect as a failed request, never forwarding the Location", async () => {
+      const tool = apiTool<Ctx>({
+        name: "r",
+        description: "r",
+        inputSchema: { type: "object", properties: {} },
+        request: () => "https://api.example.test/x",
+        fetch: (async () =>
+          new Response(null, {
+            status: 302,
+            statusText: "Found",
+            headers: { Location: "http://169.254.169.254/latest/meta-data/" },
+          })) as typeof fetch,
+      });
+      const result = await createToolRegistry<Ctx>([tool]).call("r", {}, {});
+      assert.equal(result.isError, true);
+      assert.equal(
+        result.content[0]?.text,
+        'Request failed: 302 Found (redirect not followed; set redirect: "follow" to allow it)',
+      );
+      assert.doesNotMatch(result.content[0]?.text ?? "", /169\.254/);
+    });
+  });
+
   it("keeps binary response bytes intact for respond", async () => {
     const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0x00, 0x80]);
     const tool = apiTool<Ctx>({
@@ -266,7 +453,7 @@ describe("apiTool", () => {
     });
     const registry = createToolRegistry<Ctx>([tool]);
     await registry.call("get_weather", {}, { city: "Eilat" });
-    assert.equal(sawInit, undefined);
+    assert.equal(sawInit?.signal, undefined);
   });
 
   it("returns isError: true with a clear message when the upstream request times out", async () => {

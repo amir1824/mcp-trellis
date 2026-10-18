@@ -1,4 +1,5 @@
 import { NO_CORS, POST_ONLY, requireHttpMethod } from "../../http/http.js";
+import { ownValue } from "../../util/own.js";
 import { auditLegacyKeyUsage } from "../audit.js";
 import { advertisedScopes, oauthError, resolveSecrets, tokenResponse } from "../config.js";
 import { GRANT_TYPES, type GrantType, OAUTH_ERRORS } from "../constants.js";
@@ -36,6 +37,11 @@ const handleRefresh: GrantHandler = async ({ body, options, expectedResource, cl
   let requestedScope: string | undefined;
   if (body.scope !== undefined && body.scope !== "") {
     const requested = requestedScopes(body.scope, []);
+    // `scope=" "` parses to nothing: an omitted scope keeps the original grant,
+    // so a whitespace-only one must not reach the port as `""` for it to guess.
+    if (requested.length === 0) {
+      return oauthError(OAUTH_ERRORS.invalidScope, 400, "scope must not be empty");
+    }
     const scopeError = firstScopeError(requested, advertisedScopes(options));
     if (scopeError) return scopeError;
     requestedScope = formatScope(requested);
@@ -139,7 +145,7 @@ export const handleToken = async (
   const url = new URL(request.url);
   const expectedResource = canonicalResource(url.origin, options.resourcePath);
 
-  const handler = GRANT_HANDLERS[body.grant_type ?? ""];
+  const handler = ownValue(GRANT_HANDLERS, body.grant_type ?? "");
   if (!handler) {
     const supported: GrantType[] = [GRANT_TYPES.authorizationCode];
     if (options.ports.refreshAccessToken) {

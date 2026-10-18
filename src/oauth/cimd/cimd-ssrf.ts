@@ -124,7 +124,7 @@ const isNonCanonicalIpv4 = (v4: string): boolean =>
 const isPrivateDottedQuad = (v4: string): boolean => DOTTED_QUAD.test(v4) && isPrivateV4(v4);
 
 const IPV6_BLOCKED_EXACT = new Set(["::1", "::"]);
-const IPV6_BLOCKED_PREFIXES = ["fe80:", "::ffff:"];
+const IPV6_BLOCKED_PREFIXES = ["::ffff:"];
 /** ULA fc00::/7 and multicast ff00::/8. */
 const IPV6_BLOCKED_PREFIX_RES = [/^f[cd][0-9a-f]{2}:/i, /^ff[0-9a-f]{0,2}:/];
 
@@ -150,6 +150,9 @@ const isBlockedIpv4Compatible = (n: number[], raw: string[]): boolean => {
 const HEXTET_BLOCK_RULES: Array<(n: number[], raw: string[]) => boolean> = [
   isIpv4MappedHextets,
   isBlockedIpv4Compatible,
+  (n) => ((n[0] ?? 0) & 0xffc0) === 0xfe80, // link-local fe80::/10 (fe80–febf)
+  (n) => ((n[0] ?? 0) & 0xffc0) === 0xfec0, // deprecated site-local fec0::/10
+  (n) => n[0] === 0x2001 && n[1] === 0, // Teredo 2001::/32
   (n) => n[0] === 0x2002, // 6to4 2002::/16
   (n) => n[0] === 0x64 && n[1] === 0xff9b, // NAT64 64:ff9b::/96
 ];

@@ -3,6 +3,115 @@
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Security
+
+- **Prototype-key lookups.** `/token` (`grant_type`), JSON-RPC `method` and the
+  HTTP verb were looked up on plain objects, so `constructor` / `toString`
+  resolved to `Object.prototype` members and `fetch` returned a non-`Response`
+  (and `__proto__` & co. produced a 500 plus a spurious `server_error` audit
+  event). Lookups now go through `ownValue`. `tools/call` with a non-string
+  `params.name` (e.g. `{"toString":1}`) no longer throws before authentication.
+- **`apiTool` no longer follows redirects by default** (`redirect: "manual"`;
+  `"error"` / `"follow"` available). `fetch` forwards custom headers such as
+  `X-Api-Key`, and a 307/308 POST body, to the `Location` an upstream names, and
+  an open redirect could reach internal addresses with the body returned to
+  the model. **Behaviour change:** an upstream 3xx now surfaces as
+  `Request failed: 3xx (redirect not followed; set redirect: "follow" to allow
+  it)`; pass `redirect: "follow"` only for a fully trusted upstream.
+- **`tools/call` with malformed `arguments`** (`"filter=prod"`, an array,
+  `null`, a number) is now a `-32602` error instead of running the tool with
+  no arguments. An omitted `arguments` still means `{}`.
+- **Validation error amplification.** A valid token plus a 1 MB request could
+  produce a ~24 MB error message (and audit entry). Validation now stops after
+  20 violations (and says so: `stopped after 20 errors; more may follow`), the
+  returned message is capped at 2000 characters, and audit copies of tool
+  failures / tool names are capped. Truncation never splits a surrogate pair.
+- **DNS rebinding against a fixed `origin`.** `asNodeHandler` ignored the
+  `Host` header when given `origin`, so a rebinding page could drive the whole
+  OAuth flow (including approving the consent screen) from a victim's browser.
+  For a loopback `origin` it now answers 400 to any other `Host`
+  (`127.0.0.1`, `localhost`, `[::1]` on the origin's port); new
+  `allowedHosts` does the same for any origin and widens the loopback default;
+  HTTP/2 `:authority` counts as `Host`. `examples/http-server.ts` / the demo
+  Docker image take `ALLOWED_HOSTS`. **Behaviour change:** a loopback-origin server reached through a LAN
+  address or container hostname needs `allowedHosts`.
+- **Origin allowlist collapsed every custom-scheme origin.** `URL.origin` is
+  `"null"` for non-special schemes, so `chrome-extension://evil` matched
+  `tauri://localhost`; origins are now compared as `scheme//host`, and a
+  scheme-less entry such as `localhost:3000` no longer admits them. CORS
+  reflects the normalized origin.
+- **`allowUnregisteredClients: false` is now enforced at `/authorize`** for a
+  sealed DCR `client_id` (issued earlier, or by a sibling instance sharing the
+  `codeSecret`), and no CIMD document is fetched for such a router.
+- **Consent page CSP.** The `form-action` source is built only from a plain
+  `scheme:` / `scheme://host[:port]`; a host carrying `;`, `,` or `'` (CIMD
+  `redirect_uris`) can no longer append a directive, and `javascript:`,
+  `data:`, `file:`, `blob:`, `about:` and `filesystem:` are never allowed.
+  Anything else falls back to `'self'` alone (the redirect back is blocked —
+  fail closed).
+- **`consoleAudit` log injection.** Caller-chosen values (`client_id`, tool
+  name, error text) are truncated to 200 characters; control characters, C1
+  controls, Unicode line separators, bidi overrides and zero-width / no-break
+  characters are escaped; and a value containing a space, `=` or a quote is
+  emitted as a quoted string, so it can neither forge a log line nor a
+  `key=value` field. A non-string field no longer throws and loses the line.
+  **Output change:** every value with a space is now quoted, MCP `error=` text
+  included (`error="Tool execution failed"`, `reason="secretHash mismatch"`) —
+  update any alert that greps the old unquoted form.
+- **OAuth audit entries** hand a sink at most 512 characters of `clientId` and
+  `reason` (`client_id` is read from an unauthenticated request, up to 64 KiB).
+- **CIMD SSRF blocklist.** Now also blocks all of link-local `fe80::/10`
+  (previously only `fe80:`), site-local `fec0::/10` and Teredo `2001::/32`.
+- **Refresh grant:** a whitespace-only `scope` is rejected (`invalid_scope`)
+  instead of reaching `refreshAccessToken` as `""`.
+- **`readOAuthBody`** parses JSON only for the `application/json` media type;
+  `text/plain; x=application/json` is a form body again.
+- **Body-size cap on backslash paths.** `/mcp\oauth\token` (which the router
+  reads as `/mcp/oauth/token`) now gets the 64 KiB OAuth cap, not 1 MiB.
+- **Release workflow.** Split into `verify` (lint, tests, build, pack smoke —
+  no OIDC token) and `publish` (`environment: release`, install and build
+  only, `--ignore-scripts` on install **and** on `npm publish`, so
+  `prepublishOnly` (build + tests) cannot run where the OIDC token is); runs from refs other than `main` / `v*` tags are
+  skipped, the workflow is read-only by default, and ref / tag values are no
+  longer interpolated into shell scripts. **One-time setup:** create the
+  `release` Environment (deployment branches `main` + `v*`, required
+  reviewers) — the in-file `if:` guard alone can be edited away on a branch.
+- Demo `Dockerfile` runs as the unprivileged `node` user, installs without
+  lifecycle scripts, has a `HEALTHCHECK` and a `.dockerignore`.
+
+### Fixed
+
+- Built-in consent page: the CSP `form-action` source for a custom-scheme
+  `redirect_uri` (opaque origin `"null"`) is now the scheme (`myapp:`).
+- `apiTool`: the default timeout no longer drops the abort signal of a
+  `Request` returned from `request`; both signals apply, to the response body
+  read as well. A caller abort — whatever its reason — is reported as
+  `Request was cancelled`, not as a timeout or `Tool execution failed`, also
+  with `timeoutMs: false` (whose message no longer reads `after falsems`). It
+  works on Node 20.0–20.2 (no `AbortSignal.any`) without leaving a listener on
+  a long-lived signal.
+- `tools/call` checks the tool's scope before its `arguments`: a caller
+  without the scope gets the 403 step-up challenge, not `-32602`.
+- `toWebRequest` drops HTTP/2 pseudo-headers (`:authority`, `:path`), which
+  made `new Headers` throw for a Node http2 compat request.
+- Consent CSP accepts a redirect host containing `_`.
+- A tool handler that returns `undefined`, `null`, a number, or an object
+  without `content` is now a tool error (`Tool returned an invalid result`)
+  instead of a 500 or a malformed `result`.
+- `ConsentOptions.render` docs and `docs/security.md`: a custom consent page
+  must use the redirect URI's scheme in `form-action` when its origin is
+  opaque (custom-scheme redirects).
+- `docs/guide.md`: `validateArgs` defaults to `true` (it said off); the audit
+  section no longer says exceptions never appear in entries.
+- `examples/multi-tenant.ts`: a tenant named `constructor` is "no rows", not
+  an `Object.prototype` member.
+
+### Changed
+
+- `biome.json` schema bumped to match the installed CLI.
+
 ## [2.2.0] - 2026-09-16
 
 User-facing story for this cut: simpler auth setup, a demo-first README, Next.js

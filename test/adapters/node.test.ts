@@ -565,3 +565,100 @@ describe("asNodeHandler", () => {
     assert.equal((JSON.parse(String(res.chunk)) as { error: string }).error, "origin not allowed");
   });
 });
+
+describe("asNodeHandler Host check (DNS rebinding)", () => {
+  const mcp = createMcpHandler({
+    registry: createToolRegistry([]),
+    serverInfo: { name: "t", version: "0" },
+    wwwAuthenticate: { realm: "t", resourceMetadataUrl: "http://127.0.0.1:8123/.well-known/x" },
+    ports: { authenticate: async () => ({ id: "u", scopes: ["*"] }), context: async () => ({}) },
+  });
+
+  const ping = async (
+    options: Parameters<typeof asNodeHandler>[1],
+    headers: Record<string, string>,
+  ): Promise<number> => {
+    const res = mockRes();
+    await asNodeHandler(mcp, options)(
+      {
+        method: "POST",
+        url: "/mcp",
+        headers: { "content-type": "application/json", ...headers },
+        body: { jsonrpc: "2.0", id: 1, method: "ping" },
+      },
+      res,
+    );
+    return res.statusCode;
+  };
+
+  const LOOPBACK = { origin: "http://127.0.0.1:8123" };
+
+  it("by default rejects, for a loopback origin, a Host that is not a loopback name on that port", async () => {
+    assert.equal(await ping(LOOPBACK, { host: "attacker.test:8123" }), 400);
+    assert.equal(await ping(LOOPBACK, { host: "127.0.0.1:9999" }), 400);
+    assert.equal(await ping(LOOPBACK, { host: "evil@127.0.0.1:8123" }), 400);
+    assert.equal(await ping(LOOPBACK, { host: "127.0.0.1.attacker.test:8123" }), 400);
+  });
+
+  it("accepts the loopback names a local client uses", async () => {
+    for (const host of ["127.0.0.1:8123", "localhost:8123", "LOCALHOST:8123", "[::1]:8123"]) {
+      assert.equal(await ping(LOOPBACK, { host }), 200, host);
+    }
+  });
+
+  it("lets a request with no Host header through (a browser always sends one)", async () => {
+    assert.equal(await ping(LOOPBACK, {}), 200);
+  });
+
+  it("treats HTTP/2 :authority as the Host when no host header is present", async () => {
+    assert.equal(await ping(LOOPBACK, { ":authority": "attacker.test:8123" }), 400);
+    assert.equal(await ping(LOOPBACK, { ":authority": "localhost:8123" }), 200);
+  });
+
+  it("does not constrain a non-loopback fixed origin unless allowedHosts is given", async () => {
+    assert.equal(await ping({ origin: "https://app.example" }, { host: "internal:8000" }), 200);
+  });
+
+  it("enforces allowedHosts exactly, case-insensitively, for any origin", async () => {
+    const options = {
+      origin: "https://app.example",
+      allowedHosts: ["app.example", "10.0.0.5:8000"],
+    };
+    assert.equal(await ping(options, { host: "app.example" }), 200);
+    assert.equal(await ping(options, { host: "APP.example" }), 200);
+    assert.equal(await ping(options, { host: "10.0.0.5:8000" }), 200);
+    assert.equal(await ping(options, { host: "attacker.test" }), 400);
+    assert.equal(await ping(options, { host: "app.example.attacker.test" }), 400);
+  });
+
+  it("allowedHosts widens the loopback default (e.g. a container's LAN address)", async () => {
+    const options = { ...LOOPBACK, allowedHosts: ["192.168.1.9:8123", "localhost:8123"] };
+    assert.equal(await ping(options, { host: "192.168.1.9:8123" }), 200);
+    assert.equal(await ping(options, { host: "127.0.0.1:8123" }), 400);
+  });
+
+  it("answers with a JSON 400 body", async () => {
+    const res = mockRes();
+    await asNodeHandler(mcp, LOOPBACK)(
+      { method: "GET", url: "/mcp", headers: { host: "attacker.test" } },
+      res,
+    );
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.chunk, JSON.stringify({ error: "host not allowed" }));
+  });
+});
+
+describe("toWebRequest HTTP/2 pseudo-headers", () => {
+  it("drops :authority / :path instead of throwing on an invalid header name", () => {
+    const web = toWebRequest(
+      {
+        method: "GET",
+        url: "/mcp",
+        headers: { ":authority": "app.example", ":path": "/mcp", accept: "application/json" },
+      },
+      { origin: "https://app.example" },
+    );
+    assert.equal(web.headers.get("accept"), "application/json");
+    assert.equal(web.url, "https://app.example/mcp");
+  });
+});

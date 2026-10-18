@@ -1,3 +1,4 @@
+import { clipText } from "../util/clip.js";
 import type { JsonSchema } from "./validate.js";
 import { missingObjectType, unsupportedKeywords, validateAgainstSchema } from "./validate.js";
 
@@ -79,11 +80,24 @@ const resolveToolError = (caught: unknown, onToolError: RegistryOptions["onToolE
   }
 };
 
+/** Longest validation message returned — a path in it can carry an attacker-chosen key. */
+const MAX_VALIDATION_MESSAGE_LENGTH = 2000;
+
+const INVALID_TOOL_RESULT = "Tool returned an invalid result";
+
+const isToolResult = (out: unknown): out is ToolResult =>
+  typeof out === "object" && out !== null && Array.isArray((out as ToolResult).content);
+
+/**
+ * A handler is typed to return `ToolResult | string`, but a JS tool (or a
+ * lookup that came back `undefined`) can return anything. Anything else is a
+ * tool failure the caller sees as `isError`, never a malformed `result`.
+ */
 const asToolResult = (out: ToolResult | string): ToolResult => {
   if (typeof out === "string") {
     return { content: [{ type: "text", text: out }], isError: false };
   }
-  return out;
+  return isToolResult(out) ? out : errorResult(INVALID_TOOL_RESULT);
 };
 
 const errorResult = (message: string): ToolResult => ({
@@ -152,7 +166,10 @@ export const createToolRegistry = <TCtx>(
 
       if (validateArgs) {
         const errors = validateAgainstSchema(args, tool.inputSchema);
-        if (errors.length > 0) return errorResult(errors.join("; "));
+        if (errors.length > 0) {
+          const message = errors.join("; ");
+          return errorResult(clipText(message, MAX_VALIDATION_MESSAGE_LENGTH, "…"));
+        }
       }
 
       try {

@@ -22,9 +22,18 @@ export type OriginAllowlistOptions = {
 
 type OriginPredicate = (origin: string, options: OriginAllowlistOptions) => boolean;
 
+/**
+ * The serialized origin of `value`. `URL.origin` is the literal string
+ * `"null"` for every non-special scheme, which would make
+ * `chrome-extension://evil` equal `tauri://localhost` (and anything else with
+ * a custom scheme), so those are rebuilt as `scheme//host`. A value with no
+ * host (`data:`, `javascript:`, a scheme-less `localhost:3000`) has no origin.
+ */
 const originOf = (value: string): string | null => {
   try {
-    return new URL(value).origin;
+    const url = new URL(value);
+    if (url.origin !== "null") return url.origin;
+    return url.host ? `${url.protocol}//${url.host.toLowerCase()}` : null;
   } catch {
     return null;
   }
@@ -111,5 +120,6 @@ export const reflectCorsIfNeeded = (
   if (!origin || !allowedRequestOrigins?.length || allowedRequestOrigins.includes("*")) {
     return response;
   }
-  return withReflectedCorsOrigin(response, origin);
+  // Reflect the normalized origin the allowlist matched, not the raw header.
+  return withReflectedCorsOrigin(response, originOf(origin) ?? origin);
 };
