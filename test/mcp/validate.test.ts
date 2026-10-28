@@ -63,6 +63,11 @@ describe("schema validation", () => {
     );
   });
 
+  it("treats JSON -0 as equal to a 0 enum entry", () => {
+    const schema = { type: "number", enum: [0] };
+    assert.deepEqual(validateAgainstSchema(JSON.parse("-0"), schema), []);
+  });
+
   it("collects multiple errors", () => {
     const errors = validateAgainstSchema({ query: 1, limit: 0, status: "nope" }, schema);
     assert.ok(errors.length >= 2);

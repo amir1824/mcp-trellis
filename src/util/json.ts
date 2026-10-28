@@ -7,7 +7,8 @@ export const isJsonObject = (value: unknown): value is Record<string, unknown> =
  * ponytail: assumes acyclic JSON-parsed inputs; upgrade = depth/cycle guard.
  */
 export const areJsonValuesEqual = (value: unknown, other: unknown): boolean => {
-  if (Object.is(value, other)) return true;
+  // `===` (not `Object.is`): JSON `-0` must still equal `0`, as `enum.includes` always did.
+  if (value === other) return true;
   if (Array.isArray(value) || Array.isArray(other)) {
     return (
       Array.isArray(value) &&
