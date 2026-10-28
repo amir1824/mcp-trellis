@@ -41,9 +41,7 @@ const auditToolCall = <TCtx>(
     durationMs: Date.now() - input.startedAt,
   });
 
-type ParsedToolCall =
-  | { name: string; args: Record<string, unknown> }
-  | { error: string };
+type ParsedToolCall = { name: string; args: Record<string, unknown> } | { error: string };
 
 const parseToolCallArgs = (body: JsonRpcRequest): ParsedToolCall => {
   // Omitted params default to {}; null/array/primitive must fail — do not coerce.
