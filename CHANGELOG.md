@@ -3,7 +3,33 @@
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [3.0.0] - 2026-10-28
+
+Security hardening plus ChatGPT connector fixes. **Two defaults change** (hence
+the major): `apiTool` no longer follows redirects, and `asNodeHandler` with a
+loopback `origin` answers 400 to a foreign `Host` — see *Security* below for the
+one-line opt-outs. No live ChatGPT session has been recorded yet; see
+`docs/compatibility.md`.
+
+### Added
+
+- **CIMD failures are diagnosable.** A CIMD `client_id` that does not resolve is
+  now audited as `cimd_resolve_failed` at `/authorize` too (previously only at
+  `/token` and `/revoke`, with one constant reason), with a reason code:
+  `dns_unavailable`, `dns_failed`, `blocked_address`, `blocked_url`,
+  `http_status`, `redirect_refused`, `too_large`, `timeout`, `not_json`,
+  `document_invalid`, `client_id_mismatch`, `auth_method_unsupported`,
+  `redirect_uris_invalid`, `fetch_failed` — e.g. `http_status: status 403
+  (authorize)`. Details are static text, an HTTP status or a DNS error code,
+  never an address, header, body or redirect target; the connector still gets
+  the same generic `unauthorized_client`.
+- **`clients: ["codex"]` allows ChatGPT's stable connector redirect**
+  (`https://chatgpt.com/connector_platform_oauth_redirect`) for dynamic client
+  registration. It was empty, so `/register` answered `invalid_redirect_uri`
+  for ChatGPT unless the host listed the URI by hand.
+- **Default CIMD DNS lookup falls back to `resolve4` / `resolve6`** when
+  `dns.lookup` is "Not implemented" (some Workers runtimes). A missing host is
+  now reported as `dns_failed (ENOTFOUND)` instead of "lookup unavailable".
 
 ### Security
 

@@ -1,5 +1,12 @@
 export const CLAUDE_CALLBACK = "https://claude.ai/api/mcp/auth_callback";
 
+/**
+ * ChatGPT's stable connector redirect. The callback-specific form
+ * (`https://chatgpt.com/connector/oauth/{id}`) cannot be listed ahead of time;
+ * a CIMD client binds it through its document instead.
+ */
+export const CHATGPT_CALLBACK = "https://chatgpt.com/connector_platform_oauth_redirect";
+
 export type RedirectAllowlistOptions = {
   /** Extra exact-match redirect URIs. */
   extra?: string[];

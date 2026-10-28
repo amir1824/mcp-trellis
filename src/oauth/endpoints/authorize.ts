@@ -1,6 +1,7 @@
 import { GET_ONLY, requireHttpMethod } from "../../http/http.js";
-import { auditLegacyKeyUsage } from "../audit.js";
-import { cimdFetchOpts, isCimdClientId, resolveCimdClient } from "../cimd/cimd.js";
+import { auditCimdFailure, auditLegacyKeyUsage } from "../audit.js";
+import { cimdFetchOpts, isCimdClientId, resolveCimdOutcome } from "../cimd/cimd.js";
+import type { CimdDocument } from "../cimd/types.js";
 import {
   advertisedScopes,
   defaultScopes,
@@ -102,9 +103,7 @@ const resolveAuthorizeClient = async (
   const assertion = registered ? null : await unsealClientAssertion(options, clientId, secrets);
   const isCimdId = options.cimd === true && isCimdClientId(clientId);
   const cimdDoc =
-    !registered && !assertion && isCimdId
-      ? await resolveCimdClient(clientId, cimdFetchOpts(options))
-      : null;
+    !registered && !assertion && isCimdId ? await resolveCimdDocument(options, clientId) : null;
 
   if (!registered && !assertion && !cimdDoc) {
     const unknown = unknownClientError(options, isCimdId);
@@ -115,6 +114,17 @@ const resolveAuthorizeClient = async (
     boundRedirectUris:
       registered?.redirectUris ?? assertion?.redirectUris ?? cimdDoc?.redirect_uris ?? null,
   };
+};
+
+/** The CIMD document for `clientId`, auditing (not surfacing) why it could not be resolved. */
+const resolveCimdDocument = async (
+  options: OAuthRouterOptions,
+  clientId: string,
+): Promise<CimdDocument | null> => {
+  const outcome = await resolveCimdOutcome(clientId, cimdFetchOpts(options));
+  if ("doc" in outcome) return outcome.doc;
+  await auditCimdFailure(options, { clientId, endpoint: "authorize", failure: outcome.failure });
+  return null;
 };
 
 /** This server's own `/register` assertion for `clientId`, auditing a legacy-key unseal. */

@@ -7,7 +7,7 @@ import {
   redirectUrisFor,
 } from "../../../src/clients.js";
 import { sha256Base64Url } from "../../../src/oauth/crypto/pkce.js";
-import { CLAUDE_CALLBACK } from "../../../src/oauth/policy/redirect.js";
+import { CHATGPT_CALLBACK, CLAUDE_CALLBACK } from "../../../src/oauth/policy/redirect.js";
 import { hashClientSecret } from "../../../src/oauth/router.js";
 import type { ClientStore } from "../../../src/oauth/types.js";
 import { createOAuthRouter } from "../../helpers/router.js";
@@ -21,7 +21,8 @@ describe("client profiles", () => {
   it("composes redirect URIs from the named clients", () => {
     assert.deepEqual(redirectUrisFor(["claude"]), [CLAUDE_CALLBACK]);
     assert.deepEqual(redirectUrisFor(["gemini"]), []);
-    assert.deepEqual(redirectUrisFor(["claude", "codex"]), [CLAUDE_CALLBACK]);
+    assert.deepEqual(redirectUrisFor(["codex"]), [CHATGPT_CALLBACK]);
+    assert.deepEqual(redirectUrisFor(["claude", "codex"]), [CLAUDE_CALLBACK, CHATGPT_CALLBACK]);
   });
 
   it("composes advertised auth methods in a stable order", () => {

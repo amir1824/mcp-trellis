@@ -1,6 +1,7 @@
 import { isJsonObject } from "../../util/json.js";
 import { MAX_CLIENT_REDIRECT_URIS } from "../constants.js";
 import { isLoopbackHostname } from "./cimd-ssrf.js";
+import { CimdError } from "./failure.js";
 import type { CimdDocument } from "./types.js";
 
 const DEFAULT_CACHE_SECONDS = 300;
@@ -16,30 +17,46 @@ const assertHttpRedirectUri = (uri: string): void => {
   try {
     parsed = new URL(uri);
   } catch {
-    throw new Error("CIMD redirect_uris entries must be absolute URLs");
+    throw new CimdError(
+      "redirect_uris_invalid",
+      "CIMD redirect_uris entries must be absolute URLs",
+    );
   }
   if (parsed.username || parsed.password || parsed.hash) {
-    throw new Error("CIMD redirect_uris must not carry credentials or a fragment");
+    throw new CimdError(
+      "redirect_uris_invalid",
+      "CIMD redirect_uris must not carry credentials or a fragment",
+    );
   }
   if (parsed.protocol === "https:") return;
   if (parsed.protocol === "http:") {
     if (!isLoopbackHostname(parsed.hostname)) {
-      throw new Error("CIMD http redirect_uris must be loopback (127.0.0.1 / ::1)");
+      throw new CimdError(
+        "redirect_uris_invalid",
+        "CIMD http redirect_uris must be loopback (127.0.0.1 / ::1)",
+      );
     }
     return;
   }
-  throw new Error("CIMD redirect_uris must be http(s)");
+  throw new CimdError("redirect_uris_invalid", "CIMD redirect_uris must be http(s)");
 };
 
 const parseRedirectUris = (rawUris: unknown): string[] => {
   if (!Array.isArray(rawUris) || rawUris.length === 0) {
-    throw new Error("CIMD document must include a non-empty redirect_uris array");
+    throw new CimdError(
+      "redirect_uris_invalid",
+      "CIMD document must include a non-empty redirect_uris array",
+    );
   }
   if (rawUris.length > MAX_CLIENT_REDIRECT_URIS) {
-    throw new Error(`CIMD redirect_uris must have at most ${MAX_CLIENT_REDIRECT_URIS} entries`);
+    throw new CimdError(
+      "redirect_uris_invalid",
+      `CIMD redirect_uris must have at most ${MAX_CLIENT_REDIRECT_URIS} entries`,
+    );
   }
   return rawUris.map((u) => {
-    if (typeof u !== "string" || !u) throw new Error("CIMD redirect_uris entries must be strings");
+    if (typeof u !== "string" || !u)
+      throw new CimdError("redirect_uris_invalid", "CIMD redirect_uris entries must be strings");
     assertHttpRedirectUri(u);
     return u;
   });
@@ -64,15 +81,20 @@ export const parseDocument = (clientId: string, text: string): CimdDocument => {
   try {
     parsed = JSON.parse(text);
   } catch {
-    throw new Error("CIMD document is not JSON");
+    throw new CimdError("not_json", "CIMD document is not JSON");
   }
-  if (!isJsonObject(parsed)) throw new Error("CIMD document must be a JSON object");
+  if (!isJsonObject(parsed))
+    throw new CimdError("document_invalid", "CIMD document must be a JSON object");
   const record = parsed;
   if (record.client_id !== clientId) {
-    throw new Error("CIMD document client_id must equal the request URL exactly");
+    throw new CimdError(
+      "client_id_mismatch",
+      "CIMD document client_id must equal the request URL exactly",
+    );
   }
   if (!supportedAuthMethods(record).includes(PUBLIC_AUTH_METHOD)) {
-    throw new Error(
+    throw new CimdError(
+      "auth_method_unsupported",
       "CIMD clients must support the public method (token_endpoint_auth_method none)",
     );
   }

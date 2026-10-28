@@ -54,7 +54,7 @@ body:
     id: trellis_version
     attributes:
       label: mcp-trellis version
-      placeholder: "2.2.0"
+      placeholder: "3.0.0"
     validations:
       required: true
   - type: textarea

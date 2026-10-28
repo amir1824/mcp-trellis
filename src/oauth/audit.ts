@@ -6,6 +6,7 @@
 
 import { DEFAULT_AUDIT_TIMEOUT_MS, runAuditBounded } from "../http/http.js";
 import { clipText } from "../util/clip.js";
+import { type CimdFailure, formatCimdFailure } from "./cimd/failure.js";
 import type { OAuthAuditEntry, OAuthRouterOptions } from "./types.js";
 
 /**
@@ -51,3 +52,17 @@ export const auditLegacyKeyUsage = async (
     reason: `${usage.source} with codeSecret[${usage.keyIndex}]`,
   });
 };
+
+/**
+ * Operator-only record of why a CIMD `client_id` did not resolve; the connector
+ * is always answered with the same generic `unauthorized_client`.
+ */
+export const auditCimdFailure = (
+  options: OAuthRouterOptions,
+  input: { clientId: string; endpoint: "authorize" | "token/revoke"; failure: CimdFailure },
+): Promise<void> =>
+  safeOAuthAudit(options, {
+    event: "cimd_resolve_failed",
+    clientId: input.clientId,
+    reason: `${formatCimdFailure(input.failure)} (${input.endpoint})`,
+  });

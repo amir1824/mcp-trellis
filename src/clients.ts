@@ -7,7 +7,7 @@
  */
 
 import { TOKEN_ENDPOINT_AUTH_METHODS, type TokenEndpointAuthMethod } from "./oauth/constants.js";
-import { CLAUDE_CALLBACK } from "./oauth/policy/redirect.js";
+import { CHATGPT_CALLBACK, CLAUDE_CALLBACK } from "./oauth/policy/redirect.js";
 import type { ClientStore } from "./oauth/types.js";
 
 export type ClientName = "claude" | "gemini" | "codex";
@@ -42,7 +42,7 @@ export const CLIENT_PROFILES: Record<ClientName, ClientProfile> = {
   },
   /** OpenAI Codex / ChatGPT connectors — OAuth 2.1 per the MCP auth spec. */
   codex: {
-    redirectUris: [],
+    redirectUris: [CHATGPT_CALLBACK],
     tokenEndpointAuthMethods: [TOKEN_ENDPOINT_AUTH_METHODS.none],
     preRegistered: false,
   },

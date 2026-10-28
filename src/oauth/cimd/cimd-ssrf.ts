@@ -3,6 +3,8 @@
  * IP blocks, and DNS lookup before connect.
  */
 
+import { CimdError, type CimdFailureCode } from "./failure.js";
+
 /** Strip WHATWG brackets from IPv6 hostnames (`[::1]` → `::1`). */
 const normalizeHostname = (hostname: string): string => {
   const host = hostname.toLowerCase().replace(/\.$/, "");
@@ -188,27 +190,68 @@ export const isLoopbackHostname = (hostname: string): boolean =>
   // `localhost` deliberately excluded — RFC 8252 §8.3, same as policy/redirect.ts.
   LOOPBACK_HOSTS.has(normalizeHostname(hostname));
 
-export const defaultLookup = async (hostname: string): Promise<string[]> => {
+const importDns = async (): Promise<typeof import("node:dns/promises")> => {
   try {
-    const dns = await import("node:dns/promises");
-    const results = await dns.lookup(hostname, { all: true, verbatim: true });
-    return results.map((r) => r.address);
+    return await import("node:dns/promises");
   } catch {
-    throw new Error("CIMD DNS lookup unavailable");
+    throw new CimdError("dns_unavailable", "no node:dns on this platform; pass cimdLookup");
   }
 };
 
-const URL_SAFETY: Record<string, { ok: (url: URL) => boolean; error: string }> = {
+const errorCode = (caught: unknown): string =>
+  caught instanceof Error && "code" in caught ? String(caught.code) : "unknown";
+
+/** Workers (nodejs_compat) ships `node:dns` with `lookup` stubbed out to throw. */
+const isLookupNotImplemented = (caught: unknown): boolean =>
+  caught instanceof Error && /not implemented/i.test(caught.message);
+
+/**
+ * ponytail: `resolve4`/`resolve6` return A/AAAA only (no hosts file, no
+ * search domains) — enough for a public HTTPS client_id host. Upgrade: a
+ * host-supplied `cimdLookup` backed by its own resolver.
+ */
+const resolveAddresses = async (
+  dns: typeof import("node:dns/promises"),
+  hostname: string,
+): Promise<string[]> => {
+  const settled = await Promise.allSettled([dns.resolve4(hostname), dns.resolve6(hostname)]);
+  const addresses = settled.flatMap((result) =>
+    result.status === "fulfilled" ? result.value : [],
+  );
+  if (addresses.length === 0) {
+    throw new CimdError("dns_failed", "DNS resolution returned no A/AAAA records");
+  }
+  return addresses;
+};
+
+export const defaultLookup = async (hostname: string): Promise<string[]> => {
+  const dns = await importDns();
+  try {
+    const results = await dns.lookup(hostname, { all: true, verbatim: true });
+    return results.map((r) => r.address);
+  } catch (caught) {
+    if (isLookupNotImplemented(caught)) return resolveAddresses(dns, hostname);
+    throw new CimdError("dns_failed", `DNS lookup failed (${errorCode(caught)})`);
+  }
+};
+
+const URL_SAFETY: Record<
+  string,
+  { ok: (url: URL) => boolean; code: CimdFailureCode; error: string }
+> = {
   https: {
     ok: (url) => url.protocol === "https:",
+    code: "blocked_url",
     error: "CIMD client_id must be https",
   },
   noCredentials: {
     ok: (url) => !url.username && !url.password,
+    code: "blocked_url",
     error: "CIMD URL must not carry credentials",
   },
   publicHostname: {
     ok: (url) => !isBlockedHostname(url.hostname),
+    code: "blocked_address",
     error: "CIMD hostname is not publicly routable",
   },
 };
@@ -218,11 +261,11 @@ export const assertSafeUrl = async (
   lookup: (hostname: string) => Promise<string[]>,
 ): Promise<void> => {
   for (const rule of Object.values(URL_SAFETY)) {
-    if (!rule.ok(url)) throw new Error(rule.error);
+    if (!rule.ok(url)) throw new CimdError(rule.code, rule.error);
   }
 
   const addrs = await lookup(normalizeHostname(url.hostname));
   if (addrs.length === 0 || addrs.some(isBlockedIp)) {
-    throw new Error("CIMD resolved to a non-public address");
+    throw new CimdError("blocked_address", "CIMD resolved to a non-public address");
   }
 };

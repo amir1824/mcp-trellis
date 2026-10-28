@@ -14,6 +14,7 @@
 | Wrong user's data | Data query ignores authenticated identity | Filter by verified principal and tenant; never trust a tool argument for ownership. |
 | Switching login does not switch connector user | Connector retains its previously issued token | Disconnect and reauthorize with the intended account. |
 | Initialization works but tools fail | Initialize is public | Test authenticated `tools/call`; initialize alone proves no auth flow. |
+| `unauthorized_client: CIMD client_id could not be resolved` | The connector is told one generic error on purpose; the cause is in your audit sink | Read the `cimd_resolve_failed` entry: `reason` is `<code>[: detail] (authorize\|token/revoke)`. `http_status: status 403` = the document host refused the fetch; `auth_method_unsupported` = its document excludes `none`; `dns_failed (ENOTFOUND)` / `dns_unavailable` = no DNS from this runtime, pass `cimdLookup`; `blocked_address` = it resolves to a non-public address. Pass `cimdCache` so refresh does not re-fetch. |
 | Client requests an unsupported protocol | Package supports the revisions in `src/mcp/protocol.ts` | Record negotiation; do not claim a live pass from a successful HTTP status alone. |
 
 See [security responsibilities](security.md) before replacing production token verification with example code. Share sanitized errors in an issue, never access tokens or session cookies.

@@ -1,7 +1,7 @@
 /** Token-endpoint client authentication (RFC 6749 §2.3.1). */
 
-import { auditLegacyKeyUsage, safeOAuthAudit } from "../audit.js";
-import { cimdFetchOpts, isCimdClientId, resolveCimdClient } from "../cimd/cimd.js";
+import { auditCimdFailure, auditLegacyKeyUsage, safeOAuthAudit } from "../audit.js";
+import { cimdFetchOpts, isCimdClientId, resolveCimdOutcome } from "../cimd/cimd.js";
 import {
   oauthError,
   registeredClientsRequired,
@@ -155,13 +155,14 @@ const isSelfRegisteredOrCimdClient = async ({
   }
   if (options.cimd !== true || !isCimdClientId(auth.clientId)) return false;
 
-  if (await resolveCimdClient(auth.clientId, cimdFetchOpts(options))) return true;
+  const outcome = await resolveCimdOutcome(auth.clientId, cimdFetchOpts(options));
+  if ("doc" in outcome) return true;
   // Without `cimdCache` every refresh/revoke re-fetches — a flaky document
   // host logs users out. Surface that distinctly.
-  await safeOAuthAudit(options, {
-    event: "cimd_resolve_failed",
+  await auditCimdFailure(options, {
     clientId: auth.clientId,
-    reason: "CIMD document could not be resolved at token/revoke time",
+    endpoint: "token/revoke",
+    failure: outcome.failure,
   });
   return false;
 };

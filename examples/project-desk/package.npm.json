@@ -29,7 +29,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "mcp-trellis": "^2.2.0"
+    "mcp-trellis": "^3.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
