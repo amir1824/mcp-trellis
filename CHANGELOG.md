@@ -3,6 +3,19 @@
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- **CIMD accepts ChatGPT's client document.** ChatGPT publishes
+  `token_endpoint_auth_method: "private_key_jwt"` as a *preference* beside
+  `token_endpoint_auth_methods_supported: ["none", "private_key_jwt"]`;
+  `/authorize` rejected it with `unauthorized_client: CIMD client_id could not
+  be resolved`. A document now qualifies when `none` is among its supported
+  methods (plural field wins; the singular field counts only when the plural is
+  absent). Still public-only: `private_key_jwt` is not implemented, so a
+  document that excludes `none` is rejected.
+
 ## [2.2.0] - 2026-09-16
 
 User-facing story for this cut: simpler auth setup, a demo-first README, Next.js

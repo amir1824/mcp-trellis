@@ -44,7 +44,28 @@ describe("parseDocument — CIMD document validation", () => {
   it("rejects a confidential token_endpoint_auth_method", () => {
     assert.throws(
       parse({ ...valid, token_endpoint_auth_method: "client_secret_post" }),
-      /must be public/,
+      /public method/,
+    );
+  });
+
+  it("accepts ChatGPT's published document: private_key_jwt preferred, none supported", () => {
+    const chatgpt = parse({
+      ...valid,
+      token_endpoint_auth_method: "private_key_jwt",
+      token_endpoint_auth_methods_supported: ["none", "private_key_jwt"],
+      jwks_uri: "https://chatgpt.com/oauth/jwks.json",
+    })();
+    assert.equal(chatgpt.token_endpoint_auth_method, "none");
+  });
+
+  it("rejects a document whose supported methods exclude none, whatever the singular says", () => {
+    assert.throws(
+      parse({
+        ...valid,
+        token_endpoint_auth_method: "none",
+        token_endpoint_auth_methods_supported: ["private_key_jwt"],
+      }),
+      /public method/,
     );
   });
 

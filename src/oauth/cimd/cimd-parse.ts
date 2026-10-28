@@ -45,6 +45,20 @@ const parseRedirectUris = (rawUris: unknown): string[] => {
   });
 };
 
+const PUBLIC_AUTH_METHOD = "none";
+
+/**
+ * Methods the client can use. The plural field is authoritative; the
+ * singular one is only a preference (ChatGPT publishes `private_key_jwt`
+ * there beside `["none", "private_key_jwt"]`), so it counts only when the
+ * plural is absent.
+ */
+const supportedAuthMethods = (record: Record<string, unknown>): unknown[] => {
+  const plural = record.token_endpoint_auth_methods_supported;
+  if (Array.isArray(plural)) return plural;
+  return [record.token_endpoint_auth_method ?? PUBLIC_AUTH_METHOD];
+};
+
 export const parseDocument = (clientId: string, text: string): CimdDocument => {
   let parsed: unknown;
   try {
@@ -57,14 +71,15 @@ export const parseDocument = (clientId: string, text: string): CimdDocument => {
   if (record.client_id !== clientId) {
     throw new Error("CIMD document client_id must equal the request URL exactly");
   }
-  const authMethod = record.token_endpoint_auth_method;
-  if (authMethod !== undefined && authMethod !== "none") {
-    throw new Error("CIMD clients must be public (token_endpoint_auth_method none)");
+  if (!supportedAuthMethods(record).includes(PUBLIC_AUTH_METHOD)) {
+    throw new Error(
+      "CIMD clients must support the public method (token_endpoint_auth_method none)",
+    );
   }
   return {
     client_id: clientId,
     redirect_uris: parseRedirectUris(record.redirect_uris),
     ...(typeof record.client_name === "string" ? { client_name: record.client_name } : {}),
-    token_endpoint_auth_method: "none",
+    token_endpoint_auth_method: PUBLIC_AUTH_METHOD,
   };
 };
