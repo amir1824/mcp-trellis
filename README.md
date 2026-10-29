@@ -1,13 +1,14 @@
 # mcp-trellis
 
-Add authenticated AI connectors to your existing SaaS.
-Reuse your users, login and permissions. Trellis handles MCP + OAuth.
+Plug your existing SaaS's users, login and permissions into MCP with OAuth 2.1 —
+so Claude, ChatGPT and other AI clients can act on your app **as that user**,
+with one npm install and no separate identity provider.
 
 ```
 Existing SaaS
 users + login + data
        ↓
-  mcp-trellis
+    mcp-trellis
        ↓
 Claude / ChatGPT / Gemini
 ```
@@ -19,6 +20,12 @@ Claude / ChatGPT / Gemini
 ## Demo
 
 ![Project desk local demo — login, consent, user-scoped tool result](docs/diagrams/demo-tool-result.png)
+
+<!-- TODO: replace the screenshot above with a ~20s GIF of the full flow
+     (app login → OAuth consent → a Claude/ChatGPT tool call returning
+     user-scoped data). Do not add a placeholder image file until a real
+     recording exists — see docs/compatibility.md for the live-client
+     evidence this still needs. -->
 
 ```bash
 npm install mcp-trellis
@@ -51,6 +58,13 @@ export const mcp = createMcpApp<{ userId: string }>({
 
 Also listed on the Official MCP Registry as **Project desk** (reference remote server; not the SDK) — see [`examples/project-desk`](examples/project-desk/).
 
+## Use cases
+
+- Let Claude or ChatGPT read and act on a signed-in user's **own** data (their projects, tickets, invoices) in your product — no shared service account, no "god token".
+- Add a remote MCP connector to a Next.js, Express, or Cloudflare Workers app that already has sessions and a user table, without introducing a separate identity provider.
+- Give an AI agent tools that are scoped by the same permissions and multi-tenant boundaries your app already enforces (see [Multi-tenant](docs/guide.md#multi-tenant-saas-connectors)).
+- Expose a handful of user-scoped tools from an existing codebase in under 15 lines, instead of standing up an MCP server and an OAuth stack as two separate projects.
+
 ## When should I use this?
 
 - Your TypeScript app already has login and user data, and you want to expose user-scoped tools through remote MCP.
@@ -63,6 +77,32 @@ Also listed on the Official MCP Registry as **Project desk** (reference remote s
 - You already have an MCP server and authorization server that meet your needs.
 - You need protocol features or client combinations absent from the [verified support table](docs/compatibility.md).
 - You only need a local stdio tool with no remote authorization flow.
+
+## Why trellis vs the official SDK / fastmcp / mcp-framework
+
+The [official TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk),
+[fastmcp](https://github.com/punkpeye/fastmcp) and
+[mcp-framework](https://github.com/QuantGeekDev/mcp-framework) are general-purpose
+tools for building a **new** MCP server. mcp-trellis is narrower on purpose: it
+wires an **existing** SaaS's users and login into MCP as a self-hosted OAuth 2.1
+authorization server. Checked against each project's README and `package.json`
+on 2026-10-29 — re-verify before relying on it, all four move fast:
+
+| | Official SDK (`@modelcontextprotocol/server`) | fastmcp | mcp-framework | **mcp-trellis** |
+|---|---|---|---|---|
+| Primary job | Reference MCP protocol implementation (server + client) | General-purpose framework for a new MCP server (tools, resources, prompts, OpenAPI import, sampling, …) | General-purpose framework + CLI scaffolding for a new MCP server | Adds user-scoped tools and an OAuth login to an **existing** app — not a general server builder |
+| Self-hosted OAuth 2.1 AS (its own `/authorize` + `/token`) | No — ships auth *helpers*; you build the AS | Partial — built-in **OAuth Proxy** in front of an upstream IdP (Google/GitHub/Azure, or any RFC-compliant OAuth 2.0 server you already run) | No — `OAuthAuthProvider` only *verifies* tokens (JWT/JWKS or introspection) from an AS you already run elsewhere | **Yes** — `createOAuthRouter` / `createMcpApp` implement authorize + token themselves |
+| Turns your app's existing session/login into that AS, no separate IdP | No | No — proxies to an external IdP | No — requires an external AS | **Yes** — via `resolveUser` + `loginUrl` (see [`signedTokenAuth`](#the-30-second-example)) |
+| Resources, prompts, sampling, CLI project scaffolding | Yes | Yes | Yes | No — out of scope, see [docs/ROADMAP.md](docs/ROADMAP.md#non-goals) |
+| Runtime dependencies | 2 (`zod` + an internal core package) | ~13 (`hono`, `zod`, `@modelcontextprotocol/sdk`, …) | ~9 (`jsonwebtoken`, `jwks-rsa`, …) | **0** |
+
+If you're building a brand-new MCP server, any of the three above is a better
+fit — they have the ecosystem, docs, and tooling for exactly that. mcp-trellis
+solves a narrower problem: you already have a SaaS with users and permissions,
+and you want Claude/ChatGPT to act on it **as a specific signed-in user**
+without standing up a separate identity provider. For a feature matrix against
+identity-product compositions (xmcp + Scalekit, WorkOS, Descope, Auth0, …), see
+[docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Run a real tool
 
