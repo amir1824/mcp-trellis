@@ -1,7 +1,7 @@
 {
   "name": "mcp-trellis",
   "version": "3.0.0",
-  "description": "Add authenticated remote MCP connectors to existing TypeScript SaaS apps using your existing users and auth.",
+  "description": "Plug your existing SaaS's users, auth and permissions into MCP with OAuth 2.1, so Claude, ChatGPT and other AI clients can act on your app as that user.",
   "type": "module",
   "license": "MIT",
   "sideEffects": false,
@@ -31,7 +31,10 @@
     "saas",
     "remote-mcp",
     "byo-auth",
-    "ai-connector"
+    "ai-connector",
+    "mcp-auth",
+    "nextjs",
+    "express"
   ],
   "types": "./dist/server.d.ts",
   "exports": {
