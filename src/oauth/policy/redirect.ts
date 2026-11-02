@@ -1,11 +1,15 @@
 export const CLAUDE_CALLBACK = "https://claude.ai/api/mcp/auth_callback";
 
-/**
- * ChatGPT's stable connector redirect. The callback-specific form
- * (`https://chatgpt.com/connector/oauth/{id}`) cannot be listed ahead of time;
- * a CIMD client binds it through its document instead.
- */
+/** ChatGPT's stable connector redirect. */
 export const CHATGPT_CALLBACK = "https://chatgpt.com/connector_platform_oauth_redirect";
+
+/**
+ * ChatGPT's per-connector redirect, `https://chatgpt.com/connector/oauth/{id}`.
+ * The id is minted per connector, so it can't be listed ahead of time. Matched
+ * against the raw string: one id segment, no port, query or fragment.
+ */
+const CHATGPT_CONNECTOR_CALLBACK =
+  /^https:\/\/chatgpt\.com\/connector\/oauth\/[A-Za-z0-9_-]{1,128}$/;
 
 export type RedirectAllowlistOptions = {
   /** Extra exact-match redirect URIs. */
@@ -19,12 +23,17 @@ export type RedirectAllowlistOptions = {
   allowLoopback?: boolean;
   /** Allow the Claude.ai Custom Connector callback. Default true. */
   allowClaude?: boolean;
+  /** Allow ChatGPT's per-connector callback (`/connector/oauth/{id}`). Default false. */
+  allowChatgptConnector?: boolean;
 };
 
 type RedirectPredicate = (uri: string, options: RedirectAllowlistOptions) => boolean;
 
 const isClaudeCallback: RedirectPredicate = (uri, options) =>
   options.allowClaude !== false && uri === CLAUDE_CALLBACK;
+
+const isChatgptConnectorCallback: RedirectPredicate = (uri, options) =>
+  options.allowChatgptConnector === true && CHATGPT_CONNECTOR_CALLBACK.test(uri);
 
 const isExtraAllowed: RedirectPredicate = (uri, options) => Boolean(options.extra?.includes(uri));
 
@@ -46,7 +55,12 @@ const isLoopbackHttp: RedirectPredicate = (uri, options) => {
   }
 };
 
-const REDIRECT_PREDICATES: RedirectPredicate[] = [isClaudeCallback, isExtraAllowed, isLoopbackHttp];
+const REDIRECT_PREDICATES: RedirectPredicate[] = [
+  isClaudeCallback,
+  isChatgptConnectorCallback,
+  isExtraAllowed,
+  isLoopbackHttp,
+];
 
 /** RFC 6749 forbids a fragment in redirect_uri; embedded credentials are never legitimate. */
 const carriesFragmentOrCredentials = (uri: string): boolean => {

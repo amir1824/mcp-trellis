@@ -114,4 +114,21 @@ describe("redirect allowlist options", () => {
   it("allowClaude: false rejects the Claude callback", () => {
     assert.equal(isAllowedRedirectUri(CLAUDE_CALLBACK, { allowClaude: false }), false);
   });
+
+  it("accepts ChatGPT's per-connector callback only when allowChatgptConnector is on", () => {
+    const callback = "https://chatgpt.com/connector/oauth/cb_8f2Kq-x";
+    assert.equal(isAllowedRedirectUri(callback, { allowChatgptConnector: true }), true);
+    assert.equal(isAllowedRedirectUri(callback), false);
+  });
+
+  it("rejects look-alike ChatGPT connector callbacks", () => {
+    const allow = { allowChatgptConnector: true };
+    assert.equal(isAllowedRedirectUri("https://chatgpt.com/connector/oauth/a/b", allow), false);
+    assert.equal(isAllowedRedirectUri("https://chatgpt.com/connector/oauth/a?x=1", allow), false);
+    assert.equal(isAllowedRedirectUri("https://chatgpt.com:8443/connector/oauth/a", allow), false);
+    assert.equal(isAllowedRedirectUri("https://chatgpt.com.evil/connector/oauth/a", allow), false);
+    assert.equal(isAllowedRedirectUri("http://chatgpt.com/connector/oauth/a", allow), false);
+    assert.equal(isAllowedRedirectUri("https://chatgpt.com/connector/oauth/", allow), false);
+    assert.equal(isAllowedRedirectUri("https://chatgpt.com/connector/oauth/a%2F..", allow), false);
+  });
 });

@@ -8,7 +8,7 @@ check below is filled in.
 | Product | Server profile | Repository evidence | Live evidence |
 |---|---|---|---|
 | Claude custom connector | `claude`: DCR / CIMD, public client, S256 PKCE; built-in callback | `test/oauth/policy/clients.test.ts`, `test/oauth/endpoints/dcr.test.ts`, `test/oauth/cimd/cimd.test.ts`, `test/oauth/crypto/pkce.test.ts`; saas-demo e2e + `scripts/prep-claude-oauth.mjs` | Pending (UI) |
-| ChatGPT | `codex`: public-client profile; exact hosted callback must be configured | Profile tests only; no ChatGPT UI test | Pending |
+| ChatGPT | `codex`: public-client profile; ChatGPT's stable callback and its per-connector `https://chatgpt.com/connector/oauth/{id}` callback are allowed | Profile tests only; no ChatGPT UI test | Pending |
 | Codex | `codex`: public client, PKCE, loopback callbacks allowed | Profile/redirect tests; no actual Codex login run | Pending |
 | Gemini Enterprise | `gemini`: `clientStore`, pre-registration, `client_secret_basic` / `client_secret_post` | Client authentication tests; no Enterprise environment | Pending |
 

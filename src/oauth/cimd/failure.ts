@@ -5,7 +5,7 @@
  * resolved address, a response header or body, or a redirect target.
  */
 
-import { BodyTooLargeError } from "../../http/body.js";
+import { BodyReadAbortedError, BodyTooLargeError } from "../../http/body.js";
 
 export type CimdFailureCode =
   | "dns_unavailable"
@@ -41,6 +41,8 @@ const TIMEOUT_ERROR_NAMES = new Set(["AbortError", "TimeoutError"]);
 export const classifyCimdFailure = (caught: unknown): CimdFailure => {
   if (caught instanceof CimdError) return { code: caught.code, detail: caught.message };
   if (caught instanceof BodyTooLargeError) return { code: "too_large" };
+  // The hop timer is the only thing that aborts a CIMD body read.
+  if (caught instanceof BodyReadAbortedError) return { code: "timeout" };
   if (caught instanceof Error && TIMEOUT_ERROR_NAMES.has(caught.name)) return { code: "timeout" };
   return { code: "fetch_failed", ...(caught instanceof Error ? { detail: caught.name } : {}) };
 };

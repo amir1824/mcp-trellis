@@ -116,7 +116,7 @@ The [Project desk demo](examples/saas-demo/README.md) is the canonical example (
 | Profile | Implemented server flow | Live client evidence |
 |---|---|---|
 | Claude (`claude`) | Dynamic registration, public client, PKCE | Pending |
-| ChatGPT / Codex (`codex`) | Public client, PKCE; configure exact hosted callback as needed | Pending for each product |
+| ChatGPT / Codex (`codex`) | Public client, PKCE; ChatGPT's stable and per-connector callbacks allowed | Pending for each product |
 | Gemini Enterprise (`gemini`) | Pre-registered client; secret basic/post; requires `clientStore` | Pending; does not imply every Gemini product |
 
 Protocol versions implemented: `2024-11-05`, `2025-03-26`, `2025-06-18`; default `2025-06-18`. See [test evidence and verification checklist](docs/compatibility.md), [client configuration](docs/guide.md#clients) and [troubleshooting](docs/troubleshooting.md).

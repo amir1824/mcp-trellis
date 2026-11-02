@@ -8,7 +8,7 @@ import dns from "node:dns/promises";
 import { syncBuiltinESMExports } from "node:module";
 import { afterEach, describe, it, mock } from "node:test";
 import { resolveCimdOutcome } from "../../../src/oauth/cimd/cimd.js";
-import { defaultLookup } from "../../../src/oauth/cimd/cimd-ssrf.js";
+import { defaultLookup } from "../../../src/oauth/cimd/dns.js";
 import { CimdError } from "../../../src/oauth/cimd/failure.js";
 import type { OAuthAuditEntry } from "../../../src/oauth/types.js";
 import { stubPorts } from "../../helpers/ports.js";
@@ -105,6 +105,92 @@ describe("resolveCimdOutcome failure codes", () => {
     assert.ok("doc" in outcome);
     assert.deepEqual(outcome.doc.redirect_uris, doc.redirect_uris);
   });
+
+  it("reports a body that stalls past the hop timeout as timeout", async () => {
+    const stalled = new ReadableStream<Uint8Array>({
+      start: (controller) => controller.enqueue(new TextEncoder().encode("{")),
+    });
+    const outcome = await resolveCimdOutcome(CLIENT_ID, {
+      fetch: async () => new Response(stalled),
+      lookup: PUBLIC_LOOKUP,
+      timeoutMs: 20,
+    });
+    assert.deepEqual(outcome, { failure: { code: "timeout" } });
+  });
+
+  it("stops after three same-origin redirects", async () => {
+    let fetches = 0;
+    const outcome = await resolveCimdOutcome(CLIENT_ID, {
+      fetch: async () => {
+        fetches += 1;
+        return new Response(null, { status: 302, headers: { location: "/next.json" } });
+      },
+      lookup: PUBLIC_LOOKUP,
+    });
+    assert.deepEqual(outcome, {
+      failure: { code: "redirect_refused", detail: "too many redirects" },
+    });
+    assert.equal(fetches, 4);
+  });
+
+  it("reports a host lookup that throws as dns_failed, not as a fetch failure", async () => {
+    const outcome = await outcomeFor(
+      () => new Response(JSON.stringify(doc)),
+      async () => {
+        throw new Error("NXDOMAIN for clients.example");
+      },
+    );
+    assert.deepEqual(outcome, {
+      failure: { code: "dns_failed", detail: "DNS lookup failed (unknown)" },
+    });
+  });
+
+  it("keeps a host lookup's resolver error code", async () => {
+    const outcome = await outcomeFor(
+      () => new Response(JSON.stringify(doc)),
+      async () => {
+        throw Object.assign(new Error("queryA ETIMEOUT"), { code: "ETIMEOUT" });
+      },
+    );
+    assert.deepEqual(outcome, {
+      failure: { code: "dns_failed", detail: "DNS lookup failed (ETIMEOUT)" },
+    });
+  });
+
+  it("reports a host lookup with no addresses as dns_failed, not as blocked", async () => {
+    const outcome = await outcomeFor(
+      () => new Response(JSON.stringify(doc)),
+      async () => [],
+    );
+    assert.deepEqual(outcome, {
+      failure: { code: "dns_failed", detail: "DNS lookup returned no addresses" },
+    });
+  });
+
+  it("resolves an IP-literal client_id without a DNS lookup", async () => {
+    const ipClientId = "https://203.0.113.7/client.json";
+    const outcome = await resolveCimdOutcome(ipClientId, {
+      fetch: async () => new Response(JSON.stringify({ ...doc, client_id: ipClientId })),
+      lookup: async () => {
+        throw new Error("lookup must not run for an IP literal");
+      },
+    });
+    assert.ok("doc" in outcome);
+  });
+
+  it("returns a valid document when the cache write fails", async () => {
+    const outcome = await resolveCimdOutcome(CLIENT_ID, {
+      fetch: async () => new Response(JSON.stringify(doc)),
+      lookup: PUBLIC_LOOKUP,
+      cache: {
+        get: async () => null,
+        set: async () => {
+          throw new Error("cache down");
+        },
+      },
+    });
+    assert.ok("doc" in outcome);
+  });
 });
 
 describe("CIMD failure audit at /authorize", () => {
@@ -150,9 +236,16 @@ describe("defaultLookup on a runtime without dns.lookup", () => {
     assert.deepEqual(await defaultLookup("clients.example"), ["203.0.113.5", "2001:db8::5"]);
   });
 
-  it("reports a missing host as dns_failed with its error code, not as unsupported DNS", async () => {
+  it("keeps the resolver's error code when resolve4 and resolve6 both fail", async () => {
+    const notFound = () => Object.assign(new Error("queryA ENOTFOUND"), { code: "ENOTFOUND" });
     mock.method(dns, "lookup", async () => {
-      throw Object.assign(new Error("getaddrinfo ENOTFOUND"), { code: "ENOTFOUND" });
+      throw new Error("Not implemented");
+    });
+    mock.method(dns, "resolve4", async () => {
+      throw notFound();
+    });
+    mock.method(dns, "resolve6", async () => {
+      throw notFound();
     });
     syncBuiltinESMExports();
     await assert.rejects(
@@ -160,7 +253,20 @@ describe("defaultLookup on a runtime without dns.lookup", () => {
       (caught: unknown) =>
         caught instanceof CimdError &&
         caught.code === "dns_failed" &&
-        caught.message === "DNS lookup failed (ENOTFOUND)",
+        caught.message === "DNS resolution failed (ENOTFOUND)",
     );
+  });
+
+  it("reports a missing host as dns_failed with its error code, not as unsupported DNS", async () => {
+    mock.method(dns, "lookup", async () => {
+      throw Object.assign(new Error("getaddrinfo ENOTFOUND"), { code: "ENOTFOUND" });
+    });
+    syncBuiltinESMExports();
+    const outcome = await resolveCimdOutcome(CLIENT_ID, {
+      fetch: async () => new Response(JSON.stringify(doc)),
+    });
+    assert.deepEqual(outcome, {
+      failure: { code: "dns_failed", detail: "DNS lookup failed (ENOTFOUND)" },
+    });
   });
 });

@@ -8,7 +8,12 @@
  * actually parses and types `args` at call time — keep the two in sync.
  */
 
-import { BodyTooLargeError, DEFAULT_MCP_BODY_LIMIT, readBoundedBytes } from "../http/body.js";
+import {
+  BodyReadAbortedError,
+  BodyTooLargeError,
+  DEFAULT_MCP_BODY_LIMIT,
+  readBoundedBytes,
+} from "../http/body.js";
 import { pickDefined } from "../util/defined.js";
 import type { ToolDef, ToolResult } from "./registry.js";
 import type { JsonSchema } from "./validate.js";
@@ -189,11 +194,9 @@ const defaultErrorResult = (res: Response): ToolResult => {
 const DEFAULT_API_TOOL_TIMEOUT_MS = 30_000;
 
 const isTimeoutError = (caught: unknown): boolean => {
-  if (!(caught instanceof Error)) return false;
+  if (caught instanceof BodyReadAbortedError) return true;
   return (
-    caught.name === "TimeoutError" ||
-    caught.name === "AbortError" ||
-    caught.message === "body read aborted"
+    caught instanceof Error && (caught.name === "TimeoutError" || caught.name === "AbortError")
   );
 };
 

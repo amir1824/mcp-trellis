@@ -545,7 +545,34 @@ describe("apiTool", () => {
     assert.equal(result.content[0]?.text, "Request timed out after 5ms");
   });
 
-  it("treats AbortError and body-read-aborted as timeouts", async () => {
+  it("reports a timeout when the stalled body ignores the abort and only the reader is cancelled", async () => {
+    // Unlike the test above, the stream never errors: readBoundedBytes
+    // cancels its own reader and throws BodyReadAbortedError.
+    const tool = apiTool<Ctx, WeatherArgs>({
+      name: "get_weather",
+      description: "weather",
+      inputSchema: { type: "object", properties: {} },
+      input: weatherSchema,
+      request: (_ctx, args) => `https://api.example.test/weather?city=${args.city}`,
+      timeoutMs: 5,
+      fetch: (async (_input, init) =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start: (controller) => {
+              controller.enqueue(new TextEncoder().encode("partial"));
+              const socket = setTimeout(() => controller.close(), 10_000);
+              init?.signal?.addEventListener("abort", () => clearTimeout(socket));
+            },
+          }),
+        )) as typeof fetch,
+    });
+    const registry = createToolRegistry<Ctx>([tool]);
+    const result = await registry.call("get_weather", {}, { city: "Eilat" });
+    assert.equal(result.isError, true);
+    assert.equal(result.content[0]?.text, "Request timed out after 5ms");
+  });
+
+  it("treats AbortError as a timeout", async () => {
     const tool = apiTool<Ctx, WeatherArgs>({
       name: "get_weather",
       description: "weather",

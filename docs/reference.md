@@ -107,6 +107,7 @@ entry — those are protocol errors, not auth denials.
 | `extra` | `[]` | Exact-match redirect URIs |
 | `allowLoopback` | `true` | Allow `http:` loopback — `127.0.0.1`, `[::1]` (any port). `localhost` and `https:` loopback are not accepted — see [security.md](security.md) |
 | `allowClaude` | `true` | Allow the Claude.ai Custom Connector callback |
+| `allowChatgptConnector` | `false` | Allow ChatGPT's per-connector callback `https://chatgpt.com/connector/oauth/{id}` (one `[A-Za-z0-9_-]{1,128}` id, exact string match). `createMcpApp` turns it on for `clients: ["codex"]` |
 
 Pre-registered clients, and DCR-issued clients whose id was sealed by this
 server's own `/register`, bypass this allowlist entirely — they are

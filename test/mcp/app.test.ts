@@ -406,6 +406,33 @@ describe("createMcpApp", () => {
     assert.equal(((await authorize.json()) as { error: string }).error, "unauthorized_client");
   });
 
+  it("lets a codex app register ChatGPT's per-connector redirect via DCR", async () => {
+    const app = createMcpApp<Ctx>({
+      serverInfo: { name: "codex-only", version: "1.0.0" },
+      tools: [echo],
+      clients: ["codex"],
+      allowInMemoryCodeStore: true,
+      auth: {
+        codeSecret: "app-test-code-secret-value-32-characters-long",
+        resolveUser: async () => ({ id: "u1" }),
+        loginUrl: () => "/login",
+        mintAccessToken: async () => ({ accessToken: "t", expiresIn: 3600 }),
+        verifyToken: async () => null,
+      },
+    });
+    const connectorCallback = "https://chatgpt.com/connector/oauth/cb_8f2Kq-x";
+    const register = await app.fetch(
+      new Request(`${ORIGIN}/mcp/oauth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ redirect_uris: [connectorCallback] }),
+      }),
+    );
+    assert.equal(register.status, 201);
+    const body = (await register.json()) as { redirect_uris: string[] };
+    assert.deepEqual(body.redirect_uris, [connectorCallback]);
+  });
+
   it("refuses to construct a pre-registered client without a clientStore", () => {
     assert.throws(
       () =>

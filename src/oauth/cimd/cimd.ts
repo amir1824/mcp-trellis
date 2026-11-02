@@ -1,6 +1,6 @@
 /**
  * Client ID Metadata Documents (CIMD) — HTTPS URL `client_id` metadata.
- * Off by default (`cimd: true`). SSRF guards live in `cimd-ssrf.ts`.
+ * Off by default (`cimd: true`). SSRF guards live in `url-guard.ts`.
  *
  * ponytail: DNS checked before/after fetch; TCP connect is not pinned (Web
  * fetch). Upgrade: custom dispatcher dialing the resolved IP + Host header.
@@ -8,29 +8,16 @@
 
 import { readBoundedText } from "../../http/body.js";
 import { parseCacheMaxAge, parseDocument } from "./cimd-parse.js";
-import { assertSafeUrl, defaultLookup } from "./cimd-ssrf.js";
+import { defaultLookup } from "./dns.js";
 import { CimdError, type CimdFailure, classifyCimdFailure } from "./failure.js";
-import type { CimdCache, CimdDocument } from "./types.js";
+import type { CimdCache, CimdDocument, CimdFetchOptions } from "./types.js";
+import { assertSafeUrl } from "./url-guard.js";
 
-export type { CimdCache, CimdDocument } from "./types.js";
+export type { CimdCache, CimdDocument, CimdFetchOptions } from "./types.js";
 
 const CIMD_MAX_BYTES = 5 * 1024;
 const CIMD_TIMEOUT_MS = 10_000;
 const CIMD_MAX_REDIRECTS = 3;
-
-export type CimdFetchOptions = {
-  /** Override fetch (tests). Defaults to globalThis.fetch. */
-  fetch?: typeof fetch;
-  cache?: CimdCache;
-  /**
-   * DNS lookup for rebinding checks. When omitted, the library tries
-   * `node:dns/promises.lookup` if available; if that is also unavailable
-   * (e.g. some Workers), resolution is refused rather than fetched blind.
-   */
-  lookup?: (hostname: string) => Promise<string[]>;
-  /** Per-hop timeout covering connect **and** body read. Tests only — default 10 s. */
-  timeoutMs?: number;
-};
 
 /** Build fetch options from router/app CIMD ports. */
 export const cimdFetchOpts = (ports: {
@@ -86,6 +73,7 @@ const readCimdBody = async (
 const followRedirect = async (ctx: FetchCtx, response: Response, current: URL): Promise<URL> => {
   const location = response.headers.get("location");
   if (!location) throw new CimdError("redirect_refused", "redirect without Location");
+  // Refused before the target is even looked up.
   if (ctx.redirect === CIMD_MAX_REDIRECTS) {
     throw new CimdError("redirect_refused", "too many redirects");
   }
@@ -114,7 +102,7 @@ type FetchSettings = {
   timeoutMs: number;
 };
 
-/** A hop either ends resolution (with a document or null) or names the redirect target. */
+/** A hop either ends resolution with a document or names the redirect target. */
 type HopResult = { done: FetchedDocument } | { next: URL };
 
 /** One request under its own timeout. */
@@ -147,12 +135,25 @@ const fetchHop = async (
 const fetchCimdDocument = async (settings: FetchSettings): Promise<FetchedDocument> => {
   let current = new URL(settings.clientId);
   await assertSafeUrl(current, settings.lookup);
-  for (let redirect = 0; redirect <= CIMD_MAX_REDIRECTS; redirect++) {
+  // Ends: followRedirect refuses any redirect past CIMD_MAX_REDIRECTS.
+  for (let redirect = 0; ; redirect += 1) {
     const hop = await fetchHop(settings, current, redirect);
     if ("done" in hop) return hop.done;
     current = hop.next;
   }
-  throw new CimdError("redirect_refused", "too many redirects");
+};
+
+/** The document is already valid; a failed write only means the next call re-fetches. */
+const cacheBestEffort = async (
+  cache: CimdCache,
+  clientId: string,
+  fetched: FetchedDocument,
+): Promise<void> => {
+  try {
+    await cache.set(clientId, fetched.doc, fetched.maxAge);
+  } catch {
+    // Best-effort by design — see above.
+  }
 };
 
 export type CimdOutcome = { doc: CimdDocument } | { failure: CimdFailure };
@@ -184,8 +185,7 @@ export const resolveCimdOutcome = async (
   } catch (caught) {
     return { failure: classifyCimdFailure(caught) };
   }
-  // Outside the try above: a failing cache is a server fault, not a bad document.
-  if (options.cache) await options.cache.set(clientId, fetched.doc, fetched.maxAge);
+  if (options.cache) await cacheBestEffort(options.cache, clientId, fetched);
   return { doc: fetched.doc };
 };
 

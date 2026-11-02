@@ -171,6 +171,7 @@ const buildOAuthOptions = <TCtx>(
       // Client profiles are the source of truth for callbacks.
       extra: [...redirectUrisFor(clients), ...(options.extraRedirectUris ?? [])],
       allowClaude: false,
+      allowChatgptConnector: clients.includes("codex"),
       allowLoopback: options.allowLoopback ?? true,
     },
     ports: {

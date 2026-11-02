@@ -3,6 +3,33 @@
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- **A failing `cimdCache` write no longer fails resolution.** In 3.0.0 a
+  rejected `cache.set` threw out of `resolveCimdClient` (documented as `null`
+  on any failure) and turned a valid, already-checked document into a server
+  error at `/authorize` and `/token`. The write is now best-effort and not
+  audited: a cache that stays down only shows up as every call re-fetching.
+- **CIMD reason codes name the real cause.** A hop timeout during the body
+  read is `timeout` (was `fetch_failed: Error`); a host-supplied `cimdLookup`
+  that throws or returns no addresses is `dns_failed` (was `fetch_failed` /
+  `blocked_address`); the Workers `resolve4`/`resolve6` fallback keeps the
+  resolver's error code; an IP-literal `client_id` host skips DNS instead of
+  failing it. `apiTool` detects a body-read timeout by error class
+  (`BodyReadAbortedError`) instead of by message.
+- **`clients: ["codex"]` also accepts ChatGPT's per-connector redirect**,
+  `https://chatgpt.com/connector/oauth/{id}` (one `[A-Za-z0-9_-]{1,128}` id
+  segment, exact string match). Routers built directly opt in with
+  `redirect.allowChatgptConnector`.
+
+### Documentation
+
+- `docs/security.md` adds `/authorize` to the edge rate-limit guidance: with
+  `cimd: true`, each unresolvable `client_id` there costs an outbound fetch and
+  one `cimd_resolve_failed` audit entry.
+
 ## [3.0.0] - 2026-10-28
 
 Security hardening plus ChatGPT connector fixes. **Two defaults change** (hence

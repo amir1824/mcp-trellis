@@ -12,6 +12,14 @@ export class BodyTooLargeError extends Error {
   }
 }
 
+/** The caller's `signal` aborted the read — a timeout everywhere this library passes one. */
+export class BodyReadAbortedError extends Error {
+  constructor() {
+    super("body read aborted");
+    this.name = "BodyReadAbortedError";
+  }
+}
+
 /** Default cap for `/mcp` — JSON-RPC payloads, generally small but tool args can be text-heavy. */
 export const DEFAULT_MCP_BODY_LIMIT = 1_048_576; // 1 MiB
 
@@ -69,7 +77,7 @@ export const readBoundedBytes = async (
   maxBytes: number,
   signal?: AbortSignal,
 ): Promise<Uint8Array> => {
-  if (signal?.aborted) throw new Error("body read aborted");
+  if (signal?.aborted) throw new BodyReadAbortedError();
 
   const declared = declaredContentLength(source.headers);
   if (declared !== null && declared > maxBytes) {
@@ -99,7 +107,7 @@ export const readBoundedBytes = async (
     for (;;) {
       const { done, value } = await reader.read();
       // Cancel may settle read() as done — still treat abort as failure.
-      if (signal?.aborted) throw new Error("body read aborted");
+      if (signal?.aborted) throw new BodyReadAbortedError();
       if (done) break;
       // ponytail: one oversized chunk can briefly allocate maxBytes + highWaterMark
       // (~64 KiB on Node) before reject — fine for 1 MiB / 64 KiB caps.
