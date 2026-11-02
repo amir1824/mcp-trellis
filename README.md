@@ -86,7 +86,8 @@ The [official TypeScript SDK](https://github.com/modelcontextprotocol/typescript
 tools for building a **new** MCP server. mcp-trellis is narrower on purpose: it
 wires an **existing** SaaS's users and login into MCP as a self-hosted OAuth 2.1
 authorization server. Checked against each project's README and `package.json`
-on 2026-10-29 — re-verify before relying on it, all four move fast:
+on 2026-10-29, and the dependency counts against the npm registry on 2026-11-02 —
+re-verify before relying on it, all four move fast:
 
 | | Official SDK (`@modelcontextprotocol/server`) | fastmcp | mcp-framework | **mcp-trellis** |
 |---|---|---|---|---|
@@ -94,7 +95,7 @@ on 2026-10-29 — re-verify before relying on it, all four move fast:
 | Self-hosted OAuth 2.1 AS (its own `/authorize` + `/token`) | No — ships auth *helpers*; you build the AS | Partial — built-in **OAuth Proxy** in front of an upstream IdP (Google/GitHub/Azure, or any RFC-compliant OAuth 2.0 server you already run) | No — `OAuthAuthProvider` only *verifies* tokens (JWT/JWKS or introspection) from an AS you already run elsewhere | **Yes** — `createOAuthRouter` / `createMcpApp` implement authorize + token themselves |
 | Turns your app's existing session/login into that AS, no separate IdP | No | No — proxies to an external IdP | No — requires an external AS | **Yes** — via `resolveUser` + `loginUrl` (see [`signedTokenAuth`](#the-30-second-example)) |
 | Resources, prompts, sampling, CLI project scaffolding | Yes | Yes | Yes | No — out of scope, see [docs/ROADMAP.md](docs/ROADMAP.md#non-goals) |
-| Runtime dependencies | 2 (`zod` + an internal core package) | ~13 (`hono`, `zod`, `@modelcontextprotocol/sdk`, …) | ~9 (`jsonwebtoken`, `jwks-rsa`, …) | **0** |
+| Runtime dependencies | 2 (`zod` + an internal core package) | ~14 (`hono`, `zod`, `@modelcontextprotocol/sdk`, …) | ~12 (`jsonwebtoken`, `jwks-rsa`, …) | **0** |
 
 If you're building a brand-new MCP server, any of the three above is a better
 fit — they have the ecosystem, docs, and tooling for exactly that. mcp-trellis
