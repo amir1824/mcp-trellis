@@ -24,6 +24,7 @@ import type {
   ResolvedOAuthRouterOptions,
 } from "../types.js";
 import { codeRedirect, errorRedirect } from "./callback.js";
+import { acceptsHtml, type ConsentFailureKind, renderConsentError } from "./consent-error-page.js";
 import { renderBuiltInConsent } from "./consent-page.js";
 
 const CONSENT_TICKET_TTL_MS = 300_000;
@@ -49,6 +50,21 @@ export const issueConsentTicket = (
     exp: Date.now() + CONSENT_TICKET_TTL_MS,
     jti: crypto.randomUUID(),
   } satisfies ConsentTicketPayload);
+
+/**
+ * A rejected ticket, delivered for whoever submitted it: a browser form gets
+ * a readable page, an API caller the JSON error it always got. Both 400.
+ */
+const ticketFailure = (
+  request: Request,
+  kind: ConsentFailureKind,
+  description: string,
+): Response => {
+  if (acceptsHtml(request.headers.get("accept"))) return renderConsentError(kind);
+  const response = oauthError(OAUTH_ERRORS.invalidGrant, 400, description);
+  response.headers.set("Vary", "Accept");
+  return response;
+};
 
 export const renderConsent = async (
   options: OAuthRouterOptions,
@@ -84,7 +100,7 @@ const readValidTicket = async (
     typeof payload.jti !== "string" ||
     !payload.jti
   ) {
-    return oauthError(OAUTH_ERRORS.invalidGrant, 400, "invalid or expired consent_ticket");
+    return ticketFailure(request, "expired", "invalid or expired consent_ticket");
   }
   await auditLegacyKeyUsage(options, {
     clientId: payload.clientId,
@@ -108,14 +124,10 @@ const consumeTicketForUser = async (
 ): Promise<OAuthUser | Response> => {
   const user = await options.ports.resolveUser(request);
   if (!user || user.id !== payload.userId) {
-    return oauthError(
-      OAUTH_ERRORS.invalidGrant,
-      400,
-      "consent_ticket does not match the current user",
-    );
+    return ticketFailure(request, "session", "consent_ticket does not match the current user");
   }
   const fresh = await options.ports.codeStore.consume(`ct:${payload.jti}`, payload.exp);
-  return fresh ? user : oauthError(OAUTH_ERRORS.invalidGrant, 400, "consent_ticket already used");
+  return fresh ? user : ticketFailure(request, "used", "consent_ticket already used");
 };
 
 export const handleConsent = async (

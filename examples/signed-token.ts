@@ -14,7 +14,7 @@
  * base64 blob with any `userId`/`scope`/`resource` they like and `verifyToken`
  * would accept it as genuine, a full authentication bypass. Signing closes
  * that; it does not turn this into something to actually deploy — a real
- * app with refresh/revoke should use an opaque server-side store like
+ * app that must revoke access tokens before they expire should use an opaque server-side store like
  * `examples/project-desk/src/tokens.ts` rather than hand-rolled bearer tokens.
  */
 

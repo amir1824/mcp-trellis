@@ -158,7 +158,7 @@ A single-scope server has no such ambiguity and is unaffected.
 - `defineTool`, `apiTool` — typed, validated tool authoring on top of `ToolDef`. `apiTool`'s `timeoutMs` (default 30000, or `false` to disable) and `maxResponseBytes` (default 1 MiB) bound the upstream call; either surfaces as `isError: true`, not a thrown exception. `redirect` (`"manual"` by default, `"error"`, or `"follow"`) controls upstream redirects — see the guide before enabling `"follow"`. An abort on the `Request` your `request` callback returns surfaces as `Request was cancelled`
 - `CLIENT_PROFILES`, `DEFAULT_CLIENTS`, `authMethodsFor`, `redirectUrisFor`, `preRegisteredClients`, `hasDynamicClient`
 - `parseBearer`, `wwwAuthenticateHeader`, `rejectQueryToken`
-- `signedTokenAuth` — one-secret convenience `McpAppAuth` (HMAC access tokens via HKDF; no refresh/revoke). Type `SignedTokenAuthOptions`
+- `signedTokenAuth` — one-secret convenience `McpAppAuth` (HMAC access tokens via HKDF). `secret` may be a list for rotation (first signs, all verify). Opt-in: `isUserActive(userId)` runs on every verified token and every refresh; `refreshTtlSeconds` adds single-use rotating refresh tokens and `/revoke` for them (needs `codeStore` and `isUserActive`). Access tokens are not revocable before `ttlSeconds`. Type `SignedTokenAuthOptions`
 - `rpcResult`, `rpcError`, JSON-RPC error constants
 - `PROTOCOL_VERSIONS`, `DEFAULT_PROTOCOL_VERSION`
 - `jsonResponse({ data, status?, headers?, cors? })` — type `JsonResponseInput` exported

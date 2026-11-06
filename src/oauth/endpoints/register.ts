@@ -94,7 +94,10 @@ const issueRegistration = async (
       client_id_issued_at: issuedAt,
       token_endpoint_auth_method: "none",
       redirect_uris: redirectUris,
-      grant_types: [GRANT_TYPES.authorizationCode],
+      // Same set `/.well-known` advertises: refresh only when the port exists.
+      grant_types: options.ports.refreshAccessToken
+        ? [GRANT_TYPES.authorizationCode, GRANT_TYPES.refreshToken]
+        : [GRANT_TYPES.authorizationCode],
       response_types: ["code"],
     },
   });

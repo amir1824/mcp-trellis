@@ -54,6 +54,8 @@ export const mcp = createMcpApp<{ userId: string }>({
 
 `codeStore` must be a shared single-use store (Redis/KV — see [examples/stores.ts](examples/stores.ts)). Advanced ports (`mintAccessToken`, `verifyToken`, refresh, revoke) remain available when you outgrow the helper. Node ≥20.
 
+A token outlives the login session that produced it. Pass `isUserActive: (userId) => …` so a removed or disabled user stops working on the next request, and `refreshTtlSeconds` (needs `codeStore` and `isUserActive`) so a connector renews without sending the user back to the browser every hour. What ends what: [Sessions and expiry](docs/security.md#sessions-and-expiry).
+
 **[View the complete SaaS demo](examples/saas-demo/README.md)** — working login, consent, two users with different projects.
 
 Also listed on the Official MCP Registry as **Project desk** (reference remote server; not the SDK) — see [`examples/project-desk`](examples/project-desk/).
@@ -123,7 +125,7 @@ Protocol versions implemented: `2024-11-05`, `2025-03-26`, `2025-06-18`; default
 
 ## Integrate with your app
 
-Prefer `signedTokenAuth` for a one-secret start. For refresh, revoke, or your own JWT/JWKS, implement `resolveUser`, `loginUrl`, `mintAccessToken` and `verifyToken` yourself. Mint tokens for the requested MCP resource and return their verified `audience`; the library rejects an audience mismatch before executing tools. A logged-in user still sees an OAuth consent screen. Your data layer must enforce ownership and tenant permissions. Browser callers that send an `Origin` header need `allowedRequestOrigins` (fail-closed by default) — see [security.md](docs/security.md).
+Prefer `signedTokenAuth` for a one-secret start. For revocable access tokens, a store-backed refresh, or your own JWT/JWKS, implement `resolveUser`, `loginUrl`, `mintAccessToken` and `verifyToken` yourself. Mint tokens for the requested MCP resource and return their verified `audience`; the library rejects an audience mismatch before executing tools. A logged-in user still sees an OAuth consent screen. Your data layer must enforce ownership and tenant permissions. Browser callers that send an `Origin` header need `allowedRequestOrigins` (fail-closed by default) — see [security.md](docs/security.md).
 
 [SaaS demo](examples/saas-demo/README.md) · [Next.js starter](examples/nextjs-saas/README.md) · [Host recipes](docs/guide.md) · [Security](docs/security.md) · [npm](https://www.npmjs.com/package/mcp-trellis)
 

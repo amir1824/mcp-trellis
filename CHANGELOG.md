@@ -5,6 +5,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`signedTokenAuth({ isUserActive })`.** Called with the signed `userId` on every
+  token that passed signature, expiry and shape checks and on every refresh; only
+  `true` lets the request through and a throw is a 500. Before, a token stayed valid
+  after the user was removed, disabled or logged out, until it expired.
+- **`signedTokenAuth({ refreshTtlSeconds })`.** Opt-in rotating refresh tokens, so a
+  connector renews without sending the user back to the browser every `ttlSeconds`.
+  Single use through `codeStore`, bound to user, client, resource and scope, with an
+  absolute lifetime fixed at consent. Needs `codeStore` and `isUserActive` and throws
+  at construction without them. `/revoke` is mounted and burns refresh tokens. The
+  DCR response now lists `refresh_token` in `grant_types` whenever the AS advertises it.
+- **`signedTokenAuth({ secret: [new, old] })`.** The first secret signs, every entry
+  verifies, and the list is also the `codeSecret`, so replacing a secret no longer
+  invalidates every outstanding token and DCR `client_id` at once.
+- **A readable page for a failed consent POST.** With `Accept: text/html`, an
+  expired ticket, an ended session or a second Approve shows a short fixed page
+  (status unchanged, `400`) instead of raw JSON. Other callers get the same JSON.
+- `docs/security.md` gains *Sessions and expiry*: what each login, token and secret
+  event does to a connector.
+
+### Changed
+
+- **A rejected bearer token now carries `error="invalid_token"`** in
+  `WWW-Authenticate` (RFC 6750 §3.1), one code for a bad signature, an expired
+  token, a wrong audience and an inactive user. A request with no bearer gets the
+  header it always did.
+- `signedTokenAuth` validates every `secret` entry with the `codeSecret` rules and
+  accepts at most 8; it passes the list through as `codeSecret`.
+
 ### Fixed
 
 - **A failing `cimdCache` write no longer fails resolution.** In 3.0.0 a
