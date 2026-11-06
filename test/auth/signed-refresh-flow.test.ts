@@ -4,7 +4,7 @@ import { createMcpApp } from "../../src/app.js";
 import { signedTokenAuth } from "../../src/auth/signed-token.js";
 import { createMemoryCodeStore } from "../../src/oauth/crypto/codes.js";
 import { expectJson, jsonRpc } from "../helpers/http.js";
-import { authorizeCode, redeem } from "../helpers/oauth.js";
+import { authorize, authorizeCode, redeem, VALID_S256_CHALLENGE } from "../helpers/oauth.js";
 import { HARNESS_CODE_SECRET } from "../helpers/ports.js";
 import { DEFAULT_ORIGIN } from "../helpers/target.js";
 
@@ -165,5 +165,47 @@ describe("signedTokenAuth refresh over HTTP", () => {
     const first = await expectJson<TokenBody>(await redeem(throwing, session), 200);
     const res = await postToken(throwing, refreshParams(first.refresh_token as string));
     assert.equal(res.status, 500);
+  });
+});
+
+describe("signedTokenAuth secret rotation over HTTP", () => {
+  const OLD_SECRET = "an-older-rotation-secret-32-characters-long";
+  const REDIRECT = "http://127.0.0.1:4321/cb";
+
+  const appWithSecret = (secret: string | string[]) =>
+    createMcpApp({
+      serverInfo: { name: "t", version: "1" },
+      allowInMemoryCodeStore: true,
+      auth: signedTokenAuth({
+        secret,
+        resolveUser: async () => ({ id: "alice" }),
+        loginUrl: () => "/login",
+      }),
+      tools: [],
+    });
+
+  const register = async (app: { fetch: (r: Request) => Promise<Response> }) => {
+    const res = await app.fetch(
+      new Request(`${ORIGIN}/mcp/oauth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ redirect_uris: [REDIRECT] }),
+      }),
+    );
+    return (await expectJson<{ client_id: string }>(res, 201)).client_id;
+  };
+
+  it("keeps a client_id registered under the old secret working once the list is [new, old]", async () => {
+    const clientId = await register(appWithSecret(OLD_SECRET));
+    const rotated = appWithSecret([HARNESS_CODE_SECRET, OLD_SECRET]);
+    const consent = await authorize(rotated, VALID_S256_CHALLENGE, { clientId });
+    assert.equal(consent.status, 200);
+  });
+
+  it("refuses that client_id once the old secret is dropped", async () => {
+    const clientId = await register(appWithSecret(OLD_SECRET));
+    const dropped = appWithSecret(HARNESS_CODE_SECRET);
+    const refused = await authorize(dropped, VALID_S256_CHALLENGE, { clientId });
+    assert.equal(refused.status, 400);
   });
 });

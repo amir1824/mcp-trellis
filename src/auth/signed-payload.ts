@@ -18,6 +18,18 @@ const TOKEN_LABELS = {
 
 export type SignedTokenKind = keyof typeof TOKEN_LABELS;
 
+/**
+ * Longest token of each kind. Access tokens were never length-checked (the
+ * server's header limit bounds them), and adding a cap would change what
+ * verifies for callers who never use refresh. Refresh tokens are new and get
+ * one; `signPayload` enforces it too, so an over-long one fails when issued
+ * instead of being refused on every later use.
+ */
+const MAX_TOKEN_LENGTH: Record<SignedTokenKind, number> = {
+  access: Number.POSITIVE_INFINITY,
+  refresh: MAX_COMPARE_LENGTH,
+};
+
 const HMAC_SHA256: HmacKeyGenParams = { name: "HMAC", hash: "SHA-256", length: 256 };
 
 const tokenKey = (secret: string, kind: SignedTokenKind, usage: "sign" | "verify") =>
@@ -31,10 +43,21 @@ export const signPayload = async (
   const key = await tokenKey(secret, kind, "sign");
   const body = bytesToBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
   const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body));
-  return `${body}.${bytesToBase64Url(signature)}`;
+  const token = `${body}.${bytesToBase64Url(signature)}`;
+  if (token.length > MAX_TOKEN_LENGTH[kind]) {
+    throw new Error(
+      `signedTokenAuth: a ${kind} token would be ${token.length} characters, over the ` +
+        `${MAX_TOKEN_LENGTH[kind]} limit — shorten the user id or the scope list`,
+    );
+  }
+  return token;
 };
 
-/** True when `signature` verifies `body` under any of `secrets`, tried in order. */
+/**
+ * True when `signature` verifies `body` under any of `secrets`, tried in order.
+ * ponytail: one HMAC per rotation entry for a forged token; `signedTokenAuth`
+ * caps the list at 8. Upgrade: carry a key id in the token and look the key up.
+ */
 const signedByAny = async (
   secrets: readonly string[],
   kind: SignedTokenKind,
@@ -59,7 +82,7 @@ export const verifyPayload = async (
   kind: SignedTokenKind,
   token: string,
 ): Promise<unknown> => {
-  if (token.length > MAX_COMPARE_LENGTH) return null;
+  if (token.length > MAX_TOKEN_LENGTH[kind]) return null;
   const parts = token.split(".");
   const [body, signature] = parts;
   if (parts.length !== 2 || !body || !signature) return null;

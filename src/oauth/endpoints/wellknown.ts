@@ -1,19 +1,8 @@
 import { GET_ONLY, jsonResponse, requireHttpMethod } from "../../http/http.js";
 import { pickDefined } from "../../util/defined.js";
-import { unregisteredClientsAllowed } from "../config.js";
-import { GRANT_TYPES } from "../constants.js";
-import type { OAuthPorts, OAuthRouterOptions } from "../types.js";
-import {
-  authorizationServerMetadata,
-  type GrantType,
-  protectedResourceMetadata,
-} from "./metadata.js";
-
-const grantTypesOf = (ports: OAuthPorts): GrantType[] => {
-  const grants: GrantType[] = [GRANT_TYPES.authorizationCode];
-  if (ports.refreshAccessToken) grants.push(GRANT_TYPES.refreshToken);
-  return grants;
-};
+import { grantTypesOf, unregisteredClientsAllowed } from "../config.js";
+import type { OAuthRouterOptions } from "../types.js";
+import { authorizationServerMetadata, protectedResourceMetadata } from "./metadata.js";
 
 export const handleWellKnown = async (
   request: Request,

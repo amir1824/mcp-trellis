@@ -63,7 +63,7 @@ to it, with `signedTokenAuth`:
 |-------|-------------------------|
 | The app session ends (cookie expires, logout) | Nothing. The next `/authorize` redirects to `loginUrl`; a token already issued keeps working |
 | The access token reaches its `ttlSeconds` (default 1 h) | `401` with `WWW-Authenticate: Bearer …, error="invalid_token"`. With a refresh token the client renews silently; without one the user goes through the browser again |
-| The user is removed, disabled or signed out everywhere | With `isUserActive`: `401` on the next MCP request and `invalid_grant` on the next refresh. Without it: the access token works until it expires and the refresh token until its own expiry |
+| The user is removed, disabled or signed out everywhere | With `isUserActive`: `401` on the next MCP request and `invalid_grant` on the next refresh. Without it: the access token works until it expires (refresh cannot be enabled without it) |
 | The user's role or scopes change | The token keeps the scopes granted at issue until it expires. Enforce current permissions in the data layer |
 | The user sits on the consent page for over 5 minutes, the session ends before Approve, or Approve is posted twice | A short page in the browser (JSON for a caller that does not ask for `text/html`), status `400`. `consent.render` customizes the consent screen only, not this page |
 | `secret` is replaced by a list `[new, old]` | Old tokens and DCR `client_id`s keep working, new ones are signed with `new`. Remove `old` once its tokens have expired; until then it can still forge |
@@ -81,6 +81,13 @@ stored; the only state is a single-use mark per token in `codeStore`.
 
 - The lifetime is absolute: fixed at consent and never extended by refreshing, so
   the user approves again after `refreshTtlSeconds` however active the connector is.
+  The last access token issued can still run for up to `ttlSeconds` past that.
+- The single-use mark for each refresh stays in `codeStore` until the grant's
+  expiry, one entry per refresh. Size the store for that and rate-limit `/token`
+  per `client_id`.
+- A refresh token is capped at 4096 characters. Issuing one that long (a very long
+  user id or scope list) throws, instead of handing the client a token that can
+  never be redeemed.
 - Each refresh token works once and is replaced. `codeStore.consume` must be
   atomic (Redis `SET NX EX`, a unique-key insert) with a TTL no shorter than the
   token. The process-local store does not hold across instances, and Workers KV is

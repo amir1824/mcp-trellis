@@ -53,7 +53,7 @@ export const issueConsentTicket = (
 
 /**
  * A rejected ticket, delivered for whoever submitted it: a browser form gets
- * a readable page, an API caller the JSON error it always got. Both 400.
+ * a readable page, an API caller the JSON error it can parse. Both 400.
  */
 const ticketFailure = (
   request: Request,

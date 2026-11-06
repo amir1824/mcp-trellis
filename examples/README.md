@@ -32,4 +32,4 @@ npm run demo
 | [`signed-token.ts`](signed-token.ts) | Standalone HMAC helpers for advanced ports |
 
 Prefer `signedTokenAuth` from `mcp-trellis` for new apps; use the advanced
-ports when you need revocable access tokens, a store-backed refresh, or your own JWT/JWKS.
+ports when you need access tokens revocable before they expire, refresh-token families, or your own JWT/JWKS.

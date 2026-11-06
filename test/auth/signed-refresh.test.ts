@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { signPayload } from "../../src/auth/signed-payload.js";
 import { type SignedTokenAuthOptions, signedTokenAuth } from "../../src/auth/signed-token.js";
 import { type CodeStore, createMemoryCodeStore } from "../../src/oauth/crypto/codes.js";
+import { sha256Base64Url } from "../../src/oauth/crypto/pkce.js";
 import type { MintedToken } from "../../src/oauth/types.js";
 import { HARNESS_CODE_SECRET } from "../helpers/ports.js";
 
@@ -85,6 +86,19 @@ describe("signedTokenAuth refresh — configuration", () => {
   });
 });
 
+describe("signedTokenAuth without refresh", () => {
+  it("still verifies an access token longer than 4096 characters, as before", async () => {
+    const auth = signedTokenAuth({
+      secret: HARNESS_CODE_SECRET,
+      resolveUser: async () => null,
+      loginUrl: () => "/login",
+    });
+    const minted = await auth.mintAccessToken({ ...GRANT, userId: "u".repeat(5000) });
+    assert.ok(minted.accessToken.length > 4096);
+    assert.equal((await auth.verifyToken(minted.accessToken, REQUEST))?.userId.length, 5000);
+  });
+});
+
 describe("signedTokenAuth refresh — rotation", () => {
   it("returns a new access token and a different refresh token, with the original scope", async () => {
     const { auth, refresh } = build();
@@ -125,10 +139,41 @@ describe("signedTokenAuth refresh — rotation", () => {
   });
 
   it("rejects a refresh token past its expiry", async () => {
-    const { auth, refresh } = build({ refreshTtlSeconds: 0.01 });
-    const first = await initial(auth);
-    await new Promise((resolve) => setTimeout(resolve, 40));
-    assert.equal(await refresh(refreshInput(first.refreshToken as string)), null);
+    const { refresh } = build();
+    const expired = await signPayload(HARNESS_CODE_SECRET, "refresh", {
+      userId: "alice",
+      scopes: ["mcp"],
+      audience: RESOURCE,
+      clientHash: await sha256Base64Url("c1"),
+      exp: Date.now() - 1000,
+      jti: "expired-jti",
+    });
+    assert.equal(await refresh(refreshInput(expired)), null);
+  });
+
+  it("refreshes a grant that carries no scope at all", async () => {
+    const { auth, refresh } = build();
+    const minted = await auth.mintAccessToken({ ...GRANT, scope: "" });
+    const next = await refresh(refreshInput(minted.refreshToken as string));
+    assert.equal(next?.scope, "");
+    assert.deepEqual(await auth.verifyToken(next?.accessToken as string, REQUEST), {
+      userId: "alice",
+      scopes: [],
+      audience: RESOURCE,
+    });
+  });
+
+  it("refreshes for a client id as long as a many-redirect DCR registration, with a token that stays small", async () => {
+    const { auth, refresh } = build();
+    const clientId = "c".repeat(6000);
+    const minted = await auth.mintAccessToken({ ...GRANT, clientId });
+    assert.ok((minted.refreshToken as string).length < 1000);
+    assert.ok(await refresh(refreshInput(minted.refreshToken as string, { clientId })));
+  });
+
+  it("fails when a refresh token would be too long, instead of issuing one that never works", async () => {
+    const { auth } = build();
+    await assert.rejects(auth.mintAccessToken({ ...GRANT, userId: "u".repeat(5000) }), /limit/);
   });
 });
 

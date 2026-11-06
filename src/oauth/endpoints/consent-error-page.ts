@@ -47,7 +47,7 @@ const ERROR_PAGE_HEADERS: Record<string, string> = {
 
 /**
  * True only for an explicit `text/html` media range with q > 0. Absent
- * `Accept`, `*\/*` and `text/*` keep the JSON body existing callers parse.
+ * `Accept`, `*\/*` and `text/*` keep the JSON body that API callers parse.
  */
 export const acceptsHtml = (accept: string | null): boolean =>
   (accept ?? "").split(",").some((range) => {

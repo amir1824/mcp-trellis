@@ -18,11 +18,14 @@ import { assertCodeSecret } from "../oauth/config.js";
 import type { CodeStore } from "../oauth/crypto/codes.js";
 import type { MintAccessTokenInput, MintedToken, OAuthUser } from "../oauth/types.js";
 import { signPayload, verifyPayload } from "./signed-payload.js";
-import { createRefreshTokens } from "./signed-refresh.js";
+import { createRefreshTokens, type RefreshTokens } from "./signed-refresh.js";
 
 const DEFAULT_TTL_SECONDS = 3600;
 /** Each secret costs a key derivation per token kind, so rotation lists stay short. */
 const MAX_SECRETS = 8;
+
+type SecretList = readonly [string, ...string[]];
+type UserCheck = (userId: string) => boolean | Promise<boolean>;
 
 export type SignedTokenAuthOptions = {
   /**
@@ -43,12 +46,13 @@ export type SignedTokenAuthOptions = {
    * who was removed, disabled or signed out everywhere. A throw becomes a 500,
    * never an authenticated request; cache the answer if lookups are slow.
    */
-  isUserActive?: (userId: string) => boolean | Promise<boolean>;
+  isUserActive?: UserCheck;
   /**
    * Turns on `grant_type=refresh_token`, with rotation. This is the absolute
    * lifetime of one consent: the user approves again after it, however
-   * often the connector refreshes. Requires `codeStore` (the same instance
-   * the router uses) and `isUserActive`.
+   * often the connector refreshes (the last access token it issued can
+   * still run for up to `ttlSeconds` longer). Requires `codeStore` (the same
+   * instance the router uses) and `isUserActive`.
    */
   refreshTtlSeconds?: number;
 };
@@ -89,7 +93,7 @@ const assertPositiveSeconds = (name: string, value: number): void => {
   }
 };
 
-const resolveSecretList = (secret: string | string[]): readonly [string, ...string[]] => {
+const resolveSecretList = (secret: string | string[]): SecretList => {
   const secrets = Array.isArray(secret) ? [...secret] : [secret];
   if (secrets.length === 0 || secrets.length > MAX_SECRETS) {
     throw new Error(
@@ -100,16 +104,39 @@ const resolveSecretList = (secret: string | string[]): readonly [string, ...stri
   return secrets as [string, ...string[]];
 };
 
-type RefreshWiring = Pick<McpAppAuth, "refreshAccessToken" | "revokeToken">;
+type AccessMinter = (input: MintAccessTokenInput) => Promise<MintedToken>;
 
-/** The refresh half of the auth object, or nothing when `refreshTtlSeconds` is unset. */
-const refreshWiring = (
+const accessMinter =
+  (secrets: SecretList, ttlSeconds: number): AccessMinter =>
+  async (input) => ({
+    accessToken: await signPayload(secrets[0], "access", {
+      userId: input.userId,
+      scopes: input.scope.split(" ").filter(Boolean),
+      audience: input.resource,
+      exp: Date.now() + ttlSeconds * 1000,
+    } satisfies AccessPayload),
+    expiresIn: ttlSeconds,
+    scope: input.scope,
+  });
+
+/** Signature, then expiry and shape, then the user check: a garbage token never reaches the host. */
+const accessVerifier =
+  (secrets: SecretList, isUserActive: UserCheck | undefined) =>
+  async (token: string): Promise<VerifiedToken | null> => {
+    const payload = parseAccessPayload(await verifyPayload(secrets, "access", token));
+    if (!payload) return null;
+    if (isUserActive && (await isUserActive(payload.userId)) !== true) return null;
+    return toVerified(payload);
+  };
+
+/** The refresh machinery, or undefined when `refreshTtlSeconds` is unset. */
+const refreshTokensFor = (
   options: SignedTokenAuthOptions,
-  secrets: readonly [string, ...string[]],
-  mintAccess: (input: MintAccessTokenInput) => Promise<MintedToken>,
-): { wiring: RefreshWiring; issue?: (grant: MintAccessTokenInput) => Promise<string> } => {
+  secrets: SecretList,
+  mintAccess: AccessMinter,
+): RefreshTokens | undefined => {
   const { refreshTtlSeconds, codeStore, isUserActive } = options;
-  if (refreshTtlSeconds === undefined) return { wiring: {} };
+  if (refreshTtlSeconds === undefined) return undefined;
   assertPositiveSeconds("refreshTtlSeconds", refreshTtlSeconds);
   if (!codeStore) {
     throw new Error(
@@ -122,17 +149,13 @@ const refreshWiring = (
       "signedTokenAuth: refreshTtlSeconds needs isUserActive, or a removed user keeps the connector until the refresh token expires",
     );
   }
-  const tokens = createRefreshTokens({
+  return createRefreshTokens({
     secrets,
     lifetimeMs: refreshTtlSeconds * 1000,
     codeStore,
     isUserActive,
     mintAccess,
   });
-  return {
-    wiring: { refreshAccessToken: tokens.refresh, revokeToken: tokens.revoke },
-    issue: tokens.issue,
-  };
 };
 
 /** Builds a complete `McpAppAuth` from one secret plus your session resolver. */
@@ -140,18 +163,8 @@ export const signedTokenAuth = (options: SignedTokenAuthOptions): McpAppAuth => 
   const ttlSeconds = options.ttlSeconds ?? DEFAULT_TTL_SECONDS;
   assertPositiveSeconds("ttlSeconds", ttlSeconds);
   const secrets = resolveSecretList(options.secret);
-
-  const mintAccess = async (input: MintAccessTokenInput): Promise<MintedToken> => ({
-    accessToken: await signPayload(secrets[0], "access", {
-      userId: input.userId,
-      scopes: input.scope.split(" ").filter(Boolean),
-      audience: input.resource,
-      exp: Date.now() + ttlSeconds * 1000,
-    } satisfies AccessPayload),
-    expiresIn: ttlSeconds,
-    scope: input.scope,
-  });
-  const { wiring, issue } = refreshWiring(options, secrets, mintAccess);
+  const mintAccess = accessMinter(secrets, ttlSeconds);
+  const refresh = refreshTokensFor(options, secrets, mintAccess);
 
   return {
     codeSecret: [...secrets],
@@ -159,19 +172,10 @@ export const signedTokenAuth = (options: SignedTokenAuthOptions): McpAppAuth => 
     loginUrl: options.loginUrl,
     mintAccessToken: async (input) => {
       const access = await mintAccess(input);
-      return issue ? { ...access, refreshToken: await issue(input) } : access;
+      return refresh ? { ...access, refreshToken: await refresh.issue(input) } : access;
     },
-    verifyToken: async (token) => {
-      const payload = parseAccessPayload(await verifyPayload(secrets, "access", token));
-      if (!payload) return null;
-      // After the signature check on purpose: a garbage token must not reach
-      // the host's database.
-      if (options.isUserActive && (await options.isUserActive(payload.userId)) !== true) {
-        return null;
-      }
-      return toVerified(payload);
-    },
-    ...wiring,
+    verifyToken: accessVerifier(secrets, options.isUserActive),
+    ...(refresh ? { refreshAccessToken: refresh.refresh, revokeToken: refresh.revoke } : {}),
     ...(options.codeStore !== undefined ? { codeStore: options.codeStore } : {}),
   };
 };

@@ -1,7 +1,7 @@
 /** OAuth construction asserts and small response helpers. */
 
 import { jsonResponse } from "../http/http.js";
-import { DEFAULT_SCOPE } from "./constants.js";
+import { DEFAULT_SCOPE, GRANT_TYPES, type GrantType } from "./constants.js";
 import type { MintedToken, OAuthPorts, OAuthRouterOptions } from "./types.js";
 
 /** Default true — see `OAuthRouterOptions.allowUnregisteredClients`. */
@@ -11,6 +11,12 @@ export const unregisteredClientsAllowed = (options: OAuthRouterOptions): boolean
 /** Default true since 1.0 — see `OAuthRouterOptions.requireRegisteredClients`. */
 export const registeredClientsRequired = (options: OAuthRouterOptions): boolean =>
   options.requireRegisteredClients !== false;
+
+/** The grants this AS handles; metadata, DCR responses and `/token` errors all name this set. */
+export const grantTypesOf = (ports: OAuthPorts): GrantType[] =>
+  ports.refreshAccessToken
+    ? [GRANT_TYPES.authorizationCode, GRANT_TYPES.refreshToken]
+    : [GRANT_TYPES.authorizationCode];
 
 /** Scopes this AS advertises and is willing to grant. */
 export const advertisedScopes = (options: OAuthRouterOptions): string[] =>

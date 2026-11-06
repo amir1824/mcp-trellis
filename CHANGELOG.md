@@ -14,15 +14,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`signedTokenAuth({ refreshTtlSeconds })`.** Opt-in rotating refresh tokens, so a
   connector renews without sending the user back to the browser every `ttlSeconds`.
   Single use through `codeStore`, bound to user, client, resource and scope, with an
-  absolute lifetime fixed at consent. Needs `codeStore` and `isUserActive` and throws
-  at construction without them. `/revoke` is mounted and burns refresh tokens. The
+  absolute lifetime fixed at consent. The last access token it issues can run up to `ttlSeconds` past that. Needs
+  `codeStore` and `isUserActive` and throws at construction without them. `/revoke` is mounted and burns refresh tokens. The
   DCR response now lists `refresh_token` in `grant_types` whenever the AS advertises it.
 - **`signedTokenAuth({ secret: [new, old] })`.** The first secret signs, every entry
   verifies, and the list is also the `codeSecret`, so replacing a secret no longer
   invalidates every outstanding token and DCR `client_id` at once.
 - **A readable page for a failed consent POST.** With `Accept: text/html`, an
   expired ticket, an ended session or a second Approve shows a short fixed page
-  (status unchanged, `400`) instead of raw JSON. Other callers get the same JSON.
+  (status unchanged, `400`) instead of raw JSON. Other callers get the same JSON,
+  now with `Vary: Accept`.
 - `docs/security.md` gains *Sessions and expiry*: what each login, token and secret
   event does to a connector.
 

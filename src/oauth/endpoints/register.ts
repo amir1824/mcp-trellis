@@ -9,8 +9,8 @@
 import { DEFAULT_OAUTH_BODY_LIMIT, readBoundedText } from "../../http/body.js";
 import { jsonResponse, POST_ONLY, requireHttpMethod } from "../../http/http.js";
 import { isJsonObject } from "../../util/json.js";
-import { oauthError, resolveSecrets } from "../config.js";
-import { GRANT_TYPES, MAX_CLIENT_REDIRECT_URIS, OAUTH_ERRORS } from "../constants.js";
+import { grantTypesOf, oauthError, resolveSecrets } from "../config.js";
+import { MAX_CLIENT_REDIRECT_URIS, OAUTH_ERRORS } from "../constants.js";
 import { seal } from "../crypto/sealed.js";
 import { CLAUDE_CALLBACK, isAllowedRedirectUri } from "../policy/redirect.js";
 import { readBodyOrError } from "../policy/reqbody.js";
@@ -94,10 +94,7 @@ const issueRegistration = async (
       client_id_issued_at: issuedAt,
       token_endpoint_auth_method: "none",
       redirect_uris: redirectUris,
-      // Same set `/.well-known` advertises: refresh only when the port exists.
-      grant_types: options.ports.refreshAccessToken
-        ? [GRANT_TYPES.authorizationCode, GRANT_TYPES.refreshToken]
-        : [GRANT_TYPES.authorizationCode],
+      grant_types: grantTypesOf(options.ports),
       response_types: ["code"],
     },
   });
