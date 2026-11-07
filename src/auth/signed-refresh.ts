@@ -24,7 +24,12 @@ import type {
   RevokeTokenInput,
 } from "../oauth/types.js";
 import { isJsonObject } from "../util/json.js";
-import { parseGrantClaims, signPayload, verifyPayload } from "./signed-payload.js";
+import {
+  type GrantClaims,
+  parseGrantClaims,
+  signPayload,
+  verifyPayload,
+} from "./signed-payload.js";
 
 const JTI_BYTES = 16;
 const MAX_JTI_LENGTH = 64;
@@ -35,13 +40,9 @@ const JTI_KEY_PREFIX = "rt:";
  * The client is bound by hash, not by value: a DCR `client_id` is a sealed
  * assertion that grows with its redirect URIs, and the token must not.
  */
-type RefreshPayload = {
-  userId: string;
-  scopes: string[];
-  audience: string;
+type RefreshPayload = GrantClaims & {
   clientHash: string;
-  /** Fixed when the grant is consented; rotation never extends it. */
-  exp: number;
+  /** `exp` is fixed when the grant is consented; rotation never extends it. */
   jti: string;
 };
 

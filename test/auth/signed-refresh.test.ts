@@ -364,10 +364,10 @@ describe("signedTokenAuth secret rotation", () => {
   });
 
   it("copies the list, so changing the caller's array later changes nothing", async () => {
-    const secrets = [HARNESS_CODE_SECRET];
+    const secrets = [HARNESS_CODE_SECRET, OLD_SECRET];
     const auth = plainAuth(secrets);
-    assert.deepEqual(auth.codeSecret, [HARNESS_CODE_SECRET]);
-    secrets[0] = OLD_SECRET;
+    assert.deepEqual(auth.codeSecret, [HARNESS_CODE_SECRET, OLD_SECRET]);
+    secrets[0] = "an-unrelated-secret-that-is-32-characters-long";
     const token = (await auth.mintAccessToken(GRANT)).accessToken;
     assert.equal((await auth.verifyToken(token, REQUEST))?.userId, "alice");
   });
