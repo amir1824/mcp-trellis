@@ -86,7 +86,7 @@ stored; the only state is a single-use mark per token in `codeStore`.
   expiry, one entry per refresh. Size the store for that and rate-limit `/token`
   per `client_id`.
 - A refresh token is capped at 4096 characters. Issuing one that long (a user id of
-  roughly 2.5 KB or more, or a very long scope list) throws, instead of handing the
+  roughly 2.8 KB of ASCII or more, less if it is multi-byte, or a very long scope list) throws, instead of handing the
   client a token that can never be redeemed. At the first issuance that is a `500`
   at `/token` after the authorization code was already spent, so that user fails
   the same way on every login; keep user ids short.

@@ -13,12 +13,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   after the user was removed, disabled or logged out, until it expired.
 - **`signedTokenAuth({ refreshTtlSeconds })`.** Opt-in rotating refresh tokens, so a
   connector renews without sending the user back to the browser every `ttlSeconds`.
-  Single use through `codeStore`, bound to user, client, resource and scope, with an
-  absolute lifetime fixed at consent. The last access token it issues can run up to `ttlSeconds` past that. Needs
-  `codeStore` and `isUserActive` and throws at construction without them. A
-  refresh token over 4096 characters (a user id of about 2.5 KB) is refused at
-  issue with a `500`, not handed out unusable. `/revoke` is mounted and burns refresh tokens. The
-  DCR response now lists `refresh_token` in `grant_types` whenever the AS advertises it.
+  Single use through `codeStore`, bound to user, client, resource and scope, with
+  an absolute lifetime fixed at consent. The last access token it issues can run
+  up to `ttlSeconds` past that. Needs `codeStore` and `isUserActive` and throws at
+  construction without them. A refresh token over 4096 characters (a user id of
+  about 2.8 KB of ASCII) is refused at issue with a `500`, not handed out unusable.
+  `/revoke` is mounted and burns refresh tokens. The DCR response now lists
+  `refresh_token` in `grant_types` whenever the AS advertises it.
 - **`signedTokenAuth({ secret: [new, old] })`.** The first secret signs, every entry
   verifies, and the list is also the `codeSecret`, so replacing a secret no longer
   invalidates every outstanding token and DCR `client_id` at once.
