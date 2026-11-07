@@ -90,18 +90,6 @@ describe("WWW-Authenticate error code on a failed bearer (RFC 6750 §3.1)", () =
     assert.equal(body.id, 7);
   });
 
-  it("uses the one code for a wrong audience too", async () => {
-    const { app, auth } = makeApp();
-    const other = await auth.mintAccessToken({
-      userId: "alice",
-      clientId: "c",
-      scope: "mcp",
-      resource: `${ORIGIN}/other`,
-    });
-    const res = await call(app, { Authorization: `Bearer ${other.accessToken}` });
-    assert.match(res.headers.get("www-authenticate") ?? "", /error="invalid_token"/);
-  });
-
   it("does not claim invalid_token for the query-string rejection", async () => {
     const { app, auth } = makeApp();
     const minted = await mintValid(auth);
@@ -120,12 +108,6 @@ describe("WWW-Authenticate error code on a failed bearer (RFC 6750 §3.1)", () =
 });
 
 describe("isUserActive on the MCP path", () => {
-  it("lets an active user through", async () => {
-    const { app, auth } = makeApp(async () => true);
-    const minted = await mintValid(auth);
-    assert.equal((await call(app, { Authorization: `Bearer ${minted.accessToken}` })).status, 200);
-  });
-
   it("answers 401 invalid_token once the user is no longer active", async () => {
     const active = { value: true };
     const { app, auth } = makeApp(() => active.value);

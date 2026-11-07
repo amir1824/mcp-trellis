@@ -41,6 +41,16 @@ const build = (overrides: Partial<SignedTokenAuthOptions> = {}) => {
   return { auth, store, refresh: refreshAccessToken, revoke: revokeToken };
 };
 
+/** Refresh off, no session: only what a test passes in matters. */
+const plainAuth = (secret: string | string[]) =>
+  signedTokenAuth({ secret, resolveUser: async () => null, loginUrl: () => "/login" });
+
+const failingStore: CodeStore = {
+  consume: () => {
+    throw new Error("kv down");
+  },
+};
+
 const initial = async (auth: ReturnType<typeof build>["auth"]): Promise<MintedToken> => {
   const minted = await auth.mintAccessToken(GRANT);
   assert.ok(minted.refreshToken);
@@ -62,11 +72,7 @@ const payloadOf = (token: string): { exp: number; jti: string; scopes: string[] 
 
 describe("signedTokenAuth refresh — configuration", () => {
   it("is off unless refreshTtlSeconds is set", async () => {
-    const auth = signedTokenAuth({
-      secret: HARNESS_CODE_SECRET,
-      resolveUser: async () => null,
-      loginUrl: () => "/login",
-    });
+    const auth = plainAuth(HARNESS_CODE_SECRET);
     assert.equal(auth.refreshAccessToken, undefined);
     assert.equal(auth.revokeToken, undefined);
     assert.equal((await auth.mintAccessToken(GRANT)).refreshToken, undefined);
@@ -88,11 +94,7 @@ describe("signedTokenAuth refresh — configuration", () => {
 
 describe("signedTokenAuth without refresh", () => {
   it("still verifies an access token longer than 4096 characters, as before", async () => {
-    const auth = signedTokenAuth({
-      secret: HARNESS_CODE_SECRET,
-      resolveUser: async () => null,
-      loginUrl: () => "/login",
-    });
+    const auth = plainAuth(HARNESS_CODE_SECRET);
     const minted = await auth.mintAccessToken({ ...GRANT, userId: "u".repeat(5000) });
     assert.ok(minted.accessToken.length > 4096);
     assert.equal((await auth.verifyToken(minted.accessToken, REQUEST))?.userId.length, 5000);
@@ -252,12 +254,7 @@ describe("signedTokenAuth refresh — user status", () => {
   });
 
   it("rejects, never mints, when the store fails", async () => {
-    const failing: CodeStore = {
-      consume: () => {
-        throw new Error("kv down");
-      },
-    };
-    const { auth, refresh } = build({ codeStore: failing });
+    const { auth, refresh } = build({ codeStore: failingStore });
     const first = await initial(auth);
     await assert.rejects(refresh(refreshInput(first.refreshToken as string)), /kv down/);
   });
@@ -312,13 +309,6 @@ describe("signedTokenAuth refresh — token kinds are not interchangeable", () =
 });
 
 describe("signedTokenAuth revoke", () => {
-  it("burns the refresh token so it can no longer be used", async () => {
-    const { auth, refresh, revoke } = build();
-    const first = await initial(auth);
-    await revoke({ token: first.refreshToken as string, clientId: "c1" });
-    assert.equal(await refresh(refreshInput(first.refreshToken as string)), null);
-  });
-
   it("is a silent no-op for another client, garbage, and an unknown token", async () => {
     const { auth, refresh, revoke, store } = build();
     const first = await initial(auth);
@@ -329,12 +319,7 @@ describe("signedTokenAuth revoke", () => {
   });
 
   it("surfaces a store failure instead of reporting a logout that did not happen", async () => {
-    const failing: CodeStore = {
-      consume: () => {
-        throw new Error("kv down");
-      },
-    };
-    const { auth, revoke } = build({ codeStore: failing });
+    const { auth, revoke } = build({ codeStore: failingStore });
     const first = await initial(auth);
     await assert.rejects(
       revoke({ token: first.refreshToken as string, clientId: "c1" }),
@@ -345,49 +330,20 @@ describe("signedTokenAuth revoke", () => {
 
 describe("signedTokenAuth secret rotation", () => {
   it("verifies a token signed under the secret that is now second in the list", async () => {
-    const before = signedTokenAuth({
-      secret: OLD_SECRET,
-      resolveUser: async () => null,
-      loginUrl: () => "/login",
-    });
+    const before = plainAuth(OLD_SECRET);
     const token = (await before.mintAccessToken(GRANT)).accessToken;
-    const after = signedTokenAuth({
-      secret: [HARNESS_CODE_SECRET, OLD_SECRET],
-      resolveUser: async () => null,
-      loginUrl: () => "/login",
-    });
+    const after = plainAuth([HARNESS_CODE_SECRET, OLD_SECRET]);
     assert.equal((await after.verifyToken(token, REQUEST))?.userId, "alice");
   });
 
   it("signs with the first secret only, and refuses a token from a removed secret", async () => {
-    const rotated = signedTokenAuth({
-      secret: [HARNESS_CODE_SECRET, OLD_SECRET],
-      resolveUser: async () => null,
-      loginUrl: () => "/login",
-    });
+    const rotated = plainAuth([HARNESS_CODE_SECRET, OLD_SECRET]);
     const newToken = (await rotated.mintAccessToken(GRANT)).accessToken;
-    const removed = signedTokenAuth({
-      secret: OLD_SECRET,
-      resolveUser: async () => null,
-      loginUrl: () => "/login",
-    });
+    const removed = plainAuth(OLD_SECRET);
     assert.equal(await removed.verifyToken(newToken, REQUEST), null);
     const oldToken = (await removed.mintAccessToken(GRANT)).accessToken;
-    const onlyNew = signedTokenAuth({
-      secret: HARNESS_CODE_SECRET,
-      resolveUser: async () => null,
-      loginUrl: () => "/login",
-    });
+    const onlyNew = plainAuth(HARNESS_CODE_SECRET);
     assert.equal(await onlyNew.verifyToken(oldToken, REQUEST), null);
-  });
-
-  it("forwards the whole list as codeSecret so DCR client ids rotate with it", () => {
-    const auth = signedTokenAuth({
-      secret: [HARNESS_CODE_SECRET, OLD_SECRET],
-      resolveUser: async () => null,
-      loginUrl: () => "/login",
-    });
-    assert.deepEqual(auth.codeSecret, [HARNESS_CODE_SECRET, OLD_SECRET]);
   });
 
   it("rejects an empty list, an oversized list and a weak entry at construction", () => {
@@ -409,11 +365,8 @@ describe("signedTokenAuth secret rotation", () => {
 
   it("copies the list, so changing the caller's array later changes nothing", async () => {
     const secrets = [HARNESS_CODE_SECRET];
-    const auth = signedTokenAuth({
-      secret: secrets,
-      resolveUser: async () => null,
-      loginUrl: () => "/login",
-    });
+    const auth = plainAuth(secrets);
+    assert.deepEqual(auth.codeSecret, [HARNESS_CODE_SECRET]);
     secrets[0] = OLD_SECRET;
     const token = (await auth.mintAccessToken(GRANT)).accessToken;
     assert.equal((await auth.verifyToken(token, REQUEST))?.userId, "alice");

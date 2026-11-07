@@ -33,7 +33,7 @@ This is a **library** threat model, not a third-party audit badge.
 | Scope escalation at authorize | Requested `scope` is validated against the advertised `scopes` and rejected with `invalid_scope`; the grant is bound into the auth code and handed to `mintAccessToken` |
 | An unscoped tool silently callable by any authenticated principal, including one holding none of the advertised scopes — the gap `defaultScopes: []` alone doesn't close, since that only governs the token grant, not per-tool enforcement | `createMcpApp` refuses to construct once `scopes` has more than one entry if any tool omits `ToolDef.scope` — pass `scope: null` to state the omission on purpose. A single-scope server has no such ambiguity and is unaffected. `tools/call` itself always enforces whatever `scope` a tool does declare, independent of this guard (403 `insufficient_scope`) |
 | Scope reduction lost on refresh | Optional `scope` on the refresh token request is validated against advertised scopes and forwarded on `RefreshAccessTokenInput.scope`. **`refreshAccessToken` MUST enforce ⊆ originally granted scopes** (opaque RT — same pattern as `resource`). The token response omits `scope` when neither the port nor the grant supplies one (RFC 6749 §5.1) — clients must not assume the field is always present |
-| A removed or disabled user keeps a working connector | `signedTokenAuth` tokens are stateless, so the login session ending changes nothing for a token already issued. Pass `isUserActive`: it runs after the signature, expiry and shape checks (a garbage token never reaches your database) on every MCP request and on every refresh, and only a literal `true` lets the request through. A throw is a 500, never a pass. See [Sessions and expiry](#sessions-and-expiry) |
+| A removed or disabled user keeps a working connector | `signedTokenAuth` tokens are stateless, so they outlive the login session. `isUserActive` closes that; see [Sessions and expiry](#sessions-and-expiry) |
 | Stolen access or refresh token | Host `revokeToken` (denylist or equivalent) that `verifyToken` and `refreshAccessToken` consult. Unknown / wrong-client tokens MUST no-op, not throw. Well-formed authenticated revoke is 200 even if the token is unknown |
 | Stolen confidential-client secret | `clientStore.verifySecret` owns comparison — store hashes, not plaintext. The library never sees or persists credentials. **Prefer `clientStore.secretHash`** instead: return a stored hash from `hashClientSecret` and the library does the comparison with the same constant-time primitive it uses everywhere else, rather than a hand-rolled `stored === presented` in your own `verifySecret` being a timing oracle with no warning |
 | An unauthenticated caller enumerating which `client_id`s a locked-down server knows, via distinguishable `/token`/`/revoke` error text or response timing | Every client-auth failure at `/token` and `/revoke` collapses to one `invalid_client` / "client authentication failed" — previously up to five distinguishable messages named exactly why (wrong method, missing secret, misconfigured store, unknown id). Every rejection path in `firstClientAuthError` for a client_id that *is* known — wrong auth method, no secret presented, wrong secret, no `secretHash`/`verifySecret` on file — runs the same fixed-cost dummy or real comparison before returning, so response timing alone can't tell "known client, wrong method" apart from "known client, wrong secret." An unknown `client_id` on a locked-down server (`allowUnregisteredClients: false`) pays the identical fixed cost, so the crypto-verification cost itself can't distinguish "unknown" from "known, wrong secret" either. `/authorize`'s `unauthorized_client` is unchanged and stays descriptive — a human debugging a browser flow, not a bare API response, and a locked-down server already announces the same fact by omitting `registration_endpoint` |
@@ -62,55 +62,46 @@ to it, with `signedTokenAuth`:
 | Event | What the connector sees |
 |-------|-------------------------|
 | The app session ends (cookie expires, logout) | Nothing. The next `/authorize` redirects to `loginUrl`; a token already issued keeps working |
-| The access token reaches its `ttlSeconds` (default 1 h) | `401` with `WWW-Authenticate: Bearer …, error="invalid_token"`. With a refresh token the client renews silently; without one the user goes through the browser again |
-| The user is removed, disabled or signed out everywhere | With `isUserActive`: `401` on the next MCP request and `invalid_grant` on the next refresh. Without it: the access token works until it expires (refresh cannot be enabled without it) |
+| The access token reaches its `ttlSeconds` (default 1 h) | `401` with `WWW-Authenticate: Bearer …, error="invalid_token"` (one code for a bad signature, expiry, wrong audience or an inactive user). With a refresh token the client renews silently; without one the user goes through the browser again |
+| The user is removed, disabled or signed out everywhere | With `isUserActive`: `401` on the next MCP request, `invalid_grant` on the next refresh. Without it: the access token works until it expires. `isUserActive` runs on every request, only `true` passes, a throw is a `500`; keep it cheap or cached, a call that hangs stalls the request |
 | The user's role or scopes change | The token keeps the scopes granted at issue until it expires. Enforce current permissions in the data layer |
-| The user sits on the consent page for over 5 minutes, the session ends before Approve, or Approve is posted twice | A short page in the browser (JSON for a caller that does not ask for `text/html`), status `400`. `consent.render` customizes the consent screen only, not this page |
-| `secret` is replaced by a list `[new, old]` | Old tokens and DCR `client_id`s keep working, new ones are signed with `new`. Remove `old` once its tokens have expired; until then it can still forge |
-| The `initialize` and `ping` requests | Succeed with no token or a bad one, so a "connected" status proves nothing. Only `tools/list` and `tools/call` check the token |
+| The consent page sits over 5 minutes, the session ends before Approve, or Approve is posted twice | A short page in the browser (JSON for a caller that does not ask for `text/html`), status `400`. `consent.render` customizes the consent screen only |
+| `secret` becomes a list `[new, old]` | Old tokens and DCR `client_id`s keep working, new ones are signed with `new`. Remove `old` once its tokens have expired; until then it can still forge |
+| `initialize` and `ping` | Succeed with no token or a bad one, so a "connected" status proves nothing. A `GET /mcp` with an `Authorization` header is answered `405` without checking it. Only `tools/list` and `tools/call` check the token |
 
-A `GET /mcp` with an `Authorization` header is answered `405` without looking at
-the token, so neither expiry nor `isUserActive` shows there.
-
-Access tokens are bearer tokens: not bound to a client, and not revocable before
-they expire. Keep `ttlSeconds` short, and `isUserActive` cheap or cached (it runs
-on every request; a call that hangs stalls the request).
+Access tokens are bearer tokens: not bound to a client and not revocable before
+they expire, so keep `ttlSeconds` short.
 
 **Refresh (`refreshTtlSeconds`).** Off unless set. Refresh tokens are signed, not
 stored; the only state is a single-use mark per token in `codeStore`.
 
-- The lifetime is absolute: fixed at consent and never extended by refreshing, so
-  the user approves again after `refreshTtlSeconds` however active the connector is.
-  The last access token issued can still run for up to `ttlSeconds` past that.
-- The single-use mark for each refresh stays in `codeStore` until the grant's
-  expiry, one entry per refresh. Size the store for that and rate-limit `/token`
-  per `client_id`.
-- A refresh token is capped at 4096 characters. Issuing one that long (a user id of
-  roughly 2.8 KB of ASCII or more, less if it is multi-byte, or a very long scope list) throws, instead of handing the
-  client a token that can never be redeemed. At the first issuance that is a `500`
-  at `/token` after the authorization code was already spent, so that user fails
-  the same way on every login; keep user ids short.
-- Each refresh token works once and is replaced. `codeStore.consume` must be
-  atomic (Redis `SET NX EX`, a unique-key insert) with a TTL no shorter than the
-  token. The process-local store does not hold across instances, and Workers KV is
-  not atomic, so neither gives single use. `signedTokenAuth` needs the same
-  `codeStore` instance the router uses, which it does when you pass it to
-  `signedTokenAuth`; it refuses to start with a hidden `allowInMemoryCodeStore` default.
-- Bound to the user, client, resource and scopes of the consent. A refresh may
-  narrow scope, never widen it, and a scope the server stopped advertising stays
-  in the grant until it expires.
-- Every failure is one `invalid_grant`. A check that fails because of the caller's
-  input (wrong client, wrong resource, too much scope, inactive user) runs before
-  the token is burned, so it cannot spend the rightful holder's token.
-- No grace window: a client that loses a refresh response and retries is logged out
-  and re-authorizes. The same applies if minting fails after the old token was burned.
-- No token family. Replaying an already-used token is refused, but the successor a
-  thief obtained first stays valid until its expiry or until `isUserActive` turns
-  false. For family revocation use an opaque server-side store (see
-  `examples/project-desk/src/tokens.ts`).
-- `/revoke` burns a refresh token only and answers `200` for everything else,
-  including an access token. A store failure on a valid refresh token is a `500`,
-  so a logout never reports success while the token still works.
+- **Lifetime.** Absolute: fixed at consent and never extended by refreshing, so
+  the user approves again after `refreshTtlSeconds`. The last access token issued
+  can still run up to `ttlSeconds` past that.
+- **Single use.** Each refresh token works once and is replaced. `codeStore.consume`
+  must be atomic (Redis `SET NX EX`, a unique-key insert) with a TTL no shorter than
+  the token. The process-local store does not hold across instances and Workers KV
+  is not atomic, so neither gives single use. Pass the same `codeStore` instance to
+  `signedTokenAuth` as the router uses; it refuses to start without one. One mark
+  per refresh stays until the grant's expiry, so size the store and rate-limit
+  `/token` per `client_id`.
+- **Binding.** To the user, client, resource and scopes of the consent. A refresh
+  may narrow scope, never widen it. Every failure is one `invalid_grant`, and every
+  check that depends on the caller's input runs before the token is burned, so a
+  wrong client cannot spend the rightful holder's token.
+- **Size.** A refresh token is capped at 4096 characters. Issuing a longer one (a
+  user id of roughly 2.8 KB of ASCII, or a very long scope list) throws: at the
+  first issuance that is a `500` at `/token` after the authorization code was
+  spent, on every login for that user. Keep user ids short.
+- **No grace window.** A client that loses a refresh response and retries is logged
+  out and re-authorizes, as it is if minting fails after the old token was burned.
+- **No token family.** Replaying a used token is refused, but the successor a thief
+  obtained first stays valid until its expiry or until `isUserActive` turns false.
+  For family revocation use an opaque server-side store
+  (`examples/project-desk/src/tokens.ts`).
+- **`/revoke`** burns a refresh token only and answers `200` for anything else,
+  including an access token. A store failure on a valid refresh token is a `500`, so
+  a logout never reports success while the token still works.
 
 ## Rotating codeSecret
 

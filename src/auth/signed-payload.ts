@@ -9,13 +9,14 @@
 
 import { bytesToBase64Url, fromBase64Url } from "../oauth/crypto/base64url.js";
 import { hkdfKey } from "../oauth/crypto/hkdf.js";
+import { isJsonObject } from "../util/json.js";
 
 const TOKEN_LABELS = {
   access: "mcp-trellis:signed-access-token:v1",
   refresh: "mcp-trellis:signed-refresh-token:v1",
 } as const;
 
-export type SignedTokenKind = keyof typeof TOKEN_LABELS;
+type SignedTokenKind = keyof typeof TOKEN_LABELS;
 
 /**
  * Refresh tokens are capped, and `signPayload` enforces it so an oversized one
@@ -89,4 +90,21 @@ export const verifyPayload = async (
   } catch {
     return null;
   }
+};
+
+/** The claims both token kinds carry. */
+export type GrantClaims = { userId: string; scopes: string[]; audience: string; exp: number };
+
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((entry) => typeof entry === "string");
+
+/** The shared claims of a verified payload, or null if one is missing, malformed or expired. */
+export const parseGrantClaims = (payload: unknown): GrantClaims | null => {
+  if (!isJsonObject(payload)) return null;
+  const { userId, scopes, audience, exp } = payload;
+  if (typeof userId !== "string" || typeof audience !== "string" || !isStringArray(scopes)) {
+    return null;
+  }
+  if (typeof exp !== "number" || !Number.isFinite(exp) || exp < Date.now()) return null;
+  return { userId, scopes, audience, exp };
 };

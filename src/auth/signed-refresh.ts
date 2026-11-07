@@ -16,13 +16,15 @@
 import type { CodeStore } from "../oauth/crypto/codes.js";
 import { randomBase64Url, sha256Base64Url } from "../oauth/crypto/pkce.js";
 import { resourcesEqual } from "../oauth/policy/resource.js";
+import { parseScope } from "../oauth/policy/scope.js";
 import type {
   MintAccessTokenInput,
   MintedToken,
   RefreshAccessTokenInput,
   RevokeTokenInput,
 } from "../oauth/types.js";
-import { signPayload, verifyPayload } from "./signed-payload.js";
+import { isJsonObject } from "../util/json.js";
+import { parseGrantClaims, signPayload, verifyPayload } from "./signed-payload.js";
 
 const JTI_BYTES = 16;
 const MAX_JTI_LENGTH = 64;
@@ -43,12 +45,16 @@ type RefreshPayload = {
   jti: string;
 };
 
+export type SecretList = readonly [string, ...string[]];
+export type UserCheck = (userId: string) => boolean | Promise<boolean>;
+export type AccessMinter = (input: MintAccessTokenInput) => Promise<MintedToken>;
+
 type RefreshTokenConfig = {
-  secrets: readonly [string, ...string[]];
+  secrets: SecretList;
   lifetimeMs: number;
   codeStore: CodeStore;
-  isUserActive: (userId: string) => boolean | Promise<boolean>;
-  mintAccess: (input: MintAccessTokenInput) => Promise<MintedToken>;
+  isUserActive: UserCheck;
+  mintAccess: AccessMinter;
 };
 
 export type RefreshTokens = {
@@ -59,33 +65,19 @@ export type RefreshTokens = {
 
 const hasText = (value: unknown): value is string => typeof value === "string" && value !== "";
 
-const parseRefreshPayload = (raw: unknown): RefreshPayload | null => {
-  if (raw === null || typeof raw !== "object") return null;
-  const record = raw as Record<string, unknown>;
-  if (!hasText(record.userId) || !hasText(record.clientHash) || !hasText(record.audience)) {
-    return null;
-  }
-  if (!hasText(record.jti) || record.jti.length > MAX_JTI_LENGTH) return null;
-  // An empty scope list is a valid grant (`defaultScopes: []`).
-  if (!Array.isArray(record.scopes) || !record.scopes.every((s) => typeof s === "string")) {
-    return null;
-  }
-  if (typeof record.exp !== "number" || !Number.isFinite(record.exp)) return null;
-  if (record.exp < Date.now()) return null;
-  return {
-    userId: record.userId,
-    clientHash: record.clientHash,
-    audience: record.audience,
-    scopes: record.scopes,
-    exp: record.exp,
-    jti: record.jti,
-  };
+const parseRefreshPayload = (payload: unknown): RefreshPayload | null => {
+  if (!isJsonObject(payload)) return null;
+  const claims = parseGrantClaims(payload);
+  if (!claims || claims.userId === "" || claims.audience === "") return null;
+  const { clientHash, jti } = payload;
+  if (!hasText(clientHash) || !hasText(jti) || jti.length > MAX_JTI_LENGTH) return null;
+  return { ...claims, clientHash, jti };
 };
 
 /** The requested scope narrowed to what the grant holds, or null if it asks for more. */
 const narrowedScopes = (granted: string[], requested: string | undefined): string[] | null => {
   if (requested === undefined) return granted;
-  const wanted = requested.split(" ").filter(Boolean);
+  const wanted = parseScope(requested);
   return wanted.length > 0 && wanted.every((scope) => granted.includes(scope)) ? wanted : null;
 };
 
@@ -109,7 +101,7 @@ const issueRefresh = async (
 ): Promise<string> =>
   signRefresh(config, {
     userId: grant.userId,
-    scopes: grant.scope.split(" ").filter(Boolean),
+    scopes: parseScope(grant.scope),
     audience: grant.resource,
     clientHash: await sha256Base64Url(grant.clientId),
     exp: Date.now() + config.lifetimeMs,

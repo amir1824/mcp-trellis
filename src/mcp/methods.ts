@@ -141,11 +141,9 @@ export const resolveWwwAuthenticate = <TCtx>(
     : options.wwwAuthenticate;
 
 /**
- * The challenge for a request `authenticate` just rejected. RFC 6750 §3.1:
- * `invalid_token` names a credential that was presented and failed, and is
- * omitted when none was sent. One fixed code covers a bad signature, an
- * expired token, a deactivated user and a wrong audience, so the header
- * never tells a token holder which one it was.
+ * The challenge for a request `authenticate` just rejected (RFC 6750 §3.1):
+ * `invalid_token` only when a credential was sent, and one code for every
+ * reason so the header never tells a token holder why.
  */
 export const authFailureChallenge = <TCtx>(
   options: McpHandlerOptions<TCtx>,

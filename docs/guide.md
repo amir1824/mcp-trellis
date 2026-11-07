@@ -195,11 +195,8 @@ The library stays protocol-shaped. Your app plugs in the seams:
 ### App (`createMcpApp`)
 
 Prefer `signedTokenAuth({ secret, resolveUser, loginUrl, codeStore })` to fill
-`codeSecret` / `mintAccessToken` / `verifyToken` from one secret. Add
-`isUserActive` so a removed user stops working before the token expires, and
-`refreshTtlSeconds` for rotating refresh tokens — see
-[Sessions and expiry](security.md#sessions-and-expiry). The table below is the
-advanced port surface when you outgrow the helper.
+`codeSecret` / `mintAccessToken` / `verifyToken` from one secret. The table
+below is the advanced port surface when you outgrow the helper.
 
 | Port | Role |
 |------|------|

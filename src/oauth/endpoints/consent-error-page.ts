@@ -1,9 +1,4 @@
-/**
- * What a browser shows when the consent POST cannot be honoured: the ticket
- * expired, the app session changed, or the form was submitted twice. JSON
- * is right for an API caller and useless in a tab, so `Accept: text/html`
- * gets a page instead; the status stays 400 either way.
- */
+/** What a browser shows when the consent POST cannot be honoured; the status is 400 either way. */
 
 export type ConsentFailureKind = "expired" | "session" | "used";
 
@@ -42,13 +37,9 @@ const ERROR_PAGE_HEADERS: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "no-referrer",
   "Cache-Control": "no-store",
-  Vary: "Accept",
 };
 
-/**
- * True only for an explicit `text/html` media range with q > 0. Absent
- * `Accept`, `*\/*` and `text/*` keep the JSON body that API callers parse.
- */
+/** True only for an explicit `text/html` range with q > 0; `*\/*` and no header keep the JSON. */
 export const acceptsHtml = (accept: string | null): boolean =>
   (accept ?? "").split(",").some((range) => {
     const [type, ...params] = range.split(";").map((part) => part.trim().toLowerCase());

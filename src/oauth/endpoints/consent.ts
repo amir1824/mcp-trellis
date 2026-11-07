@@ -51,19 +51,14 @@ export const issueConsentTicket = (
     jti: crypto.randomUUID(),
   } satisfies ConsentTicketPayload);
 
-/**
- * A rejected ticket, delivered for whoever submitted it: a browser form gets
- * a readable page, an API caller the JSON error it can parse. Both 400.
- */
+/** A rejected ticket: a browser form gets a readable page, an API caller the JSON error. */
 const ticketFailure = (
   request: Request,
   kind: ConsentFailureKind,
   description: string,
 ): Response => {
   if (acceptsHtml(request.headers.get("accept"))) return renderConsentError(kind);
-  const response = oauthError(OAUTH_ERRORS.invalidGrant, 400, description);
-  response.headers.set("Vary", "Accept");
-  return response;
+  return oauthError(OAUTH_ERRORS.invalidGrant, 400, description);
 };
 
 export const renderConsent = async (

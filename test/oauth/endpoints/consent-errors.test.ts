@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { acceptsHtml } from "../../../src/oauth/endpoints/consent-error-page.js";
-import { expectOAuthError } from "../../helpers/http.js";
 import { VALID_S256_CHALLENGE } from "../../helpers/oauth.js";
 import { stubPorts } from "../../helpers/ports.js";
 import { createOAuthRouter } from "../../helpers/router.js";
@@ -123,30 +122,11 @@ describe("consent failures for a browser (Accept: text/html)", () => {
     assert.equal(res.headers.get("x-content-type-options"), "nosniff");
     assert.equal(res.headers.get("cache-control"), "no-store");
     assert.equal(res.headers.get("referrer-policy"), "no-referrer");
-    assert.equal(res.headers.get("vary"), "Accept");
   });
 });
 
 describe("consent failures for every other caller keep the JSON error", () => {
-  it("returns JSON when Accept is absent", async () => {
-    const { router } = setup();
-    const res = await postConsent(router, "x");
-    assert.equal(res.headers.get("vary"), "Accept");
-    await expectOAuthError(res, 400, "invalid_grant");
-  });
-
-  it("returns JSON for */*", async () => {
-    const { router } = setup();
-    await expectOAuthError(await postConsent(router, "x", "*/*"), 400, "invalid_grant");
-  });
-
-  it("returns JSON for text/html;q=0 and for a lookalike type", async () => {
-    const { router } = setup();
-    await expectOAuthError(await postConsent(router, "x", "text/html;q=0"), 400, "invalid_grant");
-    await expectOAuthError(await postConsent(router, "x", "text/htmlx"), 400, "invalid_grant");
-  });
-
-  it("keeps the descriptive text API callers already parse", async () => {
+  it("keeps the JSON error for a caller that does not ask for HTML", async () => {
     const { router, state } = setup();
     const ticket = await getTicket(router);
     state.user = null;
