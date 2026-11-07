@@ -122,7 +122,7 @@ Examples: [saas-demo](examples/saas-demo/README.md), [nextjs-saas](examples/next
 
 ## Contributing
 
-Found a bug or a gap? Open an [issue](https://github.com/amir1824/mcp-trellis/issues). Pull requests are welcome, see [CONTRIBUTING.md](CONTRIBUTING.md).
+Found a bug or a gap? Open an [issue](https://github.com/amir1824/mcp-trellis/issues). Pull requests are welcome, see [CONTRIBUTING.md](CONTRIBUTING.md). Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ```bash
 npm test
