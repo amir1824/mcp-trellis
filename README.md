@@ -101,7 +101,7 @@ Before you ship:
 
 | Profile | Implemented server flow | Live client evidence |
 |---|---|---|
-| Claude (`claude`) | Dynamic registration, public client, PKCE; CIMD with `cimd: true` | Pending |
+| Claude (`claude`) | Dynamic registration, public client, PKCE; CIMD with `cimd: true` | Used in the maintainer's own production servers (reported); logged live pass pending |
 | ChatGPT / Codex (`codex`) | Public client, PKCE; ChatGPT's stable and per-connector callbacks allowed | Pending for each product |
 | Gemini Enterprise (`gemini`) | Pre-registered client; secret basic/post; requires `clientStore` | Pending; does not imply every Gemini product |
 
