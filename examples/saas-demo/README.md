@@ -14,17 +14,6 @@ For a simpler one-secret setup without refresh tokens, use
 root. Project desk keeps an opaque token store so it can show refresh rotation
 and scope escalation rejection.
 
-## README demo media
-
-The README Demo still lives at
-[`docs/diagrams/demo-tool-result.png`](../../docs/diagrams/demo-tool-result.png).
-To replace it with a short GIF after recording:
-
-1. `npm run demo` with `DEMO_PASSWORD` / `OAUTH_CODE_SECRET` set (see below).
-2. Screen-record ~8–15s: Alice login → projects list. No secrets or token panels.
-3. Export as GIF, save as `docs/diagrams/demo-tool-result.gif`, and point the
-   README image at it.
-
 ## Run locally
 
 Node 20+ and npm are required. From the repository root:
