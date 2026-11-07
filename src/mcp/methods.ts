@@ -143,7 +143,8 @@ export const resolveWwwAuthenticate = <TCtx>(
 /**
  * The challenge for a request `authenticate` just rejected (RFC 6750 §3.1):
  * `invalid_token` only when a credential was sent, and one code for every
- * reason so the header never tells a token holder why.
+ * reason so the header never tells a token holder why. An `error` the host set
+ * in its own `wwwAuthenticate` option is kept.
  */
 export const authFailureChallenge = <TCtx>(
   options: McpHandlerOptions<TCtx>,
@@ -152,7 +153,7 @@ export const authFailureChallenge = <TCtx>(
   const challenge = resolveWwwAuthenticate(options, request);
   return parseBearer(request.headers.get("authorization")) === null
     ? challenge
-    : { ...challenge, error: "invalid_token" };
+    : { ...challenge, error: challenge.error ?? "invalid_token" };
 };
 
 /**

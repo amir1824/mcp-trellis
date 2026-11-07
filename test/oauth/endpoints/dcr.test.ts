@@ -13,10 +13,10 @@ const RESOURCE = `${ORIGIN}/mcp`;
 const REDIRECT_A = "http://127.0.0.1:9111/cb";
 const REDIRECT_B = "http://127.0.0.1:9222/cb";
 
-const register = async (
+const registerBody = async (
   router: ReturnType<typeof createOAuthRouter>,
   redirectUris: string[],
-): Promise<string> => {
+): Promise<{ client_id: string; redirect_uris: string[]; grant_types: string[] }> => {
   const res = await router.tryHandle(
     new Request(`${ORIGIN}/mcp/oauth/register`, {
       method: "POST",
@@ -26,10 +26,19 @@ const register = async (
   );
   assert.ok(res);
   assert.equal(res.status, 201);
-  const body = (await res.json()) as { client_id: string; redirect_uris: string[] };
+  const body = (await res.json()) as {
+    client_id: string;
+    redirect_uris: string[];
+    grant_types: string[];
+  };
   assert.deepEqual(body.redirect_uris, redirectUris);
-  return body.client_id;
+  return body;
 };
+
+const register = async (
+  router: ReturnType<typeof createOAuthRouter>,
+  redirectUris: string[],
+): Promise<string> => (await registerBody(router, redirectUris)).client_id;
 
 const CONSENT_TICKET_RE = /name="consent_ticket"\s+value="([^"]+)"/;
 
@@ -395,6 +404,20 @@ describe("requireRegisteredClients", () => {
     );
     assert.ok(res);
     assert.equal(res.status, 200);
+  });
+
+  it("lists only authorization_code in the DCR response without a refreshAccessToken port", async () => {
+    const router = createOAuthRouter({ ports: stubPorts() });
+    const body = await registerBody(router, [REDIRECT_A]);
+    assert.deepEqual(body.grant_types, ["authorization_code"]);
+  });
+
+  it("lists refresh_token in the DCR response when the host supplies its own refreshAccessToken port", async () => {
+    const router = createOAuthRouter({
+      ports: stubPorts({ refreshAccessToken: async () => null }),
+    });
+    const body = await registerBody(router, [REDIRECT_A]);
+    assert.deepEqual(body.grant_types, ["authorization_code", "refresh_token"]);
   });
 
   it("still accepts a DCR-issued client_id at /revoke", async () => {

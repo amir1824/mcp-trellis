@@ -6,31 +6,26 @@
  * Tokens are stateless, so an issued access token stays valid until `exp`
  * whatever happens to the login session. Pass `isUserActive` to close that:
  * it runs on every verified token. Refresh is opt-in (`refreshTtlSeconds`);
- * see `signed-refresh.ts` for its limits.
+ * see `refresh.ts` for its limits.
  *
  * ponytail: access tokens cannot be revoked before `exp`; `/revoke` burns
  * refresh tokens only. Upgrade: supply your own `mintAccessToken` /
  * `verifyToken` over a store (see `examples/project-desk/src/tokens.ts`).
  */
 
-import type { McpAppAuth, VerifiedToken } from "../app-options.js";
-import { assertCodeSecret } from "../oauth/config.js";
-import type { CodeStore } from "../oauth/crypto/codes.js";
-import { parseScope } from "../oauth/policy/scope.js";
-import type { OAuthUser } from "../oauth/types.js";
-import {
-  type GrantClaims,
-  parseGrantClaims,
-  signPayload,
-  verifyPayload,
-} from "./signed-payload.js";
+import type { McpAppAuth, VerifiedToken } from "../../app-options.js";
+import { assertCodeSecret } from "../../oauth/config.js";
+import type { CodeStore } from "../../oauth/crypto/codes.js";
+import { parseScope } from "../../oauth/policy/scope.js";
+import type { OAuthUser } from "../../oauth/types.js";
+import { type GrantClaims, parseGrantClaims, signPayload, verifyPayload } from "./payload.js";
 import {
   type AccessMinter,
   createRefreshTokens,
   type RefreshTokens,
   type SecretList,
   type UserCheck,
-} from "./signed-refresh.js";
+} from "./refresh.js";
 
 const DEFAULT_TTL_SECONDS = 3600;
 /** Each secret costs a key derivation per token kind, so rotation lists stay short. */
@@ -51,7 +46,7 @@ export type SignedTokenAuthOptions = {
    */
   isUserActive?: UserCheck;
   /**
-   * Enables rotating refresh tokens; also the absolute lifetime of one consent.
+   * Enables rotating refresh tokens; also the absolute lifetime of one grant, counted from the code exchange.
    * Needs `codeStore` and `isUserActive`. See docs/security.md#sessions-and-expiry.
    */
   refreshTtlSeconds?: number;
@@ -71,13 +66,14 @@ const assertPositiveSeconds = (name: string, value: number): void => {
 
 const resolveSecretList = (secret: string | string[]): SecretList => {
   const secrets = Array.isArray(secret) ? [...secret] : [secret];
-  if (secrets.length === 0 || secrets.length > MAX_SECRETS) {
+  const [first, ...rest] = secrets;
+  if (first === undefined || secrets.length > MAX_SECRETS) {
     throw new Error(
       `signedTokenAuth: secret needs 1 to ${MAX_SECRETS} entries (got ${secrets.length})`,
     );
   }
   secrets.forEach(assertCodeSecret);
-  return secrets as [string, ...string[]];
+  return [first, ...rest];
 };
 
 const accessMinter =
@@ -145,8 +141,9 @@ export const signedTokenAuth = (options: SignedTokenAuthOptions): McpAppAuth => 
     resolveUser: options.resolveUser,
     loginUrl: options.loginUrl,
     mintAccessToken: async (input) => {
-      const access = await mintAccess(input);
-      return refresh ? { ...access, refreshToken: await refresh.issue(input) } : access;
+      if (!refresh) return mintAccess(input);
+      const [access, refreshToken] = await Promise.all([mintAccess(input), refresh.issue(input)]);
+      return { ...access, refreshToken };
     },
     verifyToken: accessVerifier(secrets, options.isUserActive),
     ...(refresh ? { refreshAccessToken: refresh.refresh, revokeToken: refresh.revoke } : {}),

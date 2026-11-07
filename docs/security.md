@@ -75,7 +75,7 @@ they expire, so keep `ttlSeconds` short.
 **Refresh (`refreshTtlSeconds`).** Off unless set. Refresh tokens are signed, not
 stored; the only state is a single-use mark per token in `codeStore`.
 
-- **Lifetime.** Absolute: fixed at consent and never extended by refreshing, so
+- **Lifetime.** Absolute: fixed when the authorization code is redeemed and never extended by refreshing, so
   the user approves again after `refreshTtlSeconds`. The last access token issued
   can still run up to `ttlSeconds` past that.
 - **Single use.** Each refresh token works once and is replaced. `codeStore.consume`
@@ -86,7 +86,9 @@ stored; the only state is a single-use mark per token in `codeStore`.
   per refresh stays until the grant's expiry, so size the store and rate-limit
   `/token` per `client_id`.
 - **Binding.** To the user, client, resource and scopes of the consent. A refresh
-  may narrow scope, never widen it. Every failure is one `invalid_grant`, and every
+  may narrow scope, never widen it. Narrowing applies to that one access token: the
+  successor refresh token keeps the original grant's scopes, so the next refresh can
+  ask for them again (RFC 6749 §6). Every failure is one `invalid_grant`, and every
   check that depends on the caller's input runs before the token is burned, so a
   wrong client cannot spend the rightful holder's token.
 - **Size.** A refresh token is capped at 4096 characters. Issuing a longer one (a
@@ -101,7 +103,9 @@ stored; the only state is a single-use mark per token in `codeStore`.
   (`examples/project-desk/src/tokens.ts`).
 - **`/revoke`** burns a refresh token only and answers `200` for anything else,
   including an access token. A store failure on a valid refresh token is a `500`, so
-  a logout never reports success while the token still works.
+  revoking the current refresh token never reports success while it still works.
+  Revoking one that was already replaced by a refresh is a no-op: it answers `200`
+  and the successor keeps working (see "No token family").
 
 ## Rotating codeSecret
 

@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createMcpApp } from "../../src/app.js";
-import { signPayload } from "../../src/auth/signed-payload.js";
-import { signedTokenAuth } from "../../src/auth/signed-token.js";
+import { signPayload } from "../../src/auth/signed/payload.js";
+import { signedTokenAuth } from "../../src/auth/signed/token.js";
+import { createMcpHandler } from "../../src/mcp/dispatch.js";
+import { createToolRegistry } from "../../src/mcp/registry.js";
 import { HARNESS_CODE_SECRET } from "../helpers/ports.js";
 
 const ORIGIN = "https://example.test";
@@ -88,6 +90,29 @@ describe("WWW-Authenticate error code on a failed bearer (RFC 6750 §3.1)", () =
     const body = (await res.json()) as { error: { message: string }; id: number };
     assert.equal(body.error.message, "Unauthorized");
     assert.equal(body.id, 7);
+  });
+
+  it("keeps an error the host set in its own challenge", async () => {
+    const handler = createMcpHandler({
+      registry: createToolRegistry([]),
+      serverInfo: { name: "t", version: "1" },
+      wwwAuthenticate: {
+        realm: "t",
+        resourceMetadataUrl: `${ORIGIN}/.well-known/oauth-protected-resource/mcp`,
+        error: "host_code",
+      },
+      ports: { authenticate: async () => null, context: async () => ({}) },
+    });
+    const res = await handler.fetch(
+      new Request(`${ORIGIN}/mcp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer garbage" },
+        body: JSON.stringify(LIST),
+      }),
+    );
+    assert.equal(res.status, 401);
+    assert.match(res.headers.get("www-authenticate") ?? "", /error="host_code"/);
+    assert.doesNotMatch(res.headers.get("www-authenticate") ?? "", /invalid_token/);
   });
 
   it("does not claim invalid_token for the query-string rejection", async () => {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createMcpApp } from "../../src/app.js";
-import { signedTokenAuth } from "../../src/auth/signed-token.js";
+import { signedTokenAuth } from "../../src/auth/signed/token.js";
 import { createMemoryCodeStore } from "../../src/oauth/crypto/codes.js";
 import { expectJson, jsonRpc } from "../helpers/http.js";
 import { authorizeCode, redeem } from "../helpers/oauth.js";

@@ -4,7 +4,7 @@
  * secret (see `multi-tenant.ts`). Prefer `signedTokenAuth` from `mcp-trellis`
  * for new apps — one secret, HKDF-separated from OAuth code sealing.
  *
- * Deliberately not shared with `src/auth/signed-token.ts`: this helper uses
+ * Deliberately not shared with `src/auth/signed/token.ts`: this helper uses
  * the raw `secret` as the HMAC key (two-secret recipe); the library helper
  * derives via HKDF from `codeSecret`. Different threat models, different keys.
  *

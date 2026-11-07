@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { signPayload } from "../../src/auth/signed-payload.js";
-import { type SignedTokenAuthOptions, signedTokenAuth } from "../../src/auth/signed-token.js";
+import { signPayload } from "../../src/auth/signed/payload.js";
+import { type SignedTokenAuthOptions, signedTokenAuth } from "../../src/auth/signed/token.js";
 import { type CodeStore, createMemoryCodeStore } from "../../src/oauth/crypto/codes.js";
 import { sha256Base64Url } from "../../src/oauth/crypto/pkce.js";
 import type { MintedToken } from "../../src/oauth/types.js";

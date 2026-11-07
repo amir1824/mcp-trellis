@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { acceptsHtml } from "../../../src/oauth/endpoints/consent-error-page.js";
+import { acceptsHtml } from "../../../src/oauth/endpoints/consent/error-page.js";
 import { VALID_S256_CHALLENGE } from "../../helpers/oauth.js";
 import { stubPorts } from "../../helpers/ports.js";
 import { createOAuthRouter } from "../../helpers/router.js";

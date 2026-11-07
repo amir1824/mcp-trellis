@@ -1,6 +1,6 @@
 /** The built-in consent interstitial, used when the host supplies no `consent.render`. */
 
-import type { ConsentRequest } from "../types.js";
+import type { ConsentRequest } from "../../types.js";
 
 const ESCAPE_HTML: Record<string, string> = {
   "&": "&amp;",
@@ -52,6 +52,17 @@ const isSafeCspSource = (source: string): boolean =>
   SAFE_CSP_SOURCE.test(source) && !FORBIDDEN_CSP_SCHEMES.has(source);
 
 /**
+ * A double-clicked Allow sends two POSTs; the browser keeps the second, whose
+ * ticket is already spent, and drops the redirect carrying the code. This
+ * lets one submission through. It blocks the repeat instead of disabling the
+ * buttons, because a disabled submitter leaves `approved` out of the body.
+ */
+const SUBMIT_ONCE_SCRIPT =
+  'document.getElementById("consent").addEventListener("submit",function(e){if(this.dataset.sent){e.preventDefault();return}this.dataset.sent="1"})';
+/** CSP hash of `SUBMIT_ONCE_SCRIPT`; a consent test hashes the rendered script against it. */
+const SUBMIT_ONCE_SCRIPT_HASH = "'sha256-Zyrf1VNKMSeFmLaVBxdclhFQvemWfC4XvnQBsjOYkOw='";
+
+/**
  * `form-action` governs where a form (and the redirect chain it triggers)
  * may end up — not just the immediate POST target. Chromium enforces it on
  * the 302 this page's own submission produces, so `'self'` alone blocks the
@@ -62,7 +73,7 @@ const isSafeCspSource = (source: string): boolean =>
  */
 const consentSecurityHeaders = (redirectUri: string): Record<string, string> => ({
   "Content-Security-Policy":
-    `default-src 'none'; style-src 'unsafe-inline'; ` +
+    `default-src 'none'; style-src 'unsafe-inline'; script-src ${SUBMIT_ONCE_SCRIPT_HASH}; ` +
     `form-action ${["'self'", formActionSource(redirectUri)].filter(Boolean).join(" ")}; ` +
     `frame-ancestors 'none'`,
   "X-Frame-Options": "DENY",
@@ -92,11 +103,12 @@ export const renderBuiltInConsent = (input: ConsentRequest): Response => {
   <dt>Scope</dt><dd>${escapeHtml(input.scope.join(" ") || "(none)")}</dd>
   <dt>Resource</dt><dd>${escapeHtml(input.resource)}</dd>
 </dl>
-<form method="POST" action="${escapeHtml(input.oauthPath)}/consent">
+<form id="consent" method="POST" action="${escapeHtml(input.oauthPath)}/consent">
   <input type="hidden" name="consent_ticket" value="${escapeHtml(input.ticket)}">
   <button type="submit" name="approved" value="true">Allow</button>
   <button type="submit" name="approved" value="false">Deny</button>
 </form>
+<script>${SUBMIT_ONCE_SCRIPT}</script>
 </body>
 </html>`;
   return new Response(html, {

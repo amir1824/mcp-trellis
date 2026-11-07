@@ -7,9 +7,9 @@
  * is a closed set here and never a caller-chosen label.
  */
 
-import { bytesToBase64Url, fromBase64Url } from "../oauth/crypto/base64url.js";
-import { hkdfKey } from "../oauth/crypto/hkdf.js";
-import { isJsonObject } from "../util/json.js";
+import { bytesToBase64Url, fromBase64Url } from "../../oauth/crypto/base64url.js";
+import { hkdfKey } from "../../oauth/crypto/hkdf.js";
+import { isJsonObject } from "../../util/json.js";
 
 const TOKEN_LABELS = {
   access: "mcp-trellis:signed-access-token:v1",

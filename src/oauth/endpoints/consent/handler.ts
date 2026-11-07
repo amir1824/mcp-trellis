@@ -9,23 +9,23 @@
  * whether the user approved it. Nothing else in that body is read.
  */
 
-import { NO_CORS, POST_ONLY, requireHttpMethod } from "../../http/http.js";
-import { auditLegacyKeyUsage } from "../audit.js";
-import { oauthError, resolveSecrets } from "../config.js";
-import { OAUTH_ERRORS } from "../constants.js";
-import { issueAuthCode } from "../crypto/codes.js";
-import { seal, unsealAny } from "../crypto/sealed.js";
-import { readBodyOrError, readOAuthBody } from "../policy/reqbody.js";
+import { NO_CORS, POST_ONLY, requireHttpMethod } from "../../../http/http.js";
+import { auditLegacyKeyUsage } from "../../audit.js";
+import { oauthError, resolveSecrets } from "../../config.js";
+import { OAUTH_ERRORS } from "../../constants.js";
+import { issueAuthCode } from "../../crypto/codes.js";
+import { seal, unsealAny } from "../../crypto/sealed.js";
+import { readBodyOrError, readOAuthBody } from "../../policy/reqbody.js";
 import type {
   ConsentRequest,
   OAuthRouterOptions,
   OAuthUser,
   RegisteredClient,
   ResolvedOAuthRouterOptions,
-} from "../types.js";
-import { codeRedirect, errorRedirect } from "./callback.js";
-import { acceptsHtml, type ConsentFailureKind, renderConsentError } from "./consent-error-page.js";
-import { renderBuiltInConsent } from "./consent-page.js";
+} from "../../types.js";
+import { codeRedirect, errorRedirect } from "../callback.js";
+import { acceptsHtml, type ConsentFailureKind, renderConsentError } from "./error-page.js";
+import { renderBuiltInConsent } from "./page.js";
 
 const CONSENT_TICKET_TTL_MS = 300_000;
 

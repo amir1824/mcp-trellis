@@ -13,23 +13,18 @@
  * server-side refresh store (see `examples/project-desk/src/tokens.ts`).
  */
 
-import type { CodeStore } from "../oauth/crypto/codes.js";
-import { randomBase64Url, sha256Base64Url } from "../oauth/crypto/pkce.js";
-import { resourcesEqual } from "../oauth/policy/resource.js";
-import { parseScope } from "../oauth/policy/scope.js";
+import type { CodeStore } from "../../oauth/crypto/codes.js";
+import { randomBase64Url, sha256Base64Url } from "../../oauth/crypto/pkce.js";
+import { resourcesEqual } from "../../oauth/policy/resource.js";
+import { formatScope, parseScope } from "../../oauth/policy/scope.js";
 import type {
   MintAccessTokenInput,
   MintedToken,
   RefreshAccessTokenInput,
   RevokeTokenInput,
-} from "../oauth/types.js";
-import { isJsonObject } from "../util/json.js";
-import {
-  type GrantClaims,
-  parseGrantClaims,
-  signPayload,
-  verifyPayload,
-} from "./signed-payload.js";
+} from "../../oauth/types.js";
+import { isJsonObject } from "../../util/json.js";
+import { type GrantClaims, parseGrantClaims, signPayload, verifyPayload } from "./payload.js";
 
 const JTI_BYTES = 16;
 const MAX_JTI_LENGTH = 64;
@@ -39,10 +34,11 @@ const JTI_KEY_PREFIX = "rt:";
 /**
  * The client is bound by hash, not by value: a DCR `client_id` is a sealed
  * assertion that grows with its redirect URIs, and the token must not.
+ * `exp` is fixed when the authorization code is redeemed; rotation never extends it.
  */
 type RefreshPayload = GrantClaims & {
   clientHash: string;
-  /** `exp` is fixed when the grant is consented; rotation never extends it. */
+  /** The single-use mark's key; every rotation issues a fresh one. */
   jti: string;
 };
 
@@ -129,7 +125,7 @@ const rotateRefresh = async (
   const access = await config.mintAccess({
     userId: payload.userId,
     clientId: input.clientId,
-    scope: scopes.join(" "),
+    scope: formatScope(scopes),
     resource: payload.audience,
   });
   const successor = await signRefresh(config, { ...payload, jti: randomBase64Url(JTI_BYTES) });
