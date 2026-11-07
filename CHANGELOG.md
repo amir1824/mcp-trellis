@@ -15,7 +15,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   connector renews without sending the user back to the browser every `ttlSeconds`.
   Single use through `codeStore`, bound to user, client, resource and scope, with an
   absolute lifetime fixed at consent. The last access token it issues can run up to `ttlSeconds` past that. Needs
-  `codeStore` and `isUserActive` and throws at construction without them. `/revoke` is mounted and burns refresh tokens. The
+  `codeStore` and `isUserActive` and throws at construction without them. A
+  refresh token over 4096 characters (a user id of about 2.5 KB) is refused at
+  issue with a `500`, not handed out unusable. `/revoke` is mounted and burns refresh tokens. The
   DCR response now lists `refresh_token` in `grant_types` whenever the AS advertises it.
 - **`signedTokenAuth({ secret: [new, old] })`.** The first secret signs, every entry
   verifies, and the list is also the `codeSecret`, so replacing a secret no longer

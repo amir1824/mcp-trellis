@@ -51,8 +51,9 @@ export type SignedTokenAuthOptions = {
    * Turns on `grant_type=refresh_token`, with rotation. This is the absolute
    * lifetime of one consent: the user approves again after it, however
    * often the connector refreshes (the last access token it issued can
-   * still run for up to `ttlSeconds` longer). Requires `codeStore` (the same
-   * instance the router uses) and `isUserActive`.
+   * still run for up to `ttlSeconds` longer). A refresh token is capped at 4096
+   * characters; a much longer user id or scope list fails at issue. Requires
+   * `codeStore` (the same instance the router uses) and `isUserActive`.
    */
   refreshTtlSeconds?: number;
 };

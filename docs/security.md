@@ -85,9 +85,11 @@ stored; the only state is a single-use mark per token in `codeStore`.
 - The single-use mark for each refresh stays in `codeStore` until the grant's
   expiry, one entry per refresh. Size the store for that and rate-limit `/token`
   per `client_id`.
-- A refresh token is capped at 4096 characters. Issuing one that long (a very long
-  user id or scope list) throws, instead of handing the client a token that can
-  never be redeemed.
+- A refresh token is capped at 4096 characters. Issuing one that long (a user id of
+  roughly 2.5 KB or more, or a very long scope list) throws, instead of handing the
+  client a token that can never be redeemed. At the first issuance that is a `500`
+  at `/token` after the authorization code was already spent, so that user fails
+  the same way on every login; keep user ids short.
 - Each refresh token works once and is replaced. `codeStore.consume` must be
   atomic (Redis `SET NX EX`, a unique-key insert) with a TTL no shorter than the
   token. The process-local store does not hold across instances, and Workers KV is

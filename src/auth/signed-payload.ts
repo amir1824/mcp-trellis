@@ -9,7 +9,6 @@
 
 import { bytesToBase64Url, fromBase64Url } from "../oauth/crypto/base64url.js";
 import { hkdfKey } from "../oauth/crypto/hkdf.js";
-import { MAX_COMPARE_LENGTH } from "./bearer.js";
 
 const TOKEN_LABELS = {
   access: "mcp-trellis:signed-access-token:v1",
@@ -19,16 +18,14 @@ const TOKEN_LABELS = {
 export type SignedTokenKind = keyof typeof TOKEN_LABELS;
 
 /**
- * Longest token of each kind. Access tokens were never length-checked (the
- * server's header limit bounds them), and adding a cap would change what
- * verifies for callers who never use refresh. Refresh tokens are new and get
- * one; `signPayload` enforces it too, so an over-long one fails when issued
- * instead of being refused on every later use.
+ * Refresh tokens are capped, and `signPayload` enforces it so an oversized one
+ * fails when issued, not on every later use. Access tokens are bounded only by
+ * the server's header limit, so a long user id still verifies.
  */
-const MAX_TOKEN_LENGTH: Record<SignedTokenKind, number> = {
-  access: Number.POSITIVE_INFINITY,
-  refresh: MAX_COMPARE_LENGTH,
-};
+const MAX_REFRESH_TOKEN_LENGTH = 4096;
+
+const exceedsCap = (kind: SignedTokenKind, token: string): boolean =>
+  kind === "refresh" && token.length > MAX_REFRESH_TOKEN_LENGTH;
 
 const HMAC_SHA256: HmacKeyGenParams = { name: "HMAC", hash: "SHA-256", length: 256 };
 
@@ -44,10 +41,10 @@ export const signPayload = async (
   const body = bytesToBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
   const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body));
   const token = `${body}.${bytesToBase64Url(signature)}`;
-  if (token.length > MAX_TOKEN_LENGTH[kind]) {
+  if (exceedsCap(kind, token)) {
     throw new Error(
-      `signedTokenAuth: a ${kind} token would be ${token.length} characters, over the ` +
-        `${MAX_TOKEN_LENGTH[kind]} limit — shorten the user id or the scope list`,
+      `signedTokenAuth: a refresh token would be ${token.length} characters, over the ` +
+        `${MAX_REFRESH_TOKEN_LENGTH} limit — shorten the user id or the scope list`,
     );
   }
   return token;
@@ -82,7 +79,7 @@ export const verifyPayload = async (
   kind: SignedTokenKind,
   token: string,
 ): Promise<unknown> => {
-  if (token.length > MAX_TOKEN_LENGTH[kind]) return null;
+  if (exceedsCap(kind, token)) return null;
   const parts = token.split(".");
   const [body, signature] = parts;
   if (parts.length !== 2 || !body || !signature) return null;
