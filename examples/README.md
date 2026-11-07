@@ -26,7 +26,7 @@ npm run demo
 
 | Path | What it shows |
 |------|----------------|
-| [`multi-tenant.ts`](multi-tenant.ts) | Tenant claims + explicit mint/verify ports |
+| [`multi-tenant.ts`](multi-tenant.ts) | Host → tenant, membership check at mint and per call, explicit mint/verify ports |
 | [`stores.ts`](stores.ts) | Shared `codeStore` / revocation shapes |
 | [`audit-store.ts`](audit-store.ts) | Unified audit sink |
 | [`signed-token.ts`](signed-token.ts) | Standalone HMAC helpers for advanced ports |

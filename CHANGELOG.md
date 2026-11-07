@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `examples/multi-tenant.ts` now checks tenant membership when it mints a token
+  and on every tool call. Before, it only mapped the Host to a tenant, so any
+  signed-in user could get a token for any tenant. Covered by
+  `test/e2e/multi-tenant.test.ts`. Example change only; the library is unchanged.
+
 ## [3.1.0] - 2026-11-07
 
 ### Added

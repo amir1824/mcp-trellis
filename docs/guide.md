@@ -431,8 +431,11 @@ before any tool runs. Deploy `acme.mcp.example.com` and
 protocol failure, not an application bug.
 
 For the in-tool half, derive the tenant from the request Host (or from the
-verified audience after the library check) in your `context` port — that is
-the isolation key. Optional `claims` from `verifyToken` (plan, role, …) are
+verified audience after the library check) in your `context` port — that
+selects the tenant. It does not authorize the user: audience binding proves the
+token fits this server, not that the person belongs to the tenant. Check
+membership when you mint the token and again on each tool call, as
+[`examples/multi-tenant.ts`](../examples/multi-tenant.ts) does. Optional `claims` from `verifyToken` (plan, role, …) are
 handy metadata on `principal`; they are **not** Host→tenant authorization.
 A forged `claims.tenant_id` with a matching audience must not change which
 tenant's data a tool can see.
@@ -456,8 +459,11 @@ allowlist check on `new URL(req.url).origin` before calling `app.fetch`
 (`isAllowedOrigin` from `mcp-trellis/node`, or the same module the Worker
 example imports).
 
-Typechecked sketch: [`examples/multi-tenant.ts`](../examples/multi-tenant.ts)
-(needs a Host matching `*.mcp.example.com` — loopback alone is rejected).
+Typechecked example with a membership check at token mint and on every tool
+call, covered by `test/e2e/multi-tenant.test.ts`:
+[`examples/multi-tenant.ts`](../examples/multi-tenant.ts)
+(needs a Host matching `*.mcp.example.com` — loopback alone is rejected). Its
+`resolveUser` reads a demo header; replace it with your real session.
 Shared `codeStore` / revocation shapes: [`examples/stores.ts`](../examples/stores.ts)
 (atomic `setIfAbsent` for auth codes; Workers KV alone is not enough).
 `audit` metrics sink (ring + DB sketch): [`examples/audit-store.ts`](../examples/audit-store.ts).
