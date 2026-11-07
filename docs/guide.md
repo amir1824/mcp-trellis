@@ -416,6 +416,13 @@ const getWeather = apiTool({
 
 ## Multi-tenant (SaaS connectors)
 
+OAuth establishes who is calling, not which tenant or record they may access.
+Never trust a `tenantId` or record id that arrives as a tool argument: derive
+the tenant from trusted application state and check permissions on every
+operation in your data layer. A user who belongs to tenants A and B can ask a
+tool for tenant B's invoice; only your query can say whether that user may see
+it.
+
 Resource-per-tenant already works with **zero library change**.
 `canonicalResource(origin, resourcePath)` is derived per request, and the
 audience check in `createMcpApp` rejects a token minted for another origin

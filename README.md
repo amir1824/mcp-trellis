@@ -19,7 +19,7 @@ import { createMcpApp, signedTokenAuth } from "mcp-trellis";
 import { session, projectsForUser, codeStore } from "./your-app.js";
 
 export const mcp = createMcpApp<{ userId: string }>({
-  serverInfo: { name: "my-saas", version: "1.0.0" },
+  serverInfo: { name: "my-saas", version: "1.0.0" }, clients: ["claude", "codex"],
   auth: signedTokenAuth({
     secret: process.env.MCP_SECRET!,
     resolveUser: (req) => session(req),
@@ -33,7 +33,11 @@ export const mcp = createMcpApp<{ userId: string }>({
 });
 ```
 
-That is 15 lines of code. You bring two things: your own session lookup, and a shared store where one-time login codes can be used once (an atomic set-if-absent: Redis, Postgres, D1 or a Durable Object; Workers KV has no atomic NX). Node 20+.
+That is the configuration, not the whole server. Mount the returned app on your HTTP framework: [Express](examples/express.ts), [Next.js](examples/nextjs-saas) or a [Cloudflare Worker](examples/cloudflare-worker.ts). It serves `/mcp`, the OAuth routes and `.well-known` discovery.
+
+`clients` names the connector clients you serve and defaults to `["claude"]`; list every client you want to accept. You bring two things: your own session lookup, and a shared store where one-time login codes can be used once (an atomic set-if-absent: Redis, Postgres, D1 or a Durable Object; Workers KV has no atomic NX). Node 20+.
+
+OAuth tells your server who is calling. It does not decide which tenant or record that user may touch: derive that from trusted application state and check it in your data layer on every operation.
 
 Client ID Metadata Documents (CIMD) are supported and off by default: set `cimd: true`. Pass `cimdCache` too (strongly recommended: without it every refresh and revoke re-fetches the client document). Dynamic Client Registration works too.
 
