@@ -5,6 +5,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-11-07
+
 ### Added
 
 - **`signedTokenAuth({ isUserActive })`** is checked on every verified token and every
@@ -63,6 +65,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `docs/security.md` adds `/authorize` to the edge rate-limit guidance: with
   `cimd: true`, each unresolvable `client_id` there costs an outbound fetch and
   one `cimd_resolve_failed` audit entry.
+- **README rewritten for first-time visitors**: the one-line pitch, the example
+  before the install, a numbered quick start, what you bring (your session and a
+  shared code store), CIMD as an opt-in capability, the implemented MCP protocol
+  versions, and one neutral comparison against Better Auth, Cloudflare
+  `workers-oauth-provider`, Scalekit, WorkOS and the official SDK v2.
+- An animated architecture flow and a draw.io architecture diagram (with its
+  editable source) in `docs/media/`, not shipped in the npm package.
+- Removed an unreferenced architecture HTML page and a mock demo still from
+  `docs/diagrams/`.
+- `docs/ROADMAP.md` is condensed to what the library is, what is next and the
+  non-goals; the shipped history stays in this file. A stale "known gaps" entry
+  (`pruneMemory`, no longer in the code) is gone.
+- The deprecated aliases in `src/deprecated.ts` and `src/oauth/deprecated.ts` said
+  "Removed in 3.0" while still exported; they now say they go in the next major
+  release. `docs/security.md` no longer refers to the unpublished 1.2.0.
+- `docs/compatibility.md` records the 3.1.0 package smoke test and the
+  maintainer-reported production use with Claude, and says what that does not
+  cover.
 
 ## [3.0.0] - 2026-10-28
 

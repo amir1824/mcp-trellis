@@ -198,7 +198,7 @@ Building blocks for hosts assembling their own transport or OAuth flow. Less sta
 - `buildErrorRedirectUrl` — the RFC 6749 §4.1.2.1 error-redirect builder `/authorize` uses
 - Types: `AuthCodeRecord`, `CodeStore`, `ClientAuth`
 
-**Deprecated in 2.1:** every symbol above is still importable from `mcp-trellis` or `mcp-trellis/oauth`, where it used to live, as a `@deprecated` alias. Those aliases are removed in 3.0.
+**Deprecated in 2.1:** every symbol above is still importable from `mcp-trellis` or `mcp-trellis/oauth`, where it used to live, as a `@deprecated` alias. Those aliases are removed in the next major release.
 
 </details>
 

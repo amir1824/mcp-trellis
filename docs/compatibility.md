@@ -1,6 +1,6 @@
 # Compatibility evidence
 
-Updated 2026-09-14. Repository implementation and automated coverage are in good
+Updated 2026-11-07. Repository implementation and automated coverage are in good
 shape after the pre-prod security pass. **Vendor-client UI sessions are still
 Pending** — do not convert product rows to ✅ until a live Claude/ChatGPT/Codex/Gemini
 check below is filled in.
@@ -53,7 +53,19 @@ release; it does **not** replace the live client row.
 
 | Date | Commit / package | Command | Result |
 |---|---|---|---|
-| 2026-09-12 | unreleased working tree (`1.1.0` pack) | `npm run smoke:pack` | Pass — `createMcpApp` + `asNodeHandler` import from tarball |
+| 2026-11-07 | `3.1.0` release-branch working tree | `npm run smoke:pack` | Pass — `createMcpApp` + `asNodeHandler` import from tarball |
+
+## Production use (maintainer-reported)
+
+The maintainer reports that two of their own production MCP servers run on
+mcp-trellis and are connected to Claude. On 2026-11-07 a Claude session called a
+read tool on each of them over its connector and got a normal result (an empty
+list from one, 14 note paths from the other).
+
+This is **not** a logged live pass. The Claude build and plan, the mcp-trellis
+version those servers run, and the discovery, authorize and token exchange were
+not recorded, and it says nothing about ChatGPT, Codex or Gemini. The "Live
+evidence" column above stays Pending until a pass is recorded in the table below.
 
 ## Evidence required for a live pass
 
