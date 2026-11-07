@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve mcp-trellis. This guide covers local setup, PR expectations, and how maintainers release.
+Thanks for helping improve mcp-trellis. This guide covers local setup, PR expectations, and how maintainers release. Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Prerequisites
 
