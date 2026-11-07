@@ -17,7 +17,9 @@ const origin = process.env.PUBLIC_ORIGIN ?? `http://127.0.0.1:${port}`;
 const password = process.env.DEMO_PASSWORD;
 const codeSecret = process.env.OAUTH_CODE_SECRET;
 if (!password || !codeSecret) {
-  throw new Error("Set DEMO_PASSWORD and OAUTH_CODE_SECRET; see README.md");
+  throw new Error(
+    'Set DEMO_PASSWORD and OAUTH_CODE_SECRET first, e.g. export DEMO_PASSWORD="$(openssl rand -hex 16)" OAUTH_CODE_SECRET="$(openssl rand -hex 32)"; see examples/saas-demo/README.md',
+  );
 }
 const app = createDemo({ origin, password, codeSecret });
 http.createServer(asNodeHandler(app, { origin })).listen(port, "127.0.0.1", () => {

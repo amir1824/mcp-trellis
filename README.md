@@ -50,7 +50,15 @@ Protocol: MCP 2024-11-05, 2025-03-26 and 2025-06-18 (default 2025-06-18). The 20
 3. Wire `codeStore` to a shared single-use store (Redis, Postgres, D1 or a Durable Object). trellis does not ship one; copy the adapter in [examples/stores.ts](examples/stores.ts), which is typechecked example code. `allowInMemoryCodeStore: true` is for single-process demos.
 4. Deploy over HTTPS, then add your `/mcp` URL as a custom connector in Claude. The [client guide](docs/guide.md#clients) lists the client profiles.
 
-`npm run demo` runs the local Alice and Bob demo: login, consent, then `list_my_projects`. See [examples/saas-demo](examples/saas-demo/README.md).
+To run the local Alice and Bob demo (login, consent, then `list_my_projects`), set two variables first. It exits with an error without them.
+
+```bash
+export DEMO_PASSWORD="$(openssl rand -hex 16)"
+export OAUTH_CODE_SECRET="$(openssl rand -hex 32)"
+npm run demo
+```
+
+Open `http://127.0.0.1:8787` and sign in as Alice or Bob with `$DEMO_PASSWORD`. More in [examples/saas-demo](examples/saas-demo/README.md).
 
 ## How it fits together
 
