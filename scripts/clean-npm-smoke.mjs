@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Prove the published shape: npm pack → clean install → import createMcpApp.
- * Does not replace a live vendor-client session (see docs/compatibility.md).
+ * Does not replace a live vendor-client session.
  */
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";

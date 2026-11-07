@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Use this template after connecting a real vendor client to an mcp-trellis
-        endpoint. Fill the same fields tracked in [docs/compatibility.md](../../docs/compatibility.md).
+        endpoint.
         Do **not** paste access tokens, auth codes, or secrets.
   - type: dropdown
     id: product

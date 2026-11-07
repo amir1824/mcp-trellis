@@ -45,7 +45,7 @@ Worker deploy: [`PUBLISH.md`](../project-desk/PUBLISH.md).
 4. Ask: **“List my projects and their next milestones.”** Expect Customer
    portal and Billing migration, never Internal analytics.
 5. Revoke/disconnect, reconnect with Bob and repeat.
-6. Record evidence in [compatibility.md](../../docs/compatibility.md).
+6. Report the result in a client compatibility issue.
 
 ## Verify locally
 

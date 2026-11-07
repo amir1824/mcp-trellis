@@ -37,7 +37,7 @@ That is 15 lines of code. You bring two things: your own session lookup, and a s
 
 Client ID Metadata Documents (CIMD) are supported and off by default: set `cimd: true`. Pass `cimdCache` too (strongly recommended: without it every refresh and revoke re-fetches the client document). Dynamic Client Registration works too.
 
-Protocol: MCP 2024-11-05, 2025-03-26 and 2025-06-18 (default 2025-06-18). The 2026-07-28 revision, which deprecates Dynamic Client Registration in favor of CIMD, is planned and not supported yet. See the [roadmap](docs/ROADMAP.md).
+Protocol: MCP 2024-11-05, 2025-03-26 and 2025-06-18 (default 2025-06-18). The 2026-07-28 revision, which deprecates Dynamic Client Registration in favor of CIMD, is planned and not supported yet.
 
 ## Quick start
 
@@ -65,7 +65,7 @@ Use it when:
 Skip it when:
 
 - You need a managed identity provider, a user database, or a login system built for you.
-- You need MCP spec 2026-07-28 today, or a client combination that is not in the [compatibility table](docs/compatibility.md).
+- You need MCP spec 2026-07-28 today, or a client combination that is not in the client table below.
 - You only need a local stdio tool, or you already run an MCP server and authorization server that meet your needs.
 
 ## Compared with the alternatives
@@ -105,7 +105,7 @@ Before you ship:
 | ChatGPT / Codex (`codex`) | Public client, PKCE; ChatGPT's stable and per-connector callbacks allowed | Pending for each product |
 | Gemini Enterprise (`gemini`) | Pre-registered client; secret basic/post; requires `clientStore` | Pending; does not imply every Gemini product |
 
-The OAuth flows above run in automated tests and in the local demo. [docs/compatibility.md](docs/compatibility.md) has the checklist for testing each vendor app, plus [client configuration](docs/guide.md#clients) and [troubleshooting](docs/troubleshooting.md).
+The OAuth flows above run in automated tests and in the local demo. See [client configuration](docs/guide.md#clients) and [troubleshooting](docs/troubleshooting.md).
 
 ## Docs
 
@@ -114,9 +114,7 @@ The OAuth flows above run in automated tests and in the local demo. [docs/compat
 | [docs/guide.md](docs/guide.md) | Architecture, clients, recipes, ports, tools, multi-tenant |
 | [docs/reference.md](docs/reference.md) | Routes, methods, status codes, options, exports |
 | [docs/security.md](docs/security.md) | Protocol promises, threat model, sessions, not in scope |
-| [docs/compatibility.md](docs/compatibility.md) | Protocol versions, client profiles, test evidence |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common connection and token errors |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | What's next |
 
 Examples: [saas-demo](examples/saas-demo/README.md), [nextjs-saas](examples/nextjs-saas/README.md), and [project-desk](examples/project-desk/README.md), a reference remote server example. More recipes in [`examples/`](examples/).
 
