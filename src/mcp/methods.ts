@@ -1,4 +1,4 @@
-import { type WwwAuthenticateOptions, wwwAuthenticateHeader } from "../auth/bearer.js";
+import { parseBearer, type WwwAuthenticateOptions, wwwAuthenticateHeader } from "../auth/bearer.js";
 import { DEFAULT_AUDIT_TIMEOUT_MS, jsonResponse, runAuditBounded } from "../http/http.js";
 import {
   JSONRPC_INSUFFICIENT_SCOPE,
@@ -139,6 +139,22 @@ export const resolveWwwAuthenticate = <TCtx>(
   typeof options.wwwAuthenticate === "function"
     ? options.wwwAuthenticate(request)
     : options.wwwAuthenticate;
+
+/**
+ * The challenge for a request `authenticate` just rejected (RFC 6750 §3.1):
+ * `invalid_token` only when a credential was sent, and one code for every
+ * reason so the header never tells a token holder why. An `error` the host set
+ * in its own `wwwAuthenticate` option is kept.
+ */
+export const authFailureChallenge = <TCtx>(
+  options: McpHandlerOptions<TCtx>,
+  request: Request,
+): WwwAuthenticateOptions => {
+  const challenge = resolveWwwAuthenticate(options, request);
+  return parseBearer(request.headers.get("authorization")) === null
+    ? challenge
+    : { ...challenge, error: challenge.error ?? "invalid_token" };
+};
 
 /**
  * `id` defaults to `null` for the transport-level call sites in

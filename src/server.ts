@@ -16,7 +16,7 @@ export {
 export {
   type SignedTokenAuthOptions,
   signedTokenAuth,
-} from "./auth/signed-token.js";
+} from "./auth/signed/token.js";
 
 export {
   authMethodsFor,

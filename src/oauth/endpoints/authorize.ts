@@ -25,7 +25,7 @@ import type {
   ResolvedOAuthRouterOptions,
 } from "../types.js";
 import { type Callback, codeRedirect, errorRedirect, secureRedirect } from "./callback.js";
-import { isPreApproved, issueConsentTicket, renderConsent } from "./consent.js";
+import { isPreApproved, issueConsentTicket, renderConsent } from "./consent/handler.js";
 
 /** BASE64URL(SHA-256(verifier)) without padding is always exactly 43 characters. */
 const S256_CHALLENGE = /^[A-Za-z0-9_-]{43}$/;

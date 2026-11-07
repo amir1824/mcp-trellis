@@ -1,8 +1,14 @@
 import { NO_CORS, POST_ONLY, requireHttpMethod } from "../../http/http.js";
 import { ownValue } from "../../util/own.js";
 import { auditLegacyKeyUsage } from "../audit.js";
-import { advertisedScopes, oauthError, resolveSecrets, tokenResponse } from "../config.js";
-import { GRANT_TYPES, type GrantType, OAUTH_ERRORS } from "../constants.js";
+import {
+  advertisedScopes,
+  grantTypesOf,
+  oauthError,
+  resolveSecrets,
+  tokenResponse,
+} from "../config.js";
+import { GRANT_TYPES, OAUTH_ERRORS } from "../constants.js";
 import { firstClientAuthError, readClientAuth } from "../crypto/clientauth.js";
 import { type AuthCodeRecord, consumeAuthCodeDetailed } from "../crypto/codes.js";
 import { verifyPkceS256 } from "../crypto/pkce.js";
@@ -147,10 +153,7 @@ export const handleToken = async (
 
   const handler = ownValue(GRANT_HANDLERS, body.grant_type ?? "");
   if (!handler) {
-    const supported: GrantType[] = [GRANT_TYPES.authorizationCode];
-    if (options.ports.refreshAccessToken) {
-      supported.push(GRANT_TYPES.refreshToken);
-    }
+    const supported = grantTypesOf(options.ports);
     return oauthError(OAUTH_ERRORS.unsupportedGrantType, 400, `supported: ${supported.join(", ")}`);
   }
   return handler({

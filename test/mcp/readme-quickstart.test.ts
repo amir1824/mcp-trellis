@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { McpApp } from "../../src/app.js";
-import { signedTokenAuth } from "../../src/auth/signed-token.js";
+import { signedTokenAuth } from "../../src/auth/signed/token.js";
 import { HARNESS_CODE_SECRET } from "../helpers/ports.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");

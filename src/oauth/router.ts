@@ -9,7 +9,7 @@ import {
 import { DEFAULT_OAUTH_PATH, OAUTH_ERRORS } from "./constants.js";
 import { processCodeStore } from "./crypto/codes.js";
 import { handleAuthorize } from "./endpoints/authorize.js";
-import { handleConsent } from "./endpoints/consent.js";
+import { handleConsent } from "./endpoints/consent/handler.js";
 import { handleRegister } from "./endpoints/register.js";
 import { handleRevoke } from "./endpoints/revoke.js";
 import { handleToken } from "./endpoints/token.js";

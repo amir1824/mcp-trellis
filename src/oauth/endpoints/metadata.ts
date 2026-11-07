@@ -8,8 +8,6 @@ import {
 } from "../constants.js";
 import { canonicalResource, DEFAULT_RESOURCE_PATH } from "../policy/resource.js";
 
-export type { GrantType } from "../constants.js";
-
 export type ProtectedResourceMetadata = {
   resource: string;
   authorization_servers: string[];

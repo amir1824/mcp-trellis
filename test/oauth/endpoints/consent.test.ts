@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { describe, it } from "node:test";
 import { expectOAuthError } from "../../helpers/http.js";
 import { VALID_S256_CHALLENGE } from "../../helpers/oauth.js";
@@ -79,6 +80,17 @@ describe("consent interstitial hardening", () => {
     assert.equal(res.headers.get("X-Frame-Options"), "DENY");
     assert.equal(res.headers.get("Referrer-Policy"), "no-referrer");
     assert.equal(res.headers.get("Cache-Control"), "no-store");
+  });
+
+  it("allows exactly its own submit-once script, by hash", async () => {
+    const router = makeRouter();
+    const res = await router.tryHandle(new Request(authorizeUrl(), { method: "GET" }));
+    assert.ok(res);
+    const script = (await res.text()).match(/<script>([^<]*)<\/script>/)?.[1] ?? "";
+    const hash = createHash("sha256").update(script).digest("base64");
+    const csp = res.headers.get("Content-Security-Policy") ?? "";
+    assert.match(script, /dataset\.sent/);
+    assert.ok(csp.includes(`script-src 'sha256-${hash}';`), csp);
   });
 
   it(

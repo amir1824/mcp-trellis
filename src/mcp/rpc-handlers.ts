@@ -14,6 +14,7 @@ import {
 } from "./jsonrpc.js";
 import {
   type AuditEntry,
+  authFailureChallenge,
   DENIAL_REASONS,
   hasScope,
   insufficientScope,
@@ -245,7 +246,7 @@ export const dispatchRpc = async <TCtx>(input: {
         error: DENIAL_REASONS.unauthorized,
         durationMs: Date.now() - startedAt,
       });
-      return unauthorized(resolveWwwAuthenticate(options, req), undefined, id);
+      return unauthorized(authFailureChallenge(options, req), undefined, id);
     }
   }
 

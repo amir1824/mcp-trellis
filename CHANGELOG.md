@@ -5,8 +5,42 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`signedTokenAuth({ isUserActive })`** is checked on every verified token and every
+  refresh; only `true` passes and a throw is a 500. Before, a token stayed valid after
+  the user was removed, disabled or logged out, until it expired.
+- **`signedTokenAuth({ refreshTtlSeconds })`** (opt-in) adds single-use rotating refresh
+  tokens, so a connector renews without sending the user back to the browser every
+  `ttlSeconds`. Bound to user, client, resource and scope, with an absolute lifetime
+  fixed when the authorization code is redeemed. Needs `codeStore` and `isUserActive`.
+  `/revoke` is mounted and burns refresh tokens.
+- **`signedTokenAuth({ secret: [new, old] })`**: the first secret signs, every entry
+  verifies and seals, so replacing a secret no longer invalidates every outstanding
+  token and DCR `client_id` at once.
+- **A readable page for a failed consent POST** when `Accept` lists `text/html`:
+  expired ticket, ended session or a second Approve. Same `400`; other callers keep the
+  JSON.
+- `docs/security.md` gains *Sessions and expiry*.
+
+### Changed
+
+- **A rejected bearer token now carries `error="invalid_token"`** in `WWW-Authenticate`
+  (RFC 6750 §3.1), one code for every reason, for every host (a custom `verifyToken` or
+  `authenticate` included). An `error` the host set in its own `wwwAuthenticate` is kept.
+  No bearer: the header is unchanged.
+- **The DCR response lists `refresh_token` in `grant_types` whenever the AS advertises
+  it**, for every host: one that supplies its own `refreshAccessToken` port now sees it
+  too, where before the response always said `authorization_code` only.
+- `signedTokenAuth` validates each `secret` entry (at most 8) when it is called, not
+  at the first request, and passes the list on as `codeSecret`.
+
 ### Fixed
 
+- **A double-clicked Allow on the built-in consent page no longer strands the user.** The
+  second POST found the ticket spent and the browser showed its error instead of the
+  redirect with the code. The page now submits once, through an inline script its CSP
+  allows by hash (`script-src 'sha256-…'`); a host `consent.render` is unchanged.
 - **A failing `cimdCache` write no longer fails resolution.** In 3.0.0 a
   rejected `cache.set` threw out of `resolveCimdClient` (documented as `null`
   on any failure) and turned a valid, already-checked document into a server

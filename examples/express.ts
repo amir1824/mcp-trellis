@@ -11,7 +11,7 @@
 
 import { asNodeHandler } from "../src/adapters/node.js";
 import { createMcpApp } from "../src/app.js";
-import { signedTokenAuth } from "../src/auth/signed-token.js";
+import { signedTokenAuth } from "../src/auth/signed/token.js";
 import type { ToolDef } from "../src/mcp/registry.js";
 import { requiredSecret } from "./env.js";
 

@@ -33,6 +33,7 @@ This is a **library** threat model, not a third-party audit badge.
 | Scope escalation at authorize | Requested `scope` is validated against the advertised `scopes` and rejected with `invalid_scope`; the grant is bound into the auth code and handed to `mintAccessToken` |
 | An unscoped tool silently callable by any authenticated principal, including one holding none of the advertised scopes — the gap `defaultScopes: []` alone doesn't close, since that only governs the token grant, not per-tool enforcement | `createMcpApp` refuses to construct once `scopes` has more than one entry if any tool omits `ToolDef.scope` — pass `scope: null` to state the omission on purpose. A single-scope server has no such ambiguity and is unaffected. `tools/call` itself always enforces whatever `scope` a tool does declare, independent of this guard (403 `insufficient_scope`) |
 | Scope reduction lost on refresh | Optional `scope` on the refresh token request is validated against advertised scopes and forwarded on `RefreshAccessTokenInput.scope`. **`refreshAccessToken` MUST enforce ⊆ originally granted scopes** (opaque RT — same pattern as `resource`). The token response omits `scope` when neither the port nor the grant supplies one (RFC 6749 §5.1) — clients must not assume the field is always present |
+| A removed or disabled user keeps a working connector | `signedTokenAuth` tokens are stateless, so they outlive the login session. `isUserActive` closes that; see [Sessions and expiry](#sessions-and-expiry) |
 | Stolen access or refresh token | Host `revokeToken` (denylist or equivalent) that `verifyToken` and `refreshAccessToken` consult. Unknown / wrong-client tokens MUST no-op, not throw. Well-formed authenticated revoke is 200 even if the token is unknown |
 | Stolen confidential-client secret | `clientStore.verifySecret` owns comparison — store hashes, not plaintext. The library never sees or persists credentials. **Prefer `clientStore.secretHash`** instead: return a stored hash from `hashClientSecret` and the library does the comparison with the same constant-time primitive it uses everywhere else, rather than a hand-rolled `stored === presented` in your own `verifySecret` being a timing oracle with no warning |
 | An unauthenticated caller enumerating which `client_id`s a locked-down server knows, via distinguishable `/token`/`/revoke` error text or response timing | Every client-auth failure at `/token` and `/revoke` collapses to one `invalid_client` / "client authentication failed" — previously up to five distinguishable messages named exactly why (wrong method, missing secret, misconfigured store, unknown id). Every rejection path in `firstClientAuthError` for a client_id that *is* known — wrong auth method, no secret presented, wrong secret, no `secretHash`/`verifySecret` on file — runs the same fixed-cost dummy or real comparison before returning, so response timing alone can't tell "known client, wrong method" apart from "known client, wrong secret." An unknown `client_id` on a locked-down server (`allowUnregisteredClients: false`) pays the identical fixed cost, so the crypto-verification cost itself can't distinguish "unknown" from "known, wrong secret" either. `/authorize`'s `unauthorized_client` is unchanged and stays descriptive — a human debugging a browser flow, not a bare API response, and a locked-down server already announces the same fact by omitting `registration_endpoint` |
@@ -52,6 +53,59 @@ This is a **library** threat model, not a third-party audit badge.
 **Also designed in:** PKCE S256 (timing-safe, length-capped; `code_challenge` must be a 43-character base64url digest at `/authorize`); auth codes, consent tickets, and DCR client assertions are all AES-GCM sealed with domain-separated keys (`sealed.ts`) so none of the three token types can be presented as another, and each binds `userId`/`clientId`/`redirectUri`/challenge/`resource` as applicable; redirect allowlist + DCR filter; a `redirect_uri` carrying a fragment or embedded credentials is rejected outright; no query-string tokens (`token` and `access_token`); honest `grant_types_supported`; `/token` and `/revoke` omit CORS `*` and both accept JSON or form bodies; request bodies are capped (1 MiB on `/mcp`, 64 KiB on `/token`/`/revoke`/`/register`) and a chunked body with no declared length is aborted mid-stream past the cap, not buffered first; audit fires on auth/scope denial as well as tool results; a scope-missing `tools/call` from an authenticated principal is **403** `insufficient_scope` (RFC 6750 §3.1), not a 401 that would just send the client back through the same authorize flow forever; 401/403 responses echo the real JSON-RPC request id instead of hardcoding `null`; `createOAuthRouter` refuses to construct if `oauthPath` and `resourcePath` would collide, or if `resourcePath` starts with `/.well-known`; `resourcePath` is normalized once at construction (`normalizeConfiguredPath`) so a trailing slash can't make `/authorize`, `/token`, and route matching disagree with each other about what the canonical resource is.
 
 **Known limits:** in-memory jti map is process-local (multi-instance needs `codeStore`); the loopback redirect allowlist permits any path or port on `127.0.0.1`/`[::1]` over `http:` only — `localhost` and `https:` loopback are deliberately not accepted (RFC 8252 §8.3: `localhost` is DNS-resolvable, not a loopback guarantee, and native-app loopback redirects are `http:` only); DCR binds a client to its own `redirect_uris` via a sealed assertion but does not verify the *registrant's identity* (opt into CIMD with `cimd: true`); CIMD DNS checks do not pin the TCP connect (see CIMD SSRF row).
+
+## Sessions and expiry
+
+The connector holds a token, never the app's login cookie. What each event does
+to it, with `signedTokenAuth`:
+
+| Event | What the connector sees |
+|-------|-------------------------|
+| The app session ends (cookie expires, logout) | Nothing. The next `/authorize` redirects to `loginUrl`; a token already issued keeps working |
+| The access token reaches its `ttlSeconds` (default 1 h) | `401` with `WWW-Authenticate: Bearer …, error="invalid_token"` (one code for a bad signature, expiry, wrong audience or an inactive user). With a refresh token the client renews silently; without one the user goes through the browser again |
+| The user is removed, disabled or signed out everywhere | With `isUserActive`: `401` on the next MCP request, `invalid_grant` on the next refresh. Without it: the access token works until it expires. `isUserActive` runs on every request, only `true` passes, a throw is a `500`; keep it cheap or cached, a call that hangs stalls the request |
+| The user's role or scopes change | The token keeps the scopes granted at issue until it expires. Enforce current permissions in the data layer |
+| The user sits on the consent page over 5 minutes, the session ends before Approve, or Approve is posted twice | A short page in the browser (JSON for a caller that does not ask for `text/html`), status `400`. `consent.render` customizes the consent screen only |
+| `secret` becomes a list `[new, old]` | Old tokens and DCR `client_id`s keep working, new ones are signed with `new`. Remove `old` once its tokens have expired; until then it can still forge |
+| `initialize` and `ping` | Succeed with no token or a bad one, so a "connected" status proves nothing. A `GET /mcp` with an `Authorization` header is answered `405` without checking it. Only `tools/list` and `tools/call` check the token |
+
+Access tokens are bearer tokens: not bound to a client and not revocable before
+they expire, so keep `ttlSeconds` short.
+
+**Refresh (`refreshTtlSeconds`).** Off unless set. Refresh tokens are signed, not
+stored; the only state is a single-use mark per token in `codeStore`.
+
+- **Lifetime.** Absolute: fixed when the authorization code is redeemed and never extended by refreshing, so
+  the user approves again after `refreshTtlSeconds`. The last access token issued
+  can still run up to `ttlSeconds` past that.
+- **Single use.** Each refresh token works once and is replaced. `codeStore.consume`
+  must be atomic (Redis `SET NX EX`, a unique-key insert) with a TTL no shorter than
+  the token. The process-local store does not hold across instances and Workers KV
+  is not atomic, so neither gives single use. Pass the same `codeStore` instance to
+  `signedTokenAuth` as the router uses; it refuses to start without one. One mark
+  per refresh stays until the grant's expiry, so size the store and rate-limit
+  `/token` per `client_id`.
+- **Binding.** To the user, client, resource and scopes of the consent. A refresh
+  may narrow scope, never widen it. Narrowing applies to that one access token: the
+  successor refresh token keeps the original grant's scopes, so the next refresh can
+  ask for them again (RFC 6749 §6). Every failure is one `invalid_grant`, and every
+  check that depends on the caller's input runs before the token is burned, so a
+  wrong client cannot spend the rightful holder's token.
+- **Size.** A refresh token is capped at 4096 characters. Issuing a longer one (a
+  user id of roughly 2.8 KB of ASCII, or a very long scope list) throws: at the
+  first issuance that is a `500` at `/token` after the authorization code was
+  spent, on every login for that user. Keep user ids short.
+- **No grace window.** A client that loses a refresh response and retries is logged
+  out and re-authorizes, as it is if minting fails after the old token was burned.
+- **No token family.** Replaying a used token is refused, but the successor a thief
+  obtained first stays valid until its expiry or until `isUserActive` turns false.
+  For family revocation use an opaque server-side store
+  (`examples/project-desk/src/tokens.ts`).
+- **`/revoke`** burns a refresh token only and answers `200` for anything else,
+  including an access token. A store failure on a valid refresh token is a `500`, so
+  revoking the current refresh token never reports success while it still works.
+  Revoking one that was already replaced by a refresh is a no-op: it answers `200`
+  and the successor keeps working (see "No token family").
 
 ## Rotating codeSecret
 
