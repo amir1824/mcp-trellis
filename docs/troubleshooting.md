@@ -8,7 +8,8 @@
 | Callback rejected | Callback is not an exact allowlisted URI | Add the callback shown by the client to `extraRedirectUris`; do not allow arbitrary hosts. |
 | Browser shows an approval page | A login session exists but consent is still required | Approve in the browser. Do not expect `/authorize` to redirect immediately. |
 | Login loops | Cookie domain/path/Secure flags do not match public host | Inspect your app's session handling and use a consistent origin. |
-| `invalid_grant` | Expired/replayed code, wrong verifier or resource | Start a fresh authorization flow. Keep verifier and resource consistent. |
+| `invalid_grant` | Expired/replayed code, wrong verifier or resource, or your `mintAccessToken` / `refreshAccessToken` threw `AccessDeniedError` (description "access denied") | Start a fresh authorization flow and keep verifier and resource consistent. For "access denied", read the `access_denied` entry in your `audit` sink: `reason` holds the message you threw (without an `audit` port it goes nowhere). |
+| `/token` returns 500 `server_error` when a user should simply be refused | A `mintAccessToken` or `refreshAccessToken` port threw a plain `Error` | Throw `AccessDeniedError` for deliberate refusals; any other throw stays a 500. |
 | Tool request returns 401 | Token expired, verification failed, or audience mismatch | Verify signature/expiry in app auth and return the requested MCP audience. |
 | Tool request returns 403 | Tool scope missing | Grant and return the required scopes from token verification. |
 | Wrong user's data | Data query ignores authenticated identity | Filter by verified principal and tenant; never trust a tool argument for ownership. |

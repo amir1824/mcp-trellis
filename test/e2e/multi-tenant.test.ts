@@ -101,10 +101,10 @@ describe("multi-tenant example: membership decides who gets a token", () => {
 
   it("refuses a token for a tenant the user does not belong to", async () => {
     const response = await connect("globex.mcp.example.com", "alice");
-    // A throw from `mintAccessToken` reaches the client as a 500: the library has
-    // no typed "access denied" for that port. What matters here is that no token
-    // is issued, so pin both facts.
-    assert.equal(response.status, 500);
+    // `AccessDeniedError` from `mintAccessToken` is a deliberate refusal: 400
+    // invalid_grant, not a 500, and no token is issued.
+    assert.equal(response.status, 400);
+    assert.equal(((await response.clone().json()) as { error: string }).error, "invalid_grant");
     assert.equal(((await response.json()) as { access_token?: string }).access_token, undefined);
   });
 });

@@ -5,12 +5,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-11-07
+
+### Added
+
+- **`AccessDeniedError`** (exported from `mcp-trellis` and `mcp-trellis/oauth`). Throw it
+  from `mintAccessToken` or `refreshAccessToken` to refuse a grant on purpose. The token
+  endpoint now answers `400 invalid_grant` with a generic "access denied" instead of
+  `500 server_error`, and the message goes to `audit` only, so it can name a tenant or user
+  without telling the caller. Any other thrown error is still a `500`. Additive: no existing
+  behavior changes.
+
+### Changed
+
+- The README quickstart sets `clients: ["claude", "codex"]` (the default is `["claude"]`), says
+  that OAuth decides who is calling and not which tenant or record they may reach, and lists
+  the two environment variables `npm run demo` needs. The demo's error message now prints them.
+- `docs/ROADMAP.md` and `docs/compatibility.md` were removed; the README holds the protocol
+  status and the client table.
+
 ### Fixed
 
 - `examples/multi-tenant.ts` now checks tenant membership when it mints a token
   and on every tool call. Before, it only mapped the Host to a tenant, so any
   signed-in user could get a token for any tenant. Covered by
-  `test/e2e/multi-tenant.test.ts`. Example change only; the library is unchanged.
+  `test/e2e/multi-tenant.test.ts`. A refusal there now uses `AccessDeniedError`.
 
 ## [3.1.0] - 2026-11-07
 

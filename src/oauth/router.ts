@@ -198,6 +198,7 @@ export {
   mcpWwwAuthenticate,
   protectedResourceMetadata,
 } from "./endpoints/metadata.js";
+export { AccessDeniedError } from "./errors.js";
 export { CLAUDE_CALLBACK, isAllowedRedirectUri } from "./policy/redirect.js";
 export {
   canonicalResource,

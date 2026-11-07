@@ -13,7 +13,7 @@ Ports and audience wiring: [guide.md](guide.md).
 - Query-string tokens rejected (`token` and RFC 6750 `access_token`)
 - `tools/call` checks `principal.scopes` (`*` = all — a wildcard that passes **every** tool scope check; reserve it for trusted internal principals and never mint it for an external connector), and the OAuth grant that produced them is validated at `authorize`
 - With `createMcpApp`, tokens whose audience is not this server's canonical resource are rejected by the library
-- **`fetch` never rejects.** If a host port you supply (`authenticate`, `context`, `resolveUser`, `mintAccessToken`, `clientStore`, …) throws, `createMcpHandler`, `createOAuthRouter`, and `createMcpApp` all catch it and return a real `500` (`-32603` for MCP, `server_error` for OAuth) instead of an unhandled rejection — whose shape and whether it even reaches the client varies by runtime. `asNodeHandler` catches independently too, since on raw `http.createServer` a rejection there leaves the socket open with no response ever sent.
+- **`fetch` never rejects.** If a host port you supply (`authenticate`, `context`, `resolveUser`, `mintAccessToken`, `clientStore`, …) throws, `createMcpHandler`, `createOAuthRouter`, and `createMcpApp` all catch it and return a real `500` (`-32603` for MCP, `server_error` for OAuth; the one exception is `AccessDeniedError` from `mintAccessToken` or `refreshAccessToken`, a deliberate refusal that answers `400 invalid_grant`) instead of an unhandled rejection — whose shape and whether it even reaches the client varies by runtime. `asNodeHandler` catches independently too, since on raw `http.createServer` a rejection there leaves the socket open with no response ever sent.
 
 ## Threat model (library)
 

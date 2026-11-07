@@ -23,6 +23,7 @@ import { fileURLToPath } from "node:url";
 import { asNodeHandler } from "../src/adapters/node.js";
 import { createMcpApp } from "../src/app.js";
 import type { ToolDef } from "../src/mcp/registry.js";
+import { AccessDeniedError } from "../src/oauth/errors.js";
 import { requiredSecret } from "./env.js";
 import { signToken, verifyToken } from "./signed-token.js";
 
@@ -92,9 +93,9 @@ export const createMultiTenantApp = ({ codeSecret, accessSecret }: Secrets) =>
       loginUrl: (_req, next) => `/login?next=${encodeURIComponent(next)}`,
       mintAccessToken: async ({ userId, scope, resource }) => {
         const tenantId = tenantOf(new URL(resource).origin);
-        if (!tenantId) throw new Error(`unknown tenant for resource ${resource}`);
+        if (!tenantId) throw new AccessDeniedError(`unknown tenant for resource ${resource}`);
         if (!isMember(tenantId, userId)) {
-          throw new Error(`user ${userId} is not a member of tenant ${tenantId}`);
+          throw new AccessDeniedError(`user ${userId} is not a member of tenant ${tenantId}`);
         }
         return {
           accessToken: await signToken(accessSecret, {

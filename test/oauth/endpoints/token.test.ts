@@ -163,3 +163,44 @@ describe("forged expiry", () => {
     assert.deepEqual(mintCalls, []);
   });
 });
+
+describe("auth code check order", () => {
+  const VERIFIER = "the-verifier-the-code-was-issued-for-with-plenty-of-length";
+  const WRONG_VERIFIER = "a-different-verifier-that-does-not-match-the-code-challenge";
+
+  const redeemForged = async (codeResource: string) => {
+    const { router, mintCalls } = makeRouter();
+    const code = await forgeCode(
+      HARNESS_CODE_SECRET,
+      {
+        clientId: DEFAULT_CLIENT_ID,
+        redirectUri: DEFAULT_REDIRECT_URI,
+        codeChallenge: await sha256Base64Url(VERIFIER),
+        userId: "harness-user",
+        resource: codeResource,
+        scope: "mcp",
+      },
+      Date.now(),
+    );
+    const res = await redeem(router, {
+      code,
+      verifier: WRONG_VERIFIER,
+      clientId: DEFAULT_CLIENT_ID,
+      redirectUri: DEFAULT_REDIRECT_URI,
+      resource: RESOURCE,
+    });
+    return { res, mintCalls };
+  };
+
+  it("reports a resource mismatch before it checks the PKCE verifier", async () => {
+    const { res, mintCalls } = await redeemForged("https://other.test/mcp");
+    await expectOAuthError(res, 400, "invalid_target");
+    assert.deepEqual(mintCalls, []);
+  });
+
+  it("reports a PKCE failure once the resource matches", async () => {
+    const { res, mintCalls } = await redeemForged(RESOURCE);
+    await expectOAuthError(res, 400, "invalid_grant");
+    assert.deepEqual(mintCalls, []);
+  });
+});

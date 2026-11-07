@@ -136,7 +136,7 @@ export type RevokeTokenInput = {
  * handing it to an unauthenticated caller.
  */
 export type OAuthAuditEntry = {
-  /** Machine-stable event name, e.g. "client_auth_failed", "server_error". */
+  /** Machine-stable event name, e.g. "client_auth_failed", "server_error", "access_denied". */
   event: string;
   clientId?: string | undefined;
   reason: string;

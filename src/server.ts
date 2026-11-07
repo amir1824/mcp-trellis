@@ -77,6 +77,7 @@ export {
 } from "./mcp/tools.js";
 export type { JsonSchema } from "./mcp/validate.js";
 export type { CodeStore } from "./oauth/crypto/codes.js";
+export { AccessDeniedError } from "./oauth/errors.js";
 /** Auth-port types used by `McpAppAuth` — annotate extracted stores/callbacks. */
 export type {
   ClientStore,

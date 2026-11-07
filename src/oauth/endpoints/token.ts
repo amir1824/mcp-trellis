@@ -1,6 +1,6 @@
 import { NO_CORS, POST_ONLY, requireHttpMethod } from "../../http/http.js";
 import { ownValue } from "../../util/own.js";
-import { auditLegacyKeyUsage } from "../audit.js";
+import { auditLegacyKeyUsage, safeOAuthAudit } from "../audit.js";
 import {
   advertisedScopes,
   grantTypesOf,
@@ -10,10 +10,11 @@ import {
 } from "../config.js";
 import { GRANT_TYPES, OAUTH_ERRORS } from "../constants.js";
 import { firstClientAuthError, readClientAuth } from "../crypto/clientauth.js";
-import { type AuthCodeRecord, consumeAuthCodeDetailed } from "../crypto/codes.js";
-import { verifyPkceS256 } from "../crypto/pkce.js";
+import { consumeAuthCodeDetailed } from "../crypto/codes.js";
+import { AccessDeniedError } from "../errors.js";
+import { firstAuthCodeError } from "../policy/authcode.js";
 import { readBodyOrError, readOAuthBody } from "../policy/reqbody.js";
-import { canonicalResource, firstResourceError, resourcesEqual } from "../policy/resource.js";
+import { canonicalResource, firstResourceError } from "../policy/resource.js";
 import { firstScopeError, formatScope, requestedScopes } from "../policy/scope.js";
 import type { ResolvedOAuthRouterOptions } from "../types.js";
 
@@ -28,6 +29,44 @@ type GrantInput = {
 
 type GrantHandler = (input: GrantInput) => Promise<Response>;
 
+/**
+ * Answer a grant with `respond`. An `AccessDeniedError` from a token port is the
+ * host refusing the grant on purpose: answer `invalid_grant` and keep the reason
+ * in the audit log only. Anything else propagates to the router, which answers
+ * `server_error`.
+ */
+const refusalAsInvalidGrant = async (
+  options: ResolvedOAuthRouterOptions,
+  clientId: string,
+  respond: () => Promise<Response>,
+): Promise<Response> => {
+  try {
+    return await respond();
+  } catch (caught) {
+    if (!(caught instanceof AccessDeniedError)) throw caught;
+    await safeOAuthAudit(options, { event: "access_denied", clientId, reason: caught.message });
+    return oauthError(OAUTH_ERRORS.invalidGrant, 400, "access denied");
+  }
+};
+
+type ReducedScope = { scope: string | undefined } | { error: Response };
+
+// RFC 6749 §6: client MAY request a reduced scope; omit → host keeps original.
+const refreshScope = (
+  body: Record<string, string>,
+  options: ResolvedOAuthRouterOptions,
+): ReducedScope => {
+  if (body.scope === undefined || body.scope === "") return { scope: undefined };
+  const requested = requestedScopes(body.scope, []);
+  // `scope=" "` parses to nothing: an omitted scope keeps the original grant,
+  // so a whitespace-only one must not reach the port as `""` for it to guess.
+  if (requested.length === 0) {
+    return { error: oauthError(OAUTH_ERRORS.invalidScope, 400, "scope must not be empty") };
+  }
+  const scopeError = firstScopeError(requested, advertisedScopes(options));
+  return scopeError ? { error: scopeError } : { scope: formatScope(requested) };
+};
+
 const handleRefresh: GrantHandler = async ({ body, options, expectedResource, clientId }) => {
   if (!options.ports.refreshAccessToken) {
     return oauthError(OAUTH_ERRORS.unsupportedGrantType, 400, "refresh_token not enabled");
@@ -39,51 +78,22 @@ const handleRefresh: GrantHandler = async ({ body, options, expectedResource, cl
   const resourceError = firstResourceError(body.resource ?? "", expectedResource);
   if (resourceError) return resourceError;
 
-  // RFC 6749 §6: client MAY request a reduced scope; omit → host keeps original.
-  let requestedScope: string | undefined;
-  if (body.scope !== undefined && body.scope !== "") {
-    const requested = requestedScopes(body.scope, []);
-    // `scope=" "` parses to nothing: an omitted scope keeps the original grant,
-    // so a whitespace-only one must not reach the port as `""` for it to guess.
-    if (requested.length === 0) {
-      return oauthError(OAUTH_ERRORS.invalidScope, 400, "scope must not be empty");
-    }
-    const scopeError = firstScopeError(requested, advertisedScopes(options));
-    if (scopeError) return scopeError;
-    requestedScope = formatScope(requested);
-  }
+  const reduced = refreshScope(body, options);
+  if ("error" in reduced) return reduced.error;
 
   // ponytail: AS cannot verify the refresh token's original audience/grant; the port owns those checks.
-  const minted = await options.ports.refreshAccessToken({
-    refreshToken,
-    clientId,
-    resource: expectedResource,
-    ...(requestedScope !== undefined ? { scope: requestedScope } : {}),
+  return refusalAsInvalidGrant(options, clientId, async () => {
+    // Called as a method of `ports` so a port that reads `this` keeps working.
+    const minted = await options.ports.refreshAccessToken?.({
+      refreshToken,
+      clientId,
+      resource: expectedResource,
+      ...(reduced.scope !== undefined ? { scope: reduced.scope } : {}),
+    });
+    if (!minted) return oauthError(OAUTH_ERRORS.invalidGrant, 400, "invalid refresh_token");
+    // Scope in the response must come from the port — not the client's request.
+    return tokenResponse(minted);
   });
-  if (!minted) {
-    return oauthError(OAUTH_ERRORS.invalidGrant, 400, "invalid refresh_token");
-  }
-  // Scope in the response must come from the port — not the client's request.
-  return tokenResponse(minted);
-};
-
-const firstAuthCodeMismatch = (
-  record: AuthCodeRecord,
-  body: Record<string, string>,
-  clientId: string,
-): Response | null => {
-  const rule = [
-    {
-      ok: record.redirectUri === (body.redirect_uri ?? ""),
-      description: "redirect_uri mismatch",
-    },
-    {
-      ok: record.clientId === clientId,
-      description: "client_id mismatch",
-    },
-  ].find((entry) => !entry.ok);
-
-  return rule ? oauthError(OAUTH_ERRORS.invalidGrant, 400, rule.description) : null;
 };
 
 const handleAuthCode: GrantHandler = async ({
@@ -106,24 +116,20 @@ const handleAuthCode: GrantHandler = async ({
   const { record, keyIndex } = consumed;
   await auditLegacyKeyUsage(options, { clientId, keyIndex, source: "auth code redeemed" });
 
-  const mismatch = firstAuthCodeMismatch(record, body, clientId);
-  if (mismatch) return mismatch;
+  const invalid = await firstAuthCodeError({ record, body, clientId, expectedResource });
+  if (invalid) return invalid;
 
-  if (!resourcesEqual(record.resource, expectedResource)) {
-    return oauthError(OAUTH_ERRORS.invalidTarget, 400, "auth code bound to a different resource");
-  }
-
-  if (!(await verifyPkceS256(body.code_verifier ?? "", record.codeChallenge))) {
-    return oauthError(OAUTH_ERRORS.invalidGrant, 400, "pkce verification failed");
-  }
-
-  const minted = await options.ports.mintAccessToken({
-    userId: record.userId,
-    clientId,
-    scope: record.scope,
-    resource: record.resource,
-  });
-  return tokenResponse(minted, record.scope);
+  return refusalAsInvalidGrant(options, clientId, async () =>
+    tokenResponse(
+      await options.ports.mintAccessToken({
+        userId: record.userId,
+        clientId,
+        scope: record.scope,
+        resource: record.resource,
+      }),
+      record.scope,
+    ),
+  );
 };
 
 const GRANT_HANDLERS: Record<string, GrantHandler> = {

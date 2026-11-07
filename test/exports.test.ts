@@ -10,6 +10,7 @@ import * as deprecatedRoot from "../src/deprecated.js";
 import * as deprecatedOAuth from "../src/oauth/deprecated.js";
 
 const STABLE_ROOT = [
+  "AccessDeniedError",
   "CLIENT_PROFILES",
   "DEFAULT_CLIENTS",
   "DEFAULT_PROTOCOL_VERSION",
@@ -40,6 +41,7 @@ const STABLE_ROOT = [
 ];
 
 const STABLE_OAUTH = [
+  "AccessDeniedError",
   "CLAUDE_CALLBACK",
   "DEFAULT_RESOURCE_PATH",
   "DEFAULT_SCOPE",
