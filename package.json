@@ -1,6 +1,6 @@
 {
   "name": "mcp-trellis",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "Plug your existing SaaS's users, auth and permissions into MCP with OAuth 2.1, so Claude, ChatGPT and other AI clients can act on your app as that user.",
   "type": "module",
   "license": "MIT",
