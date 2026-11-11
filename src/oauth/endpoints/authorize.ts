@@ -1,5 +1,5 @@
 import { GET_ONLY, requireHttpMethod } from "../../http/http.js";
-import { auditCimdFailure, auditLegacyKeyUsage } from "../audit.js";
+import { auditCimdFailure, unsealClientAssertionAudited } from "../audit.js";
 import { cimdFetchOpts, isCimdClientId, resolveCimdOutcome } from "../cimd/cimd.js";
 import type { CimdDocument } from "../cimd/types.js";
 import {
@@ -11,26 +11,30 @@ import {
   unregisteredClientError,
   unregisteredClientsAllowed,
 } from "../config.js";
-import { OAUTH_ERRORS } from "../constants.js";
+import { HTTP_STATUS, OAUTH_ERRORS, UNREGISTERED_CLIENT_MESSAGE } from "../constants.js";
 import { issueAuthCode } from "../crypto/codes.js";
-import { unsealAny } from "../crypto/sealed.js";
 import { isAllowedRedirectUri, type RedirectAllowlistOptions } from "../policy/redirect.js";
 import { canonicalResource, resourceErrorInfo } from "../policy/resource.js";
 import { formatScope, requestedScopes, scopeErrorInfo } from "../policy/scope.js";
 import type {
-  ClientAssertion,
   OAuthRouterOptions,
   OAuthUser,
   RegisteredClient,
   ResolvedOAuthRouterOptions,
 } from "../types.js";
 import { type Callback, codeRedirect, errorRedirect, secureRedirect } from "./callback.js";
+import { describeClient } from "./consent/client-identity.js";
 import { isPreApproved, issueConsentTicket, renderConsent } from "./consent/handler.js";
 
 /** BASE64URL(SHA-256(verifier)) without padding is always exactly 43 characters. */
 const S256_CHALLENGE = /^[A-Za-z0-9_-]{43}$/;
 /** Reflected into `Location` on denial — an unbounded `state` is a header-size DoS knob. */
 const MAX_STATE_LENGTH = 2048;
+/** The refusal for a `client_id` this server does not serve. */
+const UNAUTHORIZED_CLIENT_DENIAL = {
+  code: OAUTH_ERRORS.unauthorizedClient,
+  status: HTTP_STATUS.badRequest,
+} as const;
 
 /**
  * A client bound to a known redirect-URI list — either pre-registered via
@@ -57,14 +61,14 @@ const redirectToLogin = (request: Request, url: URL, options: OAuthRouterOptions
   } catch {
     return oauthError(
       OAUTH_ERRORS.invalidRequest,
-      500,
+      HTTP_STATUS.internalServerError,
       "loginUrl must be absolute or same-origin relative",
     );
   }
   if (loginTarget.protocol !== "http:" && loginTarget.protocol !== "https:") {
     return oauthError(
       OAUTH_ERRORS.invalidRequest,
-      500,
+      HTTP_STATUS.internalServerError,
       "loginUrl must be absolute or same-origin relative",
     );
   }
@@ -74,6 +78,8 @@ const redirectToLogin = (request: Request, url: URL, options: OAuthRouterOptions
 type AuthorizeClient = {
   registered: RegisteredClient | null;
   boundRedirectUris: string[] | null;
+  /** Set only for a CIMD client; its name and host reach the consent screen. */
+  cimdDoc?: CimdDocument | undefined;
 };
 
 /**
@@ -94,13 +100,12 @@ const resolveAuthorizeClient = async (
   // sealed DCR assertion minted by a sibling instance sharing the codeSecret,
   // nor fetch a CIMD document, for a client it would reject one step later.
   if (!registered && !unregisteredClientsAllowed(options)) {
-    const rejection = unregisteredClientError(options, {
-      code: OAUTH_ERRORS.unauthorizedClient,
-      status: 400,
-    });
+    const rejection = unregisteredClientError(options, UNAUTHORIZED_CLIENT_DENIAL);
     if (rejection) return rejection;
   }
-  const assertion = registered ? null : await unsealClientAssertion(options, clientId, secrets);
+  const assertion = registered
+    ? null
+    : await unsealClientAssertionAudited(options, clientId, secrets);
   const isCimdId = options.cimd === true && isCimdClientId(clientId);
   const cimdDoc =
     !registered && !assertion && isCimdId ? await resolveCimdDocument(options, clientId) : null;
@@ -113,6 +118,7 @@ const resolveAuthorizeClient = async (
     registered,
     boundRedirectUris:
       registered?.redirectUris ?? assertion?.redirectUris ?? cimdDoc?.redirect_uris ?? null,
+    cimdDoc: cimdDoc ?? undefined,
   };
 };
 
@@ -127,36 +133,21 @@ const resolveCimdDocument = async (
   return null;
 };
 
-/** This server's own `/register` assertion for `clientId`, auditing a legacy-key unseal. */
-const unsealClientAssertion = async (
-  options: OAuthRouterOptions,
-  clientId: string,
-  secrets: readonly [string, ...string[]],
-): Promise<ClientAssertion | null> => {
-  const unsealed = await unsealAny<ClientAssertion>(secrets, "client", clientId);
-  await auditLegacyKeyUsage(options, {
-    clientId,
-    keyIndex: unsealed?.keyIndex,
-    source: "client assertion unsealed",
-  });
-  return unsealed?.value ?? null;
-};
-
 /** The rejection for a `client_id` nothing resolved, or null when the config admits it. */
 const unknownClientError = (options: OAuthRouterOptions, isCimdId: boolean): Response | null => {
-  const unregistered = unregisteredClientError(options, {
-    code: OAUTH_ERRORS.unauthorizedClient,
-    status: 400,
-  });
-  if (unregistered) return unregistered;
+  // `resolveAuthorizeClient` already answered the `allowUnregisteredClients: false` case.
   if (isCimdId) {
-    return oauthError(OAUTH_ERRORS.unauthorizedClient, 400, "CIMD client_id could not be resolved");
+    return oauthError(
+      OAUTH_ERRORS.unauthorizedClient,
+      HTTP_STATUS.badRequest,
+      "CIMD client_id could not be resolved",
+    );
   }
   if (!registeredClientsRequired(options)) return null;
   return oauthError(
     OAUTH_ERRORS.unauthorizedClient,
-    400,
-    "client_id must come from clientStore or this server's own /register",
+    HTTP_STATUS.badRequest,
+    UNREGISTERED_CLIENT_MESSAGE,
   );
 };
 
@@ -176,12 +167,12 @@ const firstPreTrustError = (
   options: OAuthRouterOptions,
 ): Response | null => {
   if (!redirectAllowed(callback.redirectUri, boundRedirectUris, options.redirect)) {
-    return oauthError(OAUTH_ERRORS.invalidRequest, 400, "invalid redirect_uri");
+    return oauthError(OAUTH_ERRORS.invalidRequest, HTTP_STATUS.badRequest, "invalid redirect_uri");
   }
   if (callback.state.length > MAX_STATE_LENGTH) {
     return oauthError(
       OAUTH_ERRORS.invalidRequest,
-      400,
+      HTTP_STATUS.badRequest,
       `state must be at most ${MAX_STATE_LENGTH} characters`,
     );
   }
@@ -248,6 +239,7 @@ type AuthorizeOutcomeInput = ValidatedAuthorizeRequest & {
   context: AuthorizeContext;
   clientId: string;
   registered: RegisteredClient | null;
+  cimdDoc?: CimdDocument | undefined;
   user: OAuthUser;
 };
 
@@ -255,7 +247,7 @@ type AuthorizeOutcomeInput = ValidatedAuthorizeRequest & {
 const issueAuthorizeOutcome = async (
   options: ResolvedOAuthRouterOptions,
   secrets: readonly [string, ...string[]],
-  { context, clientId, registered, user, codeChallenge, granted }: AuthorizeOutcomeInput,
+  { context, clientId, registered, cimdDoc, user, codeChallenge, granted }: AuthorizeOutcomeInput,
 ): Promise<Response> => {
   const { callback, expectedResource } = context;
   const grant = {
@@ -281,6 +273,7 @@ const issueAuthorizeOutcome = async (
     user,
     ticket,
     oauthPath: options.oauthPath,
+    ...describeClient({ clientId, redirectUri: callback.redirectUri, cimdDoc }),
   });
 };
 
@@ -296,13 +289,13 @@ export const handleAuthorize = async (
 
   const clientId = url.searchParams.get("client_id") ?? "";
   if (!clientId) {
-    return oauthError(OAUTH_ERRORS.invalidRequest, 400, "client_id required");
+    return oauthError(OAUTH_ERRORS.invalidRequest, HTTP_STATUS.badRequest, "client_id required");
   }
 
   const secrets = await resolveSecrets(options.ports, request);
   const clientResolution = await resolveAuthorizeClient(options, clientId, secrets);
   if (clientResolution instanceof Response) return clientResolution;
-  const { registered, boundRedirectUris } = clientResolution;
+  const { registered, boundRedirectUris, cimdDoc } = clientResolution;
 
   const callback: Callback = {
     redirectUri: url.searchParams.get("redirect_uri") ?? "",
@@ -324,6 +317,7 @@ export const handleAuthorize = async (
     context,
     clientId,
     registered,
+    cimdDoc,
     user,
   });
 };

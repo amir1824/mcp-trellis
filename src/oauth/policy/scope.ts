@@ -1,7 +1,7 @@
 /** OAuth scope handling — space-delimited sets (RFC 6749 §3.3). */
 
 import { oauthError } from "../config.js";
-import { OAUTH_ERRORS } from "../constants.js";
+import { HTTP_STATUS, OAUTH_ERRORS } from "../constants.js";
 import type { OAuthErrorInfo } from "../types.js";
 
 export const parseScope = (raw: string): string[] =>
@@ -41,5 +41,5 @@ export const scopeErrorInfo = (
 /** Any scope outside the advertised set → invalid_scope. */
 export const firstScopeError = (requested: string[], advertised: string[]): Response | null => {
   const issue = scopeErrorInfo(requested, advertised);
-  return issue ? oauthError(issue.code, 400, issue.description) : null;
+  return issue ? oauthError(issue.code, HTTP_STATUS.badRequest, issue.description) : null;
 };

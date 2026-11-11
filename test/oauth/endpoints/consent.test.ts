@@ -82,6 +82,14 @@ describe("consent interstitial hardening", () => {
     assert.equal(res.headers.get("Cache-Control"), "no-store");
   });
 
+  it("sends nosniff and a CSP that forbids a base element", async () => {
+    const router = makeRouter();
+    const res = await router.tryHandle(new Request(authorizeUrl(), { method: "GET" }));
+    assert.ok(res);
+    assert.equal(res.headers.get("X-Content-Type-Options"), "nosniff");
+    assert.match(res.headers.get("Content-Security-Policy") ?? "", /base-uri 'none'/);
+  });
+
   it("allows exactly its own submit-once script, by hash", async () => {
     const router = makeRouter();
     const res = await router.tryHandle(new Request(authorizeUrl(), { method: "GET" }));

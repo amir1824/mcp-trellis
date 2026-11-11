@@ -51,6 +51,20 @@ describe("OAuth audit hook — client_auth_failed", () => {
     assert.equal(entries[0]?.reason, "unknown client_id");
   });
 
+  it("hands the sink a client_id without line breaks or control characters", async () => {
+    const entries: OAuthAuditEntry[] = [];
+    const router = createOAuthRouter({
+      allowUnregisteredClients: false,
+      ports: { ...basePorts, clientStore: gemini, audit: (e) => void entries.push(e) },
+    });
+    const forged = `line one\nFORGED event=ok${String.fromCharCode(7)}`;
+    await router.tryHandle(
+      tokenRequest({ grant_type: "authorization_code", code: "x", client_id: forged }),
+    );
+
+    assert.equal(entries[0]?.clientId, "line one FORGED event=ok");
+  });
+
   it("audits an auth-method mismatch by its real reason", async () => {
     const entries: OAuthAuditEntry[] = [];
     const router = createOAuthRouter({

@@ -28,7 +28,7 @@ export {
   preRegisteredClients,
   redirectUrisFor,
 } from "./clients.js";
-// Moved to `mcp-trellis/advanced`; deprecated aliases until 3.0.
+// Moved to `mcp-trellis/advanced`; deprecated aliases until the next major release.
 export * from "./deprecated.js";
 export {
   type JsonResponseInput,

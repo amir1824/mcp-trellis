@@ -28,6 +28,18 @@ export const OAUTH_ERRORS = {
   accessDenied: "access_denied",
 } as const;
 
+/** HTTP statuses the OAuth endpoints answer with. */
+export const HTTP_STATUS = {
+  badRequest: 400,
+  unauthorized: 401,
+  payloadTooLarge: 413,
+  internalServerError: 500,
+} as const;
+
+/** Said to a caller whose `client_id` is neither pre-registered nor an id this server's `/register` issued. */
+export const UNREGISTERED_CLIENT_MESSAGE =
+  "client_id must come from clientStore or this server's own /register";
+
 export const TOKEN_ENDPOINT_AUTH_METHODS = {
   /** Public client — PKCE is the only proof. */
   none: "none",

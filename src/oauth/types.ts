@@ -27,6 +27,21 @@ export type ConsentRequest = {
   /** Embed this in your form's `consent_ticket` field (hidden input or POST body). */
   ticket: string;
   oauthPath: string;
+  /**
+   * Who is asking, in words the server controls: the host a CIMD client's document was
+   * served from, else the redirect URI's host ("An app on this device" for loopback).
+   * Absent when the redirect URI cannot be parsed. Cleaned, not escaped: HTML-escape it
+   * before you put it in markup.
+   */
+  clientHost?: string;
+  /**
+   * The name a CIMD client gave itself, cleaned (no control or bidi characters, at most 64
+   * characters). NOT verified: never show it as a trusted identity. Absent for DCR and
+   * pre-registered clients, and when the name could pass for Claude, ChatGPT, Codex, OpenAI,
+   * Anthropic or Gemini without both the redirect URI and the document's host being that
+   * vendor's. Cleaned, not escaped: HTML-escape it before you put it in markup.
+   */
+  clientName?: string;
 };
 
 export type ConsentOptions = {
@@ -43,6 +58,13 @@ export type ConsentOptions = {
    * redirect back to the client's own callback.
    */
   render?: (input: ConsentRequest) => Response | Promise<Response>;
+  /** Built-in screen only: what the app is asking to reach. Default `"your account"`. */
+  appName?: string;
+  /**
+   * Built-in screen only: a plain-language line per scope, for example
+   * `{ mcp: "Read and change your projects" }`. A scope without an entry shows its name alone.
+   */
+  scopeDescriptions?: Record<string, string>;
   /**
    * Client ids that skip approval. Only honored when `clientStore` actually
    * resolves the id — a DCR or self-invented id is never trusted.

@@ -6,7 +6,7 @@ import {
   oauthError,
   unregisteredClientsAllowed,
 } from "./config.js";
-import { DEFAULT_OAUTH_PATH, OAUTH_ERRORS } from "./constants.js";
+import { DEFAULT_OAUTH_PATH, HTTP_STATUS, OAUTH_ERRORS } from "./constants.js";
 import { processCodeStore } from "./crypto/codes.js";
 import { handleAuthorize } from "./endpoints/authorize.js";
 import { handleConsent } from "./endpoints/consent/handler.js";
@@ -169,7 +169,11 @@ export const createOAuthRouter = (options: OAuthRouterOptions): OAuthRouter => {
           event: "server_error",
           reason: errorReason(caught),
         });
-        return oauthError(OAUTH_ERRORS.serverError, 500, INTERNAL_ERROR);
+        return oauthError(
+          OAUTH_ERRORS.serverError,
+          HTTP_STATUS.internalServerError,
+          INTERNAL_ERROR,
+        );
       }
     },
   };
@@ -191,7 +195,7 @@ export {
 export type { ClientAuth } from "./crypto/clientauth.js";
 export type { AuthCodeRecord, CodeStore } from "./crypto/codes.js";
 export { hashClientSecret, verifyClientSecret } from "./crypto/secrethash.js";
-// Moved to `mcp-trellis/advanced`; deprecated aliases until 3.0.
+// Moved to `mcp-trellis/advanced`; deprecated aliases until the next major release.
 export * from "./deprecated.js";
 export {
   authorizationServerMetadata,

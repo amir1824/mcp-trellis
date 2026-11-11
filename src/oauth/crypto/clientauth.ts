@@ -1,6 +1,11 @@
 /** Token-endpoint client authentication (RFC 6749 §2.3.1). */
 
-import { auditCimdFailure, auditLegacyKeyUsage, safeOAuthAudit } from "../audit.js";
+import {
+  auditCimdFailure,
+  auditLegacyKeyUsage,
+  safeOAuthAudit,
+  unsealClientAssertionAudited,
+} from "../audit.js";
 import { cimdFetchOpts, isCimdClientId, resolveCimdOutcome } from "../cimd/cimd.js";
 import {
   oauthError,
@@ -9,17 +14,13 @@ import {
   unregisteredClientsAllowed,
 } from "../config.js";
 import {
+  HTTP_STATUS,
   OAUTH_ERRORS,
   TOKEN_ENDPOINT_AUTH_METHODS,
   type TokenEndpointAuthMethod,
+  UNREGISTERED_CLIENT_MESSAGE,
 } from "../constants.js";
-import type {
-  ClientAssertion,
-  ClientStore,
-  OAuthRouterOptions,
-  RegisteredClient,
-} from "../types.js";
-import { unsealAny } from "./sealed.js";
+import type { ClientStore, OAuthRouterOptions, RegisteredClient } from "../types.js";
 import { verifyClientSecretAny } from "./secrethash.js";
 
 export type ClientAuth = {
@@ -98,7 +99,7 @@ type ClientAuthContext = {
 
 /** The generic response every failure below returns to the caller. */
 const invalidClient = (): Response =>
-  oauthError(OAUTH_ERRORS.invalidClient, 401, CLIENT_AUTH_FAILED);
+  oauthError(OAUTH_ERRORS.invalidClient, HTTP_STATUS.unauthorized, CLIENT_AUTH_FAILED);
 
 /** The response above, plus the real reason to `ports.audit` — never to the caller. */
 const invalidClientAudited = async (
@@ -144,15 +145,7 @@ const isSelfRegisteredOrCimdClient = async ({
   request,
 }: ClientAuthContext): Promise<boolean> => {
   const codeSecretValues = await resolveSecrets(options.ports, request);
-  const unsealed = await unsealAny<ClientAssertion>(codeSecretValues, "client", auth.clientId);
-  if (unsealed) {
-    await auditLegacyKeyUsage(options, {
-      clientId: auth.clientId,
-      keyIndex: unsealed.keyIndex,
-      source: "client assertion unsealed",
-    });
-    return true;
-  }
+  if (await unsealClientAssertionAudited(options, auth.clientId, codeSecretValues)) return true;
   if (options.cimd !== true || !isCimdClientId(auth.clientId)) return false;
 
   const outcome = await resolveCimdOutcome(auth.clientId, cimdFetchOpts(options));
@@ -188,10 +181,7 @@ const unregisteredClientAuthError = async (
   }
   if (!registeredClientsRequired(context.options)) return null;
   if (await isSelfRegisteredOrCimdClient(context)) return null;
-  return invalidClientAudited(
-    context,
-    "client_id must come from clientStore or this server's own /register",
-  );
+  return invalidClientAudited(context, UNREGISTERED_CLIENT_MESSAGE);
 };
 
 /** Compare against `ClientStore.secretHash` — the same cost whether a hash is on file or not. */

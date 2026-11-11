@@ -109,6 +109,12 @@ describe("sealed auth codes (v2)", () => {
     assert.equal(await consumeAuthCode(secret, code, { codeStore }), null);
   });
 
+  it("rejects a code when the store answers anything other than exactly true", async () => {
+    const codeStore = { consume: () => "yes" as unknown as boolean };
+    const code = await issueAuthCode(secret, baseRecord);
+    assert.equal(await consumeAuthCode(secret, code, { codeStore }), null);
+  });
+
   it("enforces single-use by default without codeStore", async () => {
     const code = await issueAuthCode(secret, baseRecord);
     assert.ok(await consumeAuthCode(secret, code));

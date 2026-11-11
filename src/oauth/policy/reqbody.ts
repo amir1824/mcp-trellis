@@ -8,7 +8,7 @@
 import { BodyTooLargeError, DEFAULT_OAUTH_BODY_LIMIT, readBoundedText } from "../../http/body.js";
 import { isJsonObject } from "../../util/json.js";
 import { oauthError } from "../config.js";
-import { OAUTH_ERRORS } from "../constants.js";
+import { HTTP_STATUS, OAUTH_ERRORS } from "../constants.js";
 
 const readJsonBody = async (request: Request): Promise<Record<string, string>> => {
   const text = await readBoundedText(request, DEFAULT_OAUTH_BODY_LIMIT);
@@ -71,8 +71,12 @@ export const readBodyOrError = async <T>(
     return await read();
   } catch (caught) {
     if (caught instanceof BodyTooLargeError) {
-      return oauthError(OAUTH_ERRORS.invalidRequest, 413, "request body too large");
+      return oauthError(
+        OAUTH_ERRORS.invalidRequest,
+        HTTP_STATUS.payloadTooLarge,
+        "request body too large",
+      );
     }
-    return oauthError(invalidBodyErrorCode, 400, "malformed request body");
+    return oauthError(invalidBodyErrorCode, HTTP_STATUS.badRequest, "malformed request body");
   }
 };

@@ -18,6 +18,8 @@ export type { CimdCache, CimdDocument, CimdFetchOptions } from "./types.js";
 const CIMD_MAX_BYTES = 5 * 1024;
 const CIMD_TIMEOUT_MS = 10_000;
 const CIMD_MAX_REDIRECTS = 3;
+/** The `client_id` is a cache key and an outbound URL; no real document URL needs more. */
+const CIMD_MAX_CLIENT_ID_LENGTH = 2048;
 
 /** Build fetch options from router/app CIMD ports. */
 export const cimdFetchOpts = (ports: {
@@ -30,6 +32,7 @@ export const cimdFetchOpts = (ports: {
 
 /** True when `client_id` is an HTTPS URL eligible for CIMD resolution. */
 export const isCimdClientId = (clientId: string): boolean => {
+  if (clientId.length > CIMD_MAX_CLIENT_ID_LENGTH) return false;
   try {
     const url = new URL(clientId);
     return (
@@ -143,12 +146,29 @@ const fetchCimdDocument = async (settings: FetchSettings): Promise<FetchedDocume
   }
 };
 
-/** The document is already valid; a failed write only means the next call re-fetches. */
+/** A failed read is a miss: the document is fetched again instead of the request failing. */
+const readCacheBestEffort = async (
+  cache: CimdCache | undefined,
+  clientId: string,
+): Promise<CimdDocument | null> => {
+  if (!cache) return null;
+  try {
+    return await cache.get(clientId);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * The document is already valid; a failed write only means the next call re-fetches.
+ * A `max-age=0` document is not stored: a cache that reads 0 as "no expiry" would pin it.
+ */
 const cacheBestEffort = async (
   cache: CimdCache,
   clientId: string,
   fetched: FetchedDocument,
 ): Promise<void> => {
+  if (fetched.maxAge <= 0) return;
   try {
     await cache.set(clientId, fetched.doc, fetched.maxAge);
   } catch {
@@ -171,7 +191,7 @@ export const resolveCimdOutcome = async (
   if (!isCimdClientId(clientId)) {
     return { failure: { code: "blocked_url", detail: "client_id is not an https URL" } };
   }
-  const cached = options.cache ? await options.cache.get(clientId) : null;
+  const cached = await readCacheBestEffort(options.cache, clientId);
   if (cached) return { doc: cached };
 
   let fetched: FetchedDocument;

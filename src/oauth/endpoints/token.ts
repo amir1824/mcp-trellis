@@ -8,7 +8,7 @@ import {
   resolveSecrets,
   tokenResponse,
 } from "../config.js";
-import { GRANT_TYPES, OAUTH_ERRORS } from "../constants.js";
+import { GRANT_TYPES, HTTP_STATUS, OAUTH_ERRORS } from "../constants.js";
 import { firstClientAuthError, readClientAuth } from "../crypto/clientauth.js";
 import { consumeAuthCodeDetailed } from "../crypto/codes.js";
 import { AccessDeniedError } from "../errors.js";
@@ -45,7 +45,7 @@ const refusalAsInvalidGrant = async (
   } catch (caught) {
     if (!(caught instanceof AccessDeniedError)) throw caught;
     await safeOAuthAudit(options, { event: "access_denied", clientId, reason: caught.message });
-    return oauthError(OAUTH_ERRORS.invalidGrant, 400, "access denied");
+    return oauthError(OAUTH_ERRORS.invalidGrant, HTTP_STATUS.badRequest, "access denied");
   }
 };
 
@@ -61,7 +61,13 @@ const refreshScope = (
   // `scope=" "` parses to nothing: an omitted scope keeps the original grant,
   // so a whitespace-only one must not reach the port as `""` for it to guess.
   if (requested.length === 0) {
-    return { error: oauthError(OAUTH_ERRORS.invalidScope, 400, "scope must not be empty") };
+    return {
+      error: oauthError(
+        OAUTH_ERRORS.invalidScope,
+        HTTP_STATUS.badRequest,
+        "scope must not be empty",
+      ),
+    };
   }
   const scopeError = firstScopeError(requested, advertisedScopes(options));
   return scopeError ? { error: scopeError } : { scope: formatScope(requested) };
@@ -69,11 +75,19 @@ const refreshScope = (
 
 const handleRefresh: GrantHandler = async ({ body, options, expectedResource, clientId }) => {
   if (!options.ports.refreshAccessToken) {
-    return oauthError(OAUTH_ERRORS.unsupportedGrantType, 400, "refresh_token not enabled");
+    return oauthError(
+      OAUTH_ERRORS.unsupportedGrantType,
+      HTTP_STATUS.badRequest,
+      "refresh_token not enabled",
+    );
   }
   const refreshToken = body.refresh_token ?? "";
   if (!refreshToken) {
-    return oauthError(OAUTH_ERRORS.invalidRequest, 400, "refresh_token required");
+    return oauthError(
+      OAUTH_ERRORS.invalidRequest,
+      HTTP_STATUS.badRequest,
+      "refresh_token required",
+    );
   }
   const resourceError = firstResourceError(body.resource ?? "", expectedResource);
   if (resourceError) return resourceError;
@@ -90,7 +104,8 @@ const handleRefresh: GrantHandler = async ({ body, options, expectedResource, cl
       resource: expectedResource,
       ...(reduced.scope !== undefined ? { scope: reduced.scope } : {}),
     });
-    if (!minted) return oauthError(OAUTH_ERRORS.invalidGrant, 400, "invalid refresh_token");
+    if (!minted)
+      return oauthError(OAUTH_ERRORS.invalidGrant, HTTP_STATUS.badRequest, "invalid refresh_token");
     // Scope in the response must come from the port — not the client's request.
     return tokenResponse(minted);
   });
@@ -111,7 +126,7 @@ const handleAuthCode: GrantHandler = async ({
     codeStore: options.ports.codeStore,
   });
   if (!consumed) {
-    return oauthError(OAUTH_ERRORS.invalidGrant, 400, "invalid or expired code");
+    return oauthError(OAUTH_ERRORS.invalidGrant, HTTP_STATUS.badRequest, "invalid or expired code");
   }
   const { record, keyIndex } = consumed;
   await auditLegacyKeyUsage(options, { clientId, keyIndex, source: "auth code redeemed" });
@@ -149,7 +164,7 @@ export const handleToken = async (
 
   const auth = readClientAuth(request, body);
   if (!auth) {
-    return oauthError(OAUTH_ERRORS.invalidRequest, 400, "client_id required");
+    return oauthError(OAUTH_ERRORS.invalidRequest, HTTP_STATUS.badRequest, "client_id required");
   }
   const clientAuthError = await firstClientAuthError(auth, options, request);
   if (clientAuthError) return clientAuthError;
@@ -160,7 +175,11 @@ export const handleToken = async (
   const handler = ownValue(GRANT_HANDLERS, body.grant_type ?? "");
   if (!handler) {
     const supported = grantTypesOf(options.ports);
-    return oauthError(OAUTH_ERRORS.unsupportedGrantType, 400, `supported: ${supported.join(", ")}`);
+    return oauthError(
+      OAUTH_ERRORS.unsupportedGrantType,
+      HTTP_STATUS.badRequest,
+      `supported: ${supported.join(", ")}`,
+    );
   }
   return handler({
     request,

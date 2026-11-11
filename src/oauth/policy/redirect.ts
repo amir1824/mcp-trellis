@@ -42,7 +42,7 @@ const isExtraAllowed: RedirectPredicate = (uri, options) => Boolean(options.extr
  * `http://127.1/cb` and `http://2130706433/cb` normalize to `127.0.0.1` here
  * and are genuinely loopback; `0.0.0.0` is not, and is deliberately absent.
  */
-const LOOPBACK_HOSTS = new Set(["127.0.0.1", "[::1]"]);
+export const LOOPBACK_HOSTS = new Set(["127.0.0.1", "[::1]"]);
 
 const isLoopbackHttp: RedirectPredicate = (uri, options) => {
   if (options.allowLoopback === false) return false;

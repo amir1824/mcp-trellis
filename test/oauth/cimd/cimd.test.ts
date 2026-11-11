@@ -17,6 +17,13 @@ describe("isCimdClientId", () => {
     assert.equal(isCimdClientId("https://claude.ai/x#frag"), false);
     assert.equal(isCimdClientId("not-a-url"), false);
   });
+
+  it("rejects a client_id over 2048 characters and accepts one at the limit", () => {
+    const base = "https://clients.example/";
+
+    assert.equal(isCimdClientId(base + "a".repeat(2048 - base.length)), true);
+    assert.equal(isCimdClientId(base + "a".repeat(2049 - base.length)), false);
+  });
 });
 
 describe("resolveCimdClient", () => {
@@ -36,6 +43,33 @@ describe("resolveCimdClient", () => {
       lookup: async () => ["203.0.113.10"],
     });
     assert.deepEqual(resolved?.redirect_uris, doc.redirect_uris);
+  });
+
+  it("treats a cache that throws on read as a miss and fetches the document", async () => {
+    const resolved = await resolveCimdClient(doc.client_id, {
+      cache: {
+        get: async () => {
+          throw new Error("key too long");
+        },
+        set: async () => undefined,
+      },
+      fetch: async () => new Response(JSON.stringify(doc)),
+      lookup: async () => ["203.0.113.10"],
+    });
+
+    assert.deepEqual(resolved?.redirect_uris, doc.redirect_uris);
+  });
+
+  it("does not store a document served with max-age=0", async () => {
+    const stored: string[] = [];
+    await resolveCimdClient(doc.client_id, {
+      cache: { get: async () => null, set: async (clientId) => void stored.push(clientId) },
+      fetch: async () =>
+        new Response(JSON.stringify(doc), { headers: { "Cache-Control": "max-age=0" } }),
+      lookup: async () => ["203.0.113.10"],
+    });
+
+    assert.deepEqual(stored, []);
   });
 
   it("rejects loopback IPv4 hostname without fetching", async () => {
@@ -104,7 +138,16 @@ describe("resolveCimdClient", () => {
   });
 
   it("rejects non-canonical IPv4 lookup results without fetching", async () => {
-    for (const address of ["127.1", "127.0.1", "10.1", "2130706433"]) {
+    // Zero-padded octets read as decimal or octal depending on the parser; out-of-range is not an address.
+    for (const address of [
+      "127.1",
+      "127.0.1",
+      "10.1",
+      "2130706433",
+      "010.0.0.1",
+      "172.016.0.1",
+      "300.1.1.1",
+    ]) {
       let fetched = false;
       const resolved = await resolveCimdClient("https://evil.example/client.json", {
         fetch: async () => {
@@ -322,6 +365,10 @@ describe("resolveCimdClient", () => {
       // Full-form IPv4-compatible loopback / private
       "0:0:0:0:0:0:7f00:1",
       "0:0:0:0:0:0:127.0.0.1",
+      // SIIT IPv4-translated in full form, and local-use NAT64 (64:ff9b:1::/48)
+      "0:0:0:0:ffff:0:7f00:1",
+      "0:0:0:0:ffff:0:10.0.0.1",
+      "64:ff9b:1::1",
       // Garbage IPv6 from a sloppy lookup — fail closed
       "not:a:valid:ipv6::::::",
     ];

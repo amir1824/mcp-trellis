@@ -117,9 +117,13 @@ const expandIpv6Hextets = (ip: string): string[] | null => {
 
 // --- block rules (ordered; first match blocks) ---
 
+const OCTET = "(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)";
+/** Four octets 0-255 with no leading zero: `010` is decimal 10 to some parsers and octal 8 to others. */
+const CANONICAL_QUAD = new RegExp(`^${OCTET}(?:\\.${OCTET}){3}$`);
+
 /** Non-canonical IPv4 from a sloppy `cimdLookup` — fail closed, not a public hostname. */
 const isNonCanonicalIpv4 = (v4: string): boolean =>
-  IPV4_CANDIDATE.test(v4) && !DOTTED_QUAD.test(v4);
+  IPV4_CANDIDATE.test(v4) && !CANONICAL_QUAD.test(v4);
 
 const isPrivateDottedQuad = (v4: string): boolean => DOTTED_QUAD.test(v4) && isPrivateV4(v4);
 
@@ -139,6 +143,10 @@ const leadingFiveZero = (n: number[]): boolean =>
 /** Full-form IPv4-mapped (`0:0:0:0:0:ffff:…`) — same block as `::ffff:` prefix. */
 const isIpv4MappedHextets = (n: number[]): boolean => leadingFiveZero(n) && n[5] === 0xffff;
 
+/** SIIT IPv4-translated `::ffff:0:a.b.c.d` in full form; the compressed form starts with `::ffff:`. */
+const isIpv4TranslatedHextets = (n: number[]): boolean =>
+  n[0] === 0 && n[1] === 0 && n[2] === 0 && n[3] === 0 && n[4] === 0xffff && n[5] === 0;
+
 /** Deprecated IPv4-compatible — private/reserved embeds only (public stays). */
 const isBlockedIpv4Compatible = (n: number[], raw: string[]): boolean => {
   if (!leadingFiveZero(n) || n[5] !== 0) return false;
@@ -149,6 +157,7 @@ const isBlockedIpv4Compatible = (n: number[], raw: string[]): boolean => {
 
 const HEXTET_BLOCK_RULES: Array<(n: number[], raw: string[]) => boolean> = [
   isIpv4MappedHextets,
+  isIpv4TranslatedHextets,
   isBlockedIpv4Compatible,
   (n) => ((n[0] ?? 0) & 0xffc0) === 0xfe80, // link-local fe80::/10 (fe80–febf)
   (n) => ((n[0] ?? 0) & 0xffc0) === 0xfec0, // deprecated site-local fec0::/10

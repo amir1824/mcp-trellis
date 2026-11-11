@@ -17,10 +17,9 @@ export type CimdFetchOptions = {
   fetch?: typeof fetch;
   cache?: CimdCache;
   /**
-   * DNS lookup for rebinding checks. When omitted, the library uses
-   * `node:dns/promises.lookup`, falling back to `resolve4` / `resolve6` where
-   * `lookup` is stubbed (Workers `nodejs_compat`); with no `node:dns` at all,
-   * resolution is refused rather than fetched blind.
+   * DNS lookup for rebinding checks. When omitted, the library uses `node:dns/promises`
+   * `resolve4` / `resolve6` (A and AAAA only, 5 s per lookup, at most 8 at once); with no
+   * `node:dns` at all, resolution is refused rather than fetched blind.
    */
   lookup?: (hostname: string) => Promise<string[]>;
   /** Per-hop timeout covering connect **and** body read. Tests only — default 10 s. */
