@@ -1,6 +1,6 @@
 import type { ClientName } from "./clients.js";
-import type { AuditEntry, Principal, ServerInfo } from "./mcp/methods.js";
 import type { ToolDef } from "./mcp/registry.js";
+import type { AuditEntry, Principal, ServerInfo } from "./mcp/types.js";
 import type { CimdCache } from "./oauth/cimd/types.js";
 import type { CodeStore } from "./oauth/crypto/codes.js";
 import type {

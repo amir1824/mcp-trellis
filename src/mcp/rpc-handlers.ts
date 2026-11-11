@@ -12,20 +12,22 @@ import {
   rpcError,
   rpcResult,
 } from "./jsonrpc.js";
+import { pickProtocolVersion } from "./protocol.js";
 import {
-  type AuditEntry,
   authFailureChallenge,
   DENIAL_REASONS,
   hasScope,
   insufficientScope,
-  type McpHandlerOptions,
-  type Principal,
-  type ResolvedMcpHandlerOptions,
   resolveWwwAuthenticate,
   safeAudit,
   unauthorized,
-} from "./methods.js";
-import { pickProtocolVersion } from "./protocol.js";
+} from "./request-policy.js";
+import type {
+  AuditEntry,
+  McpHandlerOptions,
+  Principal,
+  ResolvedMcpHandlerOptions,
+} from "./types.js";
 
 /** The one shape every "tools/call" outcome — unknown tool, missing scope, or a real call — audits. */
 const auditToolCall = <TCtx>(

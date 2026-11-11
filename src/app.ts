@@ -17,8 +17,9 @@ import {
 } from "./clients.js";
 import { errorReason, INTERNAL_ERROR, jsonResponse } from "./http/http.js";
 import { createMcpHandler, type McpHandler, type McpHandlerOptions } from "./mcp/dispatch.js";
-import { type AuditEntry, type Principal, safeAudit } from "./mcp/methods.js";
 import { createToolRegistry, type ToolDef } from "./mcp/registry.js";
+import { safeAudit } from "./mcp/request-policy.js";
+import type { AuditEntry, Principal } from "./mcp/types.js";
 import { safeOAuthAudit } from "./oauth/audit.js";
 import { DEFAULT_SCOPE } from "./oauth/constants.js";
 import {
