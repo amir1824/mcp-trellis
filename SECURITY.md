@@ -34,7 +34,7 @@ Please include:
 
 - The affected version(s) and a minimal reproduction.
 - Which component is involved — the authorization server (`src/oauth/*`)
-  or the MCP protocol handler (`src/mcp/dispatch.ts`, `src/mcp/methods.ts`, …).
+  or the MCP protocol handler (`src/mcp/dispatch.ts`, `src/mcp/request-policy.ts`, …).
 - The impact you believe is possible (e.g. token forgery, redirect
   hijack, credential leakage).
 
