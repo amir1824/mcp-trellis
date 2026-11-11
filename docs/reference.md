@@ -117,7 +117,9 @@ validated against their own bound `redirectUris`.
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `render` | built-in interstitial | Render the approval page yourself — return any `Response`, including a redirect to your own route. Receives a `ConsentRequest` with the validated `clientId`, `redirectUri`, `scope`, `resource`, `user`, and an opaque `ticket` to embed in your form's `consent_ticket` field |
+| `render` | built-in interstitial | Render the approval page yourself — return any `Response`, including a redirect to your own route. Receives a `ConsentRequest` with the validated `clientId`, `redirectUri`, `scope`, `resource`, `user`, an opaque `ticket` to embed in your form's `consent_ticket` field, and optionally `clientHost` (a host the server controls) and `clientName` (a CIMD client's cleaned, unverified name) |
+| `appName` | `"your account"` | Built-in screen only: what the app is asking to reach |
+| `scopeDescriptions` | none | Built-in screen only: a plain-language line per scope, `Record<string, string>` |
 | `preApprovedClientIds` | `[]` | Client ids that skip the interstitial and go straight to code issuance. Only honored when `clientStore` actually resolves the id — a DCR or self-invented id is never trusted to skip it |
 
 ## `createMcpApp` options
@@ -125,7 +127,7 @@ validated against their own bound `redirectUris`.
 | Option | Default | Description |
 |--------|---------|-------------|
 | `serverInfo`, `tools`, `auth` | — | Required |
-| `clients` | `["claude"]` | Connector profiles to serve |
+| `clients` | `["claude"]` | Connector compatibility presets to serve (callbacks and auth methods). Not an allowlist: see [Locking down who can register](guide.md#locking-down-who-can-register) |
 | `resourcePath` | `"/mcp"` | MCP endpoint path |
 | `oauthPath` | `` `${resourcePath}/oauth` `` | OAuth prefix |
 | `scopes` | `["mcp"]` | Scopes this server grants |

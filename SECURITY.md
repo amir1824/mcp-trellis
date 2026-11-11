@@ -9,12 +9,13 @@ privately rather than in a public issue.
 
 | Version | Supported |
 |---------|-----------|
-| Latest `2.x` minor | ✅ |
-| Older `2.x` minors | ❌ |
+| Latest `3.x` minor | ✅ |
+| Older `3.x` minors | ❌ |
+| `2.x` | ❌ |
 | `1.x` | ❌ |
 | `0.x` | ❌ |
 
-Only the latest published `2.x` minor receives security fixes.
+Only the latest published `3.x` minor receives security fixes.
 
 > **Note on 1.0.0:** the live `1.0.0` on npm (published 2026-08-21) was cut
 > manually without npm provenance. From `2.0.0` onward, releases go through
@@ -52,3 +53,16 @@ Host ports own login, token mint/verify/revoke, and data ACLs. The library
 owns OAuth protocol surfaces, audience checks under `createMcpApp`, consent,
 sealed codes, and MCP transport hardening. See [docs/security.md](docs/security.md)
 for the full threat model.
+
+## Known limits
+
+- No built-in rate limiting. Put quotas on `/register` and `/token` at your edge or
+  reverse proxy, and on `/authorize` too when `cimd: true`.
+- No third-party security audit has been done.
+- One `signedTokenAuth` access token cannot be revoked before it expires. Pass
+  `isUserActive` to block a user on the next request, and keep `ttlSeconds` short.
+- `clients` selects compatibility presets. It does not restrict which clients can
+  register; set `allowLoopback: false` to narrow it. CIMD clients bring their own redirect
+  URIs and are not narrowed by it.
+- CIMD DNS checks do not pin the TCP connect, so DNS rebinding is possible. Add
+  egress filtering if you enable `cimd`.
