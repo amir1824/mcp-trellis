@@ -3,8 +3,8 @@ import { describe, it } from "node:test";
 import { consoleAudit } from "../../src/audit.js";
 import { runAuditBounded } from "../../src/http/http.js";
 import { createMcpHandler } from "../../src/mcp/dispatch.js";
-import type { AuditEntry } from "../../src/mcp/methods.js";
 import { createToolRegistry } from "../../src/mcp/registry.js";
+import type { AuditEntry } from "../../src/mcp/types.js";
 
 describe("audit port", () => {
   type Ctx = Record<string, never>;

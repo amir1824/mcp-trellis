@@ -1,5 +1,7 @@
 /** What a browser shows when the consent POST cannot be honoured; the status is 400 either way. */
 
+import { HTTP_STATUS } from "../../constants.js";
+
 export type ConsentFailureKind = "expired" | "session" | "used";
 
 /**
@@ -64,5 +66,5 @@ export const renderConsentError = (kind: ConsentFailureKind): Response => {
 <p>${detail}</p>
 </body>
 </html>`;
-  return new Response(html, { status: 400, headers: ERROR_PAGE_HEADERS });
+  return new Response(html, { status: HTTP_STATUS.badRequest, headers: ERROR_PAGE_HEADERS });
 };

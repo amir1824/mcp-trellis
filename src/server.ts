@@ -28,7 +28,7 @@ export {
   preRegisteredClients,
   redirectUrisFor,
 } from "./clients.js";
-// Moved to `mcp-trellis/advanced`; deprecated aliases until 3.0.
+// Moved to `mcp-trellis/advanced`; deprecated aliases until the next major release.
 export * from "./deprecated.js";
 export {
   type JsonResponseInput,
@@ -67,14 +67,10 @@ export {
   type ToolRegistry,
   type ToolResult,
 } from "./mcp/registry.js";
-export {
-  type ApiRequest,
-  type ApiToolOptions,
-  apiTool,
-  type DefineToolOptions,
-  defineTool,
-  type StandardSchemaV1,
-} from "./mcp/tools.js";
+export type { ApiRequest } from "./mcp/tools/api-fetch.js";
+export { type ApiToolOptions, apiTool } from "./mcp/tools/api-tool.js";
+export { type DefineToolOptions, defineTool } from "./mcp/tools/define-tool.js";
+export type { StandardSchemaV1 } from "./mcp/tools/standard-schema.js";
 export type { JsonSchema } from "./mcp/validate.js";
 export type { CodeStore } from "./oauth/crypto/codes.js";
 export { AccessDeniedError } from "./oauth/errors.js";

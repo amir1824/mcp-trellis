@@ -22,13 +22,12 @@ import {
   DEFAULT_PUBLIC_METHODS,
   DENIAL_REASONS,
   isNotification,
-  type McpHandlerOptions,
-  type ResolvedMcpHandlerOptions,
   resolveWwwAuthenticate,
   safeAudit,
   unauthorized,
-} from "./methods.js";
+} from "./request-policy.js";
 import { dispatchRpc } from "./rpc-handlers.js";
+import type { McpHandlerOptions, ResolvedMcpHandlerOptions } from "./types.js";
 
 export type {
   AuditEntry,
@@ -36,7 +35,7 @@ export type {
   McpPorts,
   Principal,
   ServerInfo,
-} from "./methods.js";
+} from "./types.js";
 
 export type McpHandler = {
   fetch: (request: Request) => Promise<Response>;

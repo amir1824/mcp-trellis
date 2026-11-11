@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createMcpHandler } from "../../src/mcp/dispatch.js";
-import type { AuditEntry } from "../../src/mcp/methods.js";
 import { createToolRegistry, type ToolDef } from "../../src/mcp/registry.js";
+import type { AuditEntry } from "../../src/mcp/types.js";
 import { MAX_VALIDATION_ERRORS, validateAgainstSchema } from "../../src/mcp/validate.js";
 
 type Ctx = Record<string, never>;

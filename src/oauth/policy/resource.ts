@@ -1,7 +1,7 @@
 /** Canonical MCP resource URI (RFC 8707 / RFC 9728). */
 
 import { oauthError } from "../config.js";
-import { OAUTH_ERRORS } from "../constants.js";
+import { HTTP_STATUS, OAUTH_ERRORS } from "../constants.js";
 import type { OAuthErrorInfo } from "../types.js";
 
 export const DEFAULT_RESOURCE_PATH = "/mcp";
@@ -77,5 +77,5 @@ export const resourceErrorInfo = (requested: string, expected: string): OAuthErr
 /** Missing → invalid_request; mismatch → invalid_target. */
 export const firstResourceError = (requested: string, expected: string): Response | null => {
   const issue = resourceErrorInfo(requested, expected);
-  return issue ? oauthError(issue.code, 400, issue.description) : null;
+  return issue ? oauthError(issue.code, HTTP_STATUS.badRequest, issue.description) : null;
 };

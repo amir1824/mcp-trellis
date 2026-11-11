@@ -140,8 +140,10 @@ export const consumeAuthCodeDetailed = async (
   if (!record) return null;
 
   const store = options.codeStore ?? processCodeStore;
+  // `=== true`: only a store that says so burns the code, as in `signed/refresh.ts`. A JS host
+  // returning a truthy non-boolean must not let a replay through.
   const fresh = await store.consume(record.jti, record.exp);
-  if (!fresh) return null;
+  if (fresh !== true) return null;
 
   const { jti: _jti, ...rest } = record;
   return { record: rest, keyIndex: unsealed.keyIndex };
@@ -154,7 +156,7 @@ export const consumeAuthCodeDetailed = async (
  *
  * Omitting `options.codeStore` is deprecated: it falls back to a
  * process-local map that cannot enforce single use across instances, and
- * `codeStore` becomes required in 3.0.
+ * `codeStore` becomes required in the next major release.
  */
 export const consumeAuthCode = async (
   secret: string | readonly string[],

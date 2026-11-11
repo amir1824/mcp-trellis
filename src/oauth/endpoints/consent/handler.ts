@@ -12,7 +12,7 @@
 import { NO_CORS, POST_ONLY, requireHttpMethod } from "../../../http/http.js";
 import { auditLegacyKeyUsage } from "../../audit.js";
 import { oauthError, resolveSecrets } from "../../config.js";
-import { OAUTH_ERRORS } from "../../constants.js";
+import { HTTP_STATUS, OAUTH_ERRORS } from "../../constants.js";
 import { issueAuthCode } from "../../crypto/codes.js";
 import { seal, unsealAny } from "../../crypto/sealed.js";
 import { readBodyOrError, readOAuthBody } from "../../policy/reqbody.js";
@@ -58,13 +58,16 @@ const ticketFailure = (
   description: string,
 ): Response => {
   if (acceptsHtml(request.headers.get("accept"))) return renderConsentError(kind);
-  return oauthError(OAUTH_ERRORS.invalidGrant, 400, description);
+  return oauthError(OAUTH_ERRORS.invalidGrant, HTTP_STATUS.badRequest, description);
 };
 
 export const renderConsent = async (
   options: OAuthRouterOptions,
   input: ConsentRequest,
-): Promise<Response> => (options.consent?.render ?? renderBuiltInConsent)(input);
+): Promise<Response> => {
+  const render = options.consent?.render;
+  return render ? render(input) : renderBuiltInConsent(input, options.consent);
+};
 
 /** Only honored when `clientStore` actually resolves the id — never a self-invented one. */
 export const isPreApproved = (
@@ -122,7 +125,7 @@ const consumeTicketForUser = async (
     return ticketFailure(request, "session", "consent_ticket does not match the current user");
   }
   const fresh = await options.ports.codeStore.consume(`ct:${payload.jti}`, payload.exp);
-  return fresh ? user : ticketFailure(request, "used", "consent_ticket already used");
+  return fresh === true ? user : ticketFailure(request, "used", "consent_ticket already used");
 };
 
 export const handleConsent = async (
@@ -137,7 +140,11 @@ export const handleConsent = async (
 
   const ticket = body.consent_ticket ?? "";
   if (!ticket) {
-    return oauthError(OAUTH_ERRORS.invalidRequest, 400, "consent_ticket required");
+    return oauthError(
+      OAUTH_ERRORS.invalidRequest,
+      HTTP_STATUS.badRequest,
+      "consent_ticket required",
+    );
   }
 
   const resolved = await readValidTicket(request, options, ticket);

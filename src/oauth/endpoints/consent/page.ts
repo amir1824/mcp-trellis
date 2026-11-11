@@ -1,6 +1,6 @@
 /** The built-in consent interstitial, used when the host supplies no `consent.render`. */
 
-import type { ConsentRequest } from "../../types.js";
+import type { ConsentOptions, ConsentRequest } from "../../types.js";
 
 const ESCAPE_HTML: Record<string, string> = {
   "&": "&amp;",
@@ -19,9 +19,14 @@ const escapeHtml = (value: string): string =>
  * at all — allow its scheme instead, or the browser blocks the redirect.
  */
 const formActionSource = (redirectUri: string): string | null => {
-  const { origin, protocol } = new URL(redirectUri);
-  const source = origin === "null" ? protocol : origin;
-  return isSafeCspSource(source) ? source : null;
+  try {
+    const { origin, protocol } = new URL(redirectUri);
+    const source = origin === "null" ? protocol : origin;
+    return isSafeCspSource(source) ? source : null;
+  } catch {
+    // An unparseable URI (only a `clientStore` can supply one) falls back to `'self'` alone.
+    return null;
+  }
 };
 
 /** `scheme:`, `scheme://host[:port]` or `scheme://[v6][:port]` — nothing that could end a directive. */
@@ -73,16 +78,52 @@ const SUBMIT_ONCE_SCRIPT_HASH = "'sha256-Zyrf1VNKMSeFmLaVBxdclhFQvemWfC4XvnQBsjO
  */
 const consentSecurityHeaders = (redirectUri: string): Record<string, string> => ({
   "Content-Security-Policy":
-    `default-src 'none'; style-src 'unsafe-inline'; script-src ${SUBMIT_ONCE_SCRIPT_HASH}; ` +
+    `default-src 'none'; style-src 'unsafe-inline'; script-src ${SUBMIT_ONCE_SCRIPT_HASH}; base-uri 'none'; ` +
     `form-action ${["'self'", formActionSource(redirectUri)].filter(Boolean).join(" ")}; ` +
     `frame-ancestors 'none'`,
   "X-Frame-Options": "DENY",
+  "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "no-referrer",
   "Cache-Control": "no-store",
 });
 
+const MAX_CLIENT_ID_DISPLAY = 48;
+
+/**
+ * A DCR `client_id` is a sealed blob that grows with its redirect URIs; show its start only.
+ * A CIMD `client_id` is a client-chosen URL, so invisible and bidi characters are dropped first.
+ */
+const shortenClientId = (clientId: string): string => {
+  const visible = Array.from(clientId.replace(/\p{C}/gu, ""));
+  if (visible.length <= MAX_CLIENT_ID_DISPLAY) return visible.join("");
+  return `${visible.slice(0, MAX_CLIENT_ID_DISPLAY).join("")}…`;
+};
+
+const scopeItems = (scope: string[], descriptions: ConsentOptions["scopeDescriptions"]): string => {
+  if (scope.length === 0) return "(none)";
+  const items = scope.map((name) => {
+    const description =
+      descriptions && Object.hasOwn(descriptions, name) ? descriptions[name] : undefined;
+    return `<li>${escapeHtml(name)}${description === undefined ? "" : ` — ${escapeHtml(description)}`}</li>`;
+  });
+  return `<ul>${items.join("")}</ul>`;
+};
+
+/** The client's own name is shown below the server-controlled host, always labelled unverified. */
+const unverifiedName = (clientName: string | undefined): string =>
+  clientName === undefined
+    ? ""
+    : `<p>It calls itself <bdi>${escapeHtml(clientName)}</bdi> (name not verified).</p>\n`;
+
 /** Built-in hardened interstitial — used whenever the host doesn't supply `consent.render`. */
-export const renderBuiltInConsent = (input: ConsentRequest): Response => {
+export const renderBuiltInConsent = (
+  input: ConsentRequest,
+  options: ConsentOptions = {},
+): Response => {
+  // A client resolved from `clientStore` is named by the id its operator chose; any other by a host.
+  const subject = input.registeredClient
+    ? shortenClientId(input.clientId)
+    : (input.clientHost ?? "An application");
   const html = `<!doctype html>
 <html lang="en">
 <head>
@@ -92,15 +133,20 @@ export const renderBuiltInConsent = (input: ConsentRequest): Response => {
   body { font: 16px system-ui, sans-serif; max-width: 32rem; margin: 3rem auto; padding: 0 1rem; }
   dl { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 1rem; }
   dt { font-weight: 600; }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  ul { margin: 0; padding-left: 1.1rem; }
+  strong { overflow-wrap: anywhere; }
+  bdi { display: inline-block; max-width: 100%; overflow: hidden; overflow-wrap: anywhere; vertical-align: bottom; }
   button { font-size: 1rem; padding: 0.5rem 1.25rem; margin-right: 0.5rem; }
 </style>
 </head>
 <body>
 <h1>Authorize access</h1>
-<p><strong>${escapeHtml(input.clientId)}</strong> is requesting access to your account.</p>
-<dl>
+<p><strong>${escapeHtml(subject)}</strong> is requesting access to ${escapeHtml(options.appName ?? "your account")}.</p>
+${unverifiedName(input.clientName)}<dl>
   <dt>Redirect URI</dt><dd>${escapeHtml(input.redirectUri)}</dd>
-  <dt>Scope</dt><dd>${escapeHtml(input.scope.join(" ") || "(none)")}</dd>
+  <dt>Client ID</dt><dd>${escapeHtml(shortenClientId(input.clientId))}</dd>
+  <dt>Scope</dt><dd>${scopeItems(input.scope, options.scopeDescriptions)}</dd>
   <dt>Resource</dt><dd>${escapeHtml(input.resource)}</dd>
 </dl>
 <form id="consent" method="POST" action="${escapeHtml(input.oauthPath)}/consent">

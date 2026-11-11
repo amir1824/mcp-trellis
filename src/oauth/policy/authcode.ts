@@ -1,5 +1,5 @@
 import { oauthError } from "../config.js";
-import { OAUTH_ERRORS } from "../constants.js";
+import { HTTP_STATUS, OAUTH_ERRORS } from "../constants.js";
 import type { AuthCodeRecord } from "../crypto/codes.js";
 import { verifyPkceS256 } from "../crypto/pkce.js";
 import { resourcesEqual } from "./resource.js";
@@ -20,7 +20,9 @@ const firstAuthCodeMismatch = (
     },
   ].find((entry) => !entry.ok);
 
-  return rule ? oauthError(OAUTH_ERRORS.invalidGrant, 400, rule.description) : null;
+  return rule
+    ? oauthError(OAUTH_ERRORS.invalidGrant, HTTP_STATUS.badRequest, rule.description)
+    : null;
 };
 
 type AuthCodeCheck = {
@@ -41,11 +43,19 @@ export const firstAuthCodeError = async ({
   if (mismatch) return mismatch;
 
   if (!resourcesEqual(record.resource, expectedResource)) {
-    return oauthError(OAUTH_ERRORS.invalidTarget, 400, "auth code bound to a different resource");
+    return oauthError(
+      OAUTH_ERRORS.invalidTarget,
+      HTTP_STATUS.badRequest,
+      "auth code bound to a different resource",
+    );
   }
 
   if (!(await verifyPkceS256(body.code_verifier ?? "", record.codeChallenge))) {
-    return oauthError(OAUTH_ERRORS.invalidGrant, 400, "pkce verification failed");
+    return oauthError(
+      OAUTH_ERRORS.invalidGrant,
+      HTTP_STATUS.badRequest,
+      "pkce verification failed",
+    );
   }
   return null;
 };

@@ -96,6 +96,20 @@ describe("consent failures for a browser (Accept: text/html)", () => {
     assert.match(await second.text(), /already submitted/);
   });
 
+  it("treats a store answer that is not exactly true as already submitted", async () => {
+    const router = createOAuthRouter({
+      allowUnregisteredClients: true,
+      ports: stubPorts({
+        resolveUser: async () => ({ id: "alice" }),
+        codeStore: { consume: () => "yes" as unknown as boolean },
+      }),
+    });
+    const ticket = await getTicket(router);
+    const res = await postConsent(router, ticket, BROWSER_ACCEPT);
+    assert.equal(res.status, 400);
+    assert.match(await res.text(), /already submitted/);
+  });
+
   it("carries nothing from the request or the ticket", async () => {
     const { router, state } = setup();
     const ticket = await getTicket(router);

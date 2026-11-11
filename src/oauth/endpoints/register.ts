@@ -10,7 +10,7 @@ import { DEFAULT_OAUTH_BODY_LIMIT, readBoundedText } from "../../http/body.js";
 import { jsonResponse, POST_ONLY, requireHttpMethod } from "../../http/http.js";
 import { isJsonObject } from "../../util/json.js";
 import { grantTypesOf, oauthError, resolveSecrets } from "../config.js";
-import { MAX_CLIENT_REDIRECT_URIS, OAUTH_ERRORS } from "../constants.js";
+import { HTTP_STATUS, MAX_CLIENT_REDIRECT_URIS, OAUTH_ERRORS } from "../constants.js";
 import { seal } from "../crypto/sealed.js";
 import { CLAUDE_CALLBACK, isAllowedRedirectUri } from "../policy/redirect.js";
 import { readBodyOrError } from "../policy/reqbody.js";
@@ -30,7 +30,11 @@ const parseRegisterBody = (text: string): Record<string, unknown> | Response => 
   }
   return isJsonObject(parsed)
     ? parsed
-    : oauthError(OAUTH_ERRORS.invalidClientMetadata, 400, "request body must be a JSON object");
+    : oauthError(
+        OAUTH_ERRORS.invalidClientMetadata,
+        HTTP_STATUS.badRequest,
+        "request body must be a JSON object",
+      );
 };
 
 /** The allowed, non-empty `redirect_uris` to seal, or the error explaining why there are none. */
@@ -47,25 +51,33 @@ const resolveRegisterRedirectUris = (
       ? [CLAUDE_CALLBACK]
       : oauthError(
           OAUTH_ERRORS.invalidRedirectUri,
-          400,
+          HTTP_STATUS.badRequest,
           "redirect_uris required — this server has no default redirect_uri",
         );
   }
 
   if (!Array.isArray(raw)) {
-    return oauthError(OAUTH_ERRORS.invalidClientMetadata, 400, "redirect_uris must be an array");
+    return oauthError(
+      OAUTH_ERRORS.invalidClientMetadata,
+      HTTP_STATUS.badRequest,
+      "redirect_uris must be an array",
+    );
   }
   if (raw.length > MAX_CLIENT_REDIRECT_URIS) {
     return oauthError(
       OAUTH_ERRORS.invalidClientMetadata,
-      400,
+      HTTP_STATUS.badRequest,
       `redirect_uris must have at most ${MAX_CLIENT_REDIRECT_URIS} entries`,
     );
   }
   const allowed = raw.map(String).filter((uri) => isAllowedRedirectUri(uri, options.redirect));
   return allowed.length > 0
     ? allowed
-    : oauthError(OAUTH_ERRORS.invalidRedirectUri, 400, "no allowed redirect_uris");
+    : oauthError(
+        OAUTH_ERRORS.invalidRedirectUri,
+        HTTP_STATUS.badRequest,
+        "no allowed redirect_uris",
+      );
 };
 
 /**

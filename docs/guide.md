@@ -29,7 +29,9 @@ You only touch this routing directly if you skip `createMcpApp` — see
 
 ## Clients
 
-Name the connector clients you serve; the AS is configured to match.
+Name the connector clients you serve; the AS is configured to match. Each name is a
+compatibility preset (callback URIs and token-endpoint auth methods), not an allowlist:
+see [Locking down who can register](#locking-down-who-can-register).
 
 | Client | Registration | Token endpoint auth | Notes |
 |--------|--------------|---------------------|-------|
@@ -61,6 +63,18 @@ and dropped from AS metadata, unknown ids are rejected with
 `unauthorized_client` at `authorize` and `invalid_client` at `token` and
 `revoke`. Naming `claude` or `codex` alongside `gemini` reopens dynamic
 registration.
+
+### Locking down who can register
+
+With `claude` or `codex` in `clients`, `/register` accepts any client whose
+`redirect_uris` pass the redirect policy, and loopback redirects
+(`http://127.0.0.1` and `http://[::1]`, any port) are allowed by default. The user
+still sees the consent screen, but `clients: ["claude"]` does not refuse other
+clients. To accept only the presets, set `allowLoopback: false` and leave
+`extraRedirectUris` empty, so only the named clients' callbacks pass. Native and CLI
+clients that redirect to loopback then stop working, so check that first. This does not
+narrow CIMD clients (`cimd: true`): a CIMD document lists its own redirect URIs, and they
+are accepted as written.
 
 ## Recipes
 
@@ -311,7 +325,26 @@ identity of a legitimate client.
 | Option (`consent`) | Default | Role |
 |---|---|---|
 | `render?(input)` | built-in interstitial | Render your own approval page — return any `Response`, or redirect to a route you own. `input.ticket` is the opaque value your form must echo back as `consent_ticket` |
+| `appName?` | `"your account"` | Built-in screen only: what the app is asking to reach, as in "is requesting access to Project Desk" |
+| `scopeDescriptions?` | none | Built-in screen only: a plain-language line per scope, for example `{ mcp: "Read and change your projects" }`. A scope without an entry shows its name alone |
 | `preApprovedClientIds?` | `[]` | Skip the screen for these ids — **only** when `clientStore` actually resolves the id. A DCR or self-invented id is never trusted to pre-approve itself, no matter what's in this list |
+
+**Who the screen says is asking.** The first line is a fact the server controls: the
+host a CIMD client's metadata document was served from, otherwise the host of the
+redirect URI ("An app on this device (port 9111)" for a loopback redirect); a client resolved from your `clientStore` is shown by its
+`client_id` instead. A CIMD
+client's own `client_name` appears on a second line, "name not verified", after
+control, bidi and zero-width characters are stripped and the length is capped at 64.
+It is hidden when it could pass for Claude, ChatGPT, Codex, OpenAI, Anthropic or Gemini,
+unless the redirect URI is that vendor's and the document is served from exactly that
+vendor's host (a subdomain does not count). Accents,
+spacing, punctuation, digit-for-letter swaps (`Cl4ude`) and common look-alikes (`I` for `l`, `rn` for `m`) are ignored, and a name that mixes
+Latin with Cyrillic or Greek letters, or has a Latin letter with no ASCII form (such as `ɑ` or `ø`), is hidden. So a CIMD client that redirects to loopback
+and is named after one of them shows no name. A DCR client has no name on the screen,
+because `/register` does not keep one. The long `client_id` is cut to its first 48
+characters, with invisible characters dropped; the redirect URI is always shown in full. A
+custom `render` receives the same cleaned values as `input.clientHost` and `input.clientName`
+(both optional) and never the raw name. They are cleaned, not escaped: HTML-escape them in your markup.
 
 The built-in interstitial ships `Content-Security-Policy`,
 `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and HTML-escapes

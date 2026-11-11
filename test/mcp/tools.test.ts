@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import { createToolRegistry } from "../../src/mcp/registry.js";
-import { apiTool, defineTool, type StandardSchemaV1 } from "../../src/mcp/tools.js";
+import { apiTool, defineTool, type StandardSchemaV1 } from "../../src/server.js";
 
 type Ctx = Record<string, never>;
 type WeatherArgs = { city: string };

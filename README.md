@@ -26,7 +26,7 @@ export const mcp = createMcpApp<{ userId: string }>({
     loginUrl: (_r, n) => `/login?next=${encodeURIComponent(n)}`,
     codeStore,
   }),
-  context: (_r, p) => ({ userId: p!.id }),
+  context: (_r, p) => ({ userId: p?.id ?? "" }),
   tools: [{ name: "list_my_projects", description: "List projects",
     inputSchema: { type: "object", properties: {} }, scope: "mcp",
     handler: async ({ userId }) => JSON.stringify(await projectsForUser(userId)) }],
@@ -35,13 +35,13 @@ export const mcp = createMcpApp<{ userId: string }>({
 
 That is the configuration, not the whole server. Mount the returned app on your HTTP framework: [Express](examples/express.ts), [Next.js](examples/nextjs-saas) or a [Cloudflare Worker](examples/cloudflare-worker.ts). It serves `/mcp`, the OAuth routes and `.well-known` discovery.
 
-`clients` names the connector clients you serve and defaults to `["claude"]`; list every client you want to accept. You bring two things: your own session lookup, and a shared store where one-time login codes can be used once (an atomic set-if-absent: Redis, Postgres, D1 or a Durable Object; Workers KV has no atomic NX). Node 20+.
+`clients` picks compatibility presets for the connector clients you serve (default `["claude"]`): the callback URIs and token-endpoint auth methods the server accepts for them. It is not an allowlist of clients. Dynamic registration stays open to any client whose redirect URI passes the policy, and loopback redirects (`http://127.0.0.1` and `http://[::1]`, any port) are allowed by default. To accept only the presets, set `allowLoopback: false` and name only the clients you serve. This does not narrow CIMD clients (`cimd: true`): a CIMD document lists its own redirect URIs, and they are accepted as written. Naming only pre-registered clients (such as `gemini`) closes dynamic registration entirely. You bring two things: your own session lookup, and a shared store where one-time login codes can be used once (an atomic set-if-absent: Redis, Postgres, D1 or a Durable Object; Workers KV has no atomic NX). Node 20+.
 
 OAuth tells your server who is calling. It does not decide which tenant or record that user may touch: derive that from trusted application state and check it in your data layer on every operation.
 
 Client ID Metadata Documents (CIMD) are supported and off by default: set `cimd: true`. Pass `cimdCache` too (strongly recommended: without it every refresh and revoke re-fetches the client document). Dynamic Client Registration works too.
 
-Protocol: MCP 2024-11-05, 2025-03-26 and 2025-06-18 (default 2025-06-18). The 2026-07-28 revision, which deprecates Dynamic Client Registration in favor of CIMD, is planned and not supported yet.
+Protocol: MCP 2024-11-05, 2025-03-26 and 2025-06-18 (default 2025-06-18). The 2026-07-28 revision, which deprecates Dynamic Client Registration in favor of CIMD, is planned and not supported yet. A client that asks for another version in `initialize` is answered with the default version, and an unknown `MCP-Protocol-Version` header gets a 400.
 
 ## Quick start
 
@@ -97,10 +97,11 @@ Checked 2026-11-07. These projects move fast, so re-verify before you decide.
 
 Choose your token mode:
 
-- Start with `signedTokenAuth`: one secret. Access tokens are stateless, and the only stored state is single-use marks in `codeStore`. Access tokens cannot be revoked before they expire.
+- Start with `signedTokenAuth`: one secret. Access tokens are stateless, and the only stored state is single-use marks in `codeStore`. One access token cannot be revoked before it expires; to cut off a user at once, pass `isUserActive` (below).
 - Need revocable tokens, refresh-token families or your own JWT/JWKS? Implement the `mintAccessToken`, `verifyToken`, `refreshAccessToken` and `revokeToken` ports.
 - Mint tokens for the requested MCP resource and return the verified `audience`. The library rejects a mismatch before a tool runs.
 - A token outlives the login session that produced it. Pass `isUserActive` so a removed or disabled user stops working on the next request. Pass `refreshTtlSeconds` (needs `codeStore` and `isUserActive`) so a connector renews without sending the user back to the browser. What ends what: [Sessions and expiry](docs/security.md#sessions-and-expiry).
+- For sensitive data, follow the [production auth profile](docs/security.md#production-auth-profile): `isUserActive` required, a short `ttlSeconds`, a refresh token.
 
 Before you ship:
 
@@ -108,16 +109,18 @@ Before you ship:
 - Users see an OAuth consent screen even when already signed in to your app.
 - Browser callers that send an `Origin` header need `allowedRequestOrigins`. It is fail-closed by default.
 - CIMD fetches client metadata over HTTPS, for public clients only. The connection is not pinned to the looked-up IP, so DNS rebinding is possible. Do not rely on it as your only SSRF defense ([security.md](docs/security.md)).
+- There is no built-in rate limiting. Put quotas on `/register` and `/token` at your edge or reverse proxy, and on `/authorize` too when `cimd: true`.
+- No third-party security audit has been done. The threat model is in [security.md](docs/security.md).
 
 ## Clients and compatibility
 
 | Profile | Implemented server flow | Live client evidence |
 |---|---|---|
-| Claude (`claude`) | Dynamic registration, public client, PKCE; CIMD with `cimd: true` | Used in the maintainer's own production servers (reported); logged live pass pending |
-| ChatGPT / Codex (`codex`) | Public client, PKCE; ChatGPT's stable and per-connector callbacks allowed | Pending for each product |
+| Claude (`claude`) | Dynamic registration, public client, PKCE; CIMD with `cimd: true` | Verified manually by the maintainer (connects and works), 2026-11; no recorded transcript |
+| ChatGPT / Codex (`codex`) | Public client, PKCE; ChatGPT's stable and per-connector callbacks allowed | ChatGPT connector verified manually by the maintainer (connects and works), 2026-11; no recorded transcript. Codex CLI not tested |
 | Gemini Enterprise (`gemini`) | Pre-registered client; secret basic/post; requires `clientStore` | Pending; does not imply every Gemini product |
 
-The OAuth flows above run in automated tests and in the local demo. See [client configuration](docs/guide.md#clients) and [troubleshooting](docs/troubleshooting.md).
+The OAuth flows above run in automated tests and in the local demo. The Claude and ChatGPT results are manual checks, not CI runs. See [client configuration](docs/guide.md#clients) and [troubleshooting](docs/troubleshooting.md).
 
 ## Docs
 

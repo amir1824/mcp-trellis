@@ -2,7 +2,7 @@
 
 import { NO_CORS, POST_ONLY, requireHttpMethod } from "../../http/http.js";
 import { oauthError } from "../config.js";
-import { OAUTH_ERRORS } from "../constants.js";
+import { HTTP_STATUS, OAUTH_ERRORS } from "../constants.js";
 import { firstClientAuthError, readClientAuth } from "../crypto/clientauth.js";
 import { readBodyOrError, readOAuthBody } from "../policy/reqbody.js";
 import type { OAuthRouterOptions } from "../types.js";
@@ -20,10 +20,12 @@ export const handleRevoke = async (
   const body = await readBodyOrError(() => readOAuthBody(request));
   if (body instanceof Response) return body;
   const token = body.token ?? "";
-  if (!token) return oauthError(OAUTH_ERRORS.invalidRequest, 400, "token required");
+  if (!token)
+    return oauthError(OAUTH_ERRORS.invalidRequest, HTTP_STATUS.badRequest, "token required");
 
   const auth = readClientAuth(request, body);
-  if (!auth) return oauthError(OAUTH_ERRORS.invalidRequest, 400, "client_id required");
+  if (!auth)
+    return oauthError(OAUTH_ERRORS.invalidRequest, HTTP_STATUS.badRequest, "client_id required");
 
   const clientAuthError = await firstClientAuthError(auth, options, request);
   if (clientAuthError) return clientAuthError;

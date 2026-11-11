@@ -220,27 +220,26 @@ describe("CIMD failure audit at /authorize", () => {
   });
 });
 
-describe("defaultLookup on a runtime without dns.lookup", () => {
+describe("defaultLookup (resolve4 and resolve6, never dns.lookup)", () => {
   afterEach(() => {
     mock.restoreAll();
     syncBuiltinESMExports();
   });
 
-  it("falls back to resolve4/resolve6 when lookup is not implemented", async () => {
-    mock.method(dns, "lookup", async () => {
-      throw new Error("Not implemented");
+  it("resolves A and AAAA records without touching the getaddrinfo thread pool", async () => {
+    const lookup = mock.method(dns, "lookup", async () => {
+      throw new Error("dns.lookup must not be used");
     });
     mock.method(dns, "resolve4", async () => ["203.0.113.5"]);
     mock.method(dns, "resolve6", async () => ["2001:db8::5"]);
     syncBuiltinESMExports();
+
     assert.deepEqual(await defaultLookup("clients.example"), ["203.0.113.5", "2001:db8::5"]);
+    assert.equal(lookup.mock.callCount(), 0);
   });
 
   it("keeps the resolver's error code when resolve4 and resolve6 both fail", async () => {
     const notFound = () => Object.assign(new Error("queryA ENOTFOUND"), { code: "ENOTFOUND" });
-    mock.method(dns, "lookup", async () => {
-      throw new Error("Not implemented");
-    });
     mock.method(dns, "resolve4", async () => {
       throw notFound();
     });
@@ -258,15 +257,19 @@ describe("defaultLookup on a runtime without dns.lookup", () => {
   });
 
   it("reports a missing host as dns_failed with its error code, not as unsupported DNS", async () => {
-    mock.method(dns, "lookup", async () => {
-      throw Object.assign(new Error("getaddrinfo ENOTFOUND"), { code: "ENOTFOUND" });
+    const notFound = () => Object.assign(new Error("queryA ENOTFOUND"), { code: "ENOTFOUND" });
+    mock.method(dns, "resolve4", async () => {
+      throw notFound();
+    });
+    mock.method(dns, "resolve6", async () => {
+      throw notFound();
     });
     syncBuiltinESMExports();
     const outcome = await resolveCimdOutcome(CLIENT_ID, {
       fetch: async () => new Response(JSON.stringify(doc)),
     });
     assert.deepEqual(outcome, {
-      failure: { code: "dns_failed", detail: "DNS lookup failed (ENOTFOUND)" },
+      failure: { code: "dns_failed", detail: "DNS resolution failed (ENOTFOUND)" },
     });
   });
 });

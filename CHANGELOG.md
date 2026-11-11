@@ -5,6 +5,58 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-11-11
+
+### Changed
+
+- The built-in consent screen leads with a host the server controls (the CIMD document's
+  host, else the redirect host; "An app on this device" for loopback) instead of the raw
+  `client_id` (a client resolved from `clientStore` still shows its `client_id`). The `client_id` is cut to 48 characters, scopes are a list, and long values
+  wrap. HTML that depended on the old text ("<client_id> is requesting access to your
+  account") will not match. A custom `consent.render` is unaffected.
+- Docs. The README client table records the maintainer's manual
+  check of Claude and the ChatGPT connector (Gemini Enterprise stays pending). `clients` is
+  described as compatibility presets, not an allowlist, with `allowLoopback: false` as the
+  way to narrow it (not for CIMD clients). The docs now say what ends an access token, add a production auth
+  profile, state the `/register` partial-acceptance contract, and list the known limits
+  (no rate limiting, no external audit) in the README and `SECURITY.md`. The
+  `SECURITY.md` supported-versions table now names `3.x`.
+
+### Added
+
+- **Consent screen identity.** `ConsentRequest` gains optional `clientHost` and `clientName`.
+  `clientName` is a CIMD client's own name, cleaned (control, bidi and zero-width characters
+  stripped, stacked marks limited, 64 characters) and shown under "name not verified". It is
+  hidden when it could pass for Claude, ChatGPT, Codex, OpenAI, Anthropic or Gemini (accents,
+  spacing, punctuation, digit-for-letter swaps, `I`/`l` and `rn`/`m` look-alikes, Latin mixed with Cyrillic or Greek, and Latin
+  letters with no ASCII form are caught) unless the redirect URI is that vendor's and the
+  document is served from exactly that vendor's host.
+  Both fields are cleaned, not escaped: a custom `render` must HTML-escape them. `consent.appName` and `consent.scopeDescriptions` set what the built-in
+  screen says the app reaches and what each scope means. Additive: an existing `render`
+  keeps working. A DCR client still has no name, because `/register` does not keep one.
+- Tests that pin `clients` as presets: loopback registration works by default and is
+  refused with `allowLoopback: false`.
+
+### Security
+
+- **CIMD DNS can no longer starve the thread pool.** The default resolver uses
+  `resolve4`/`resolve6` (c-ares) instead of `dns.lookup`, so a flood of unauthenticated
+  `/authorize` requests for slow-resolving hosts cannot stall HMAC and AES verification on
+  `/mcp` and `/token`. Each lookup gets 5 s and at most 8 run at once; the rest fail with
+  `dns_failed`. The resolver follows `/etc/resolv.conf`, so the hosts file, search domains and macOS
+  system or VPN resolver settings are no longer consulted (pass `cimdLookup` to keep your own
+  resolver; check this before upgrading a macOS or split-DNS deployment). Only matters with `cimd: true`.
+- A `codeStore.consume` answer other than exactly `true` now counts as "already used" for auth
+  codes and consent tickets, as it already did for refresh tokens. A JavaScript store that returns
+  a truthy non-boolean can no longer let a replay through.
+- A CIMD `client_id` over 2048 characters is not treated as a CIMD id, a throwing
+  `cimdCache.get` is a cache miss, and a `max-age=0` document is not cached.
+- The SSRF guard refuses zero-padded and out-of-range IPv4 forms (`010.0.0.1`, `300.1.1.1`)
+  and the full-form SIIT address `::ffff:0:a.b.c.d`.
+- The consent page sends `X-Content-Type-Options: nosniff` and `base-uri 'none'`, and no
+  longer throws for an unparseable redirect URI.
+- Audit sink fields (`clientId`, `reason`) have control characters and line breaks removed.
+
 ## [3.2.0] - 2026-11-07
 
 ### Added

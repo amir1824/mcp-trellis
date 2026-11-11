@@ -7,7 +7,8 @@
 import { DEFAULT_AUDIT_TIMEOUT_MS, runAuditBounded } from "../http/http.js";
 import { clipText } from "../util/clip.js";
 import { type CimdFailure, formatCimdFailure } from "./cimd/failure.js";
-import type { OAuthAuditEntry, OAuthRouterOptions } from "./types.js";
+import { unsealAny } from "./crypto/sealed.js";
+import type { ClientAssertion, OAuthAuditEntry, OAuthRouterOptions } from "./types.js";
 
 /**
  * Longest `clientId` / `reason` an audit sink is handed. Both can carry
@@ -17,7 +18,12 @@ import type { OAuthAuditEntry, OAuthRouterOptions } from "./types.js";
  */
 const MAX_AUDIT_FIELD_LENGTH = 512;
 
-const clip = (value: string): string => clipText(value, MAX_AUDIT_FIELD_LENGTH, "…");
+/**
+ * Control characters and line breaks are dropped too, so a caller-chosen `client_id` cannot
+ * forge a line in a sink that writes plain text.
+ */
+const clip = (value: string): string =>
+  clipText(value.replace(/\s+/gu, " ").replace(/\p{C}/gu, ""), MAX_AUDIT_FIELD_LENGTH, "…");
 
 export const safeOAuthAudit = async (
   options: OAuthRouterOptions,
@@ -51,6 +57,24 @@ export const auditLegacyKeyUsage = async (
     clientId: usage.clientId,
     reason: `${usage.source} with codeSecret[${usage.keyIndex}]`,
   });
+};
+
+/**
+ * This server's own `/register` assertion for `clientId`, or null. A value recovered with
+ * a rotation-array key is audited, so every site that unseals one reports it the same way.
+ */
+export const unsealClientAssertionAudited = async (
+  options: OAuthRouterOptions,
+  clientId: string,
+  secrets: readonly [string, ...string[]],
+): Promise<ClientAssertion | null> => {
+  const unsealed = await unsealAny<ClientAssertion>(secrets, "client", clientId);
+  await auditLegacyKeyUsage(options, {
+    clientId,
+    keyIndex: unsealed?.keyIndex,
+    source: "client assertion unsealed",
+  });
+  return unsealed?.value ?? null;
 };
 
 /**
