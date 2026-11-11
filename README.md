@@ -26,7 +26,7 @@ export const mcp = createMcpApp<{ userId: string }>({
     loginUrl: (_r, n) => `/login?next=${encodeURIComponent(n)}`,
     codeStore,
   }),
-  context: (_r, p) => ({ userId: p!.id }),
+  context: (_r, p) => ({ userId: p?.id ?? "" }),
   tools: [{ name: "list_my_projects", description: "List projects",
     inputSchema: { type: "object", properties: {} }, scope: "mcp",
     handler: async ({ userId }) => JSON.stringify(await projectsForUser(userId)) }],

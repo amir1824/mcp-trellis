@@ -176,6 +176,7 @@ Explicitly **out** of this package (do not expect parity with full MCP hosts or 
 - **No stdio** transport; no batch JSON-RPC arrays
 - **No DPoP, PAR, or `client_credentials`** — this AS is authorization_code (+ optional refresh and revoke)
 - **No rate limiting** — put quotas on `/register` and `/token` at the edge or reverse proxy
+- **No timeout on your ports** — `resolveUser`, `mintAccessToken`, `verifyToken`, `refreshAccessToken` and `codeStore.consume` are awaited without a deadline, and a tool handler receives no `AbortSignal`. Set timeouts on the clients behind them (database, Redis, HTTP). Only the audit sink, the CIMD fetch and `apiTool` calls are time-bounded by the library
 - **No paid external security audit** claimed here — see Threat model above
 
 The `2026-07-28` stateless core is the open protocol item; CIMD is shipped.
