@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""The live check: real scenarios against the running app and the real provider. The factory injects the secrets it needs
+as environment variables and removes them from the record; this script never prints or stores one.
+post() and get() return (status, text) for every answer the app gives, a 4xx or 5xx included; they raise only when no answer came
+(a refused connection, a timeout). Check the status in the case, do not catch an HTTP exception. A 5xx answer fails the case it
+came in, unless the case says `expect_5xx=True` (a ticket that asks for a 503 when the provider is down).
+Print one CASE line per scenario and, last, the summary line. Add a scenario with case(). Tag the ones that prove a real
+provider call (tool-call, streaming, isolation): `required_cases` in factory.config.json makes those tags mandatory."""
+import atexit, json, os, signal, socket, subprocess, sys, time, urllib.error, urllib.request
+
+APP_START = ""      # the command that starts the app, e.g. "npm run dev:server"; empty when it already runs at BASE_URL
+READY_PATH = "/"    # a path that answers 200 once the app is up
+RESULTS = []
+SERVER_ERRORS = []  # the 5xx statuses post() and get() saw during the running case
+APP_LOG = ""
+
+
+def _free_port():
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def _show_app_log(lines=15):
+    """The app's own last lines, one per `APP | ` line: the reason a case failed is usually in them. The factory redacts secrets from this output."""
+    try:
+        tail = open(APP_LOG, errors="replace").read().splitlines()[-lines:] if APP_LOG else []
+    except OSError:
+        tail = []
+    for line in tail:
+        print("APP | " + " ".join(line.split())[:200])
+
+
+def _stop(app):
+    try:
+        os.killpg(app.pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def _start_app():
+    """Start APP_START on a free port with a fresh database, wait until it answers, stop it at exit."""
+    port = _free_port()
+    env = {**os.environ, "PORT": str(port), "DB_PATH": os.path.join(os.environ.get("TMPDIR", "/tmp"), f"live-{port}.db")}
+    global APP_LOG
+    APP_LOG = os.path.join(os.environ.get("TMPDIR", "/tmp"), f"live-app-{port}.log")
+    app = subprocess.Popen(APP_START, shell=True, env=env, stdout=open(APP_LOG, "wb"), stderr=subprocess.STDOUT, start_new_session=True)
+    atexit.register(_stop, app)  # ponytail: a live timeout SIGKILLs only this script's group, so the app can outlive it; the upgrade is the app in this group
+    base = f"http://127.0.0.1:{port}"
+    for _ in range(90):
+        try:
+            if urllib.request.urlopen(base + READY_PATH, timeout=2).status == 200:
+                return base
+        except Exception:  # noqa: BLE001 - not up yet
+            pass
+        time.sleep(1)
+    print(f"CASE FAIL [app] the app did not answer {READY_PATH} on port {port} within 90 s: {APP_START}")
+    _show_app_log()
+    print("LIVE 0/1 FAIL")
+    sys.exit(1)
+
+
+BASE = _start_app() if APP_START else os.environ.get("BASE_URL", "http://127.0.0.1:3000")
+
+
+def case(name, tags, run, expect_5xx=False):
+    """run() returns (ok, detail). An exception is a failed case, not a crash. A 5xx the app answered through post() or get() fails the
+    case whatever it checked, unless the ticket asks for that error and the case says expect_5xx=True; a 4xx is for the case to check."""
+    del SERVER_ERRORS[:]
+    try:
+        ok, detail = run()
+    except Exception as error:  # noqa: BLE001 - a scenario that raises has failed
+        ok, detail = False, f"{type(error).__name__}: {error}"
+    if ok and SERVER_ERRORS and not expect_5xx:
+        ok, detail = False, f"the app answered {SERVER_ERRORS[0]} during this case: {detail}"
+    RESULTS.append(ok)
+    label = ",".join(str(tag).replace("]", ")").replace("[", "(").replace("\n", " ") for tag in tags)  # a tag cannot end the tag list early
+    print(f"CASE {'PASS' if ok else 'FAIL'} [{label}] {name}: {' '.join(str(detail).split())[:200]}", flush=True)  # one line: a response body cannot forge a case line
+
+
+def _open(request, timeout):
+    """(status, body) for any answer the app gives, a 4xx or 5xx included: a case that expects a 404 reads the status, it does not catch an exception."""
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as reply:
+            status, text = reply.status, reply.read().decode(errors="replace")
+    except urllib.error.HTTPError as error:
+        with error:  # closes the response; a connection failure is not an HTTPError and still raises
+            status, text = error.code, error.read().decode(errors="replace")
+    if status >= 500:
+        SERVER_ERRORS.append(status)
+    return status, text
+
+
+def post(path, body, timeout=60):
+    return _open(urllib.request.Request(BASE + path, json.dumps(body).encode(), {"content-type": "application/json"}), timeout)
+
+
+def get(path, timeout=30):
+    return _open(BASE + path, timeout)
+
+
+def _ticket_cases():
+    """Cases an independent author wrote from the ticket alone (scripts/ticket_cases.py, frozen with this script). Each carries the tag `ticket`.
+    A scripts/ticket_cases.py beside this script is loaded whether or not the config names it."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ticket_cases.py")
+    if not os.path.exists(path):
+        return
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("ticket_cases", path)
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+        module.register(lambda name, tags, run, **options: case(name, ([tags] if isinstance(tags, str) else list(tags)) + ["ticket"], run, **options), BASE, post, get)
+    except Exception as error:  # noqa: BLE001 - a register() that raises (a read at registration that timed out) must not take the builder's own cases down with it
+        RESULTS.append(False)
+        print(f"CASE FAIL [ticket] the author's file raised while loading: {type(error).__name__}: {' '.join(str(error).split())[:150]}", flush=True)
+
+
+_ticket_cases()
+
+# --- scenarios: replace this one with the ticket's golden cases (at least `min_cases`) ---
+case("the app answers", ["smoke"], lambda: (get("/")[0] == 200, "GET / is expected to answer 200"))
+
+passed = sum(RESULTS)
+if passed != len(RESULTS):
+    _show_app_log()
+print(f"LIVE {passed}/{len(RESULTS)} {'PASS' if passed == len(RESULTS) else 'FAIL'}")
+sys.exit(0 if passed == len(RESULTS) else 1)

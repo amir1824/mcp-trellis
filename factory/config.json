@@ -1,0 +1,127 @@
+{
+  "checks": "",
+  "check_timeout": 300,
+  "max_rounds": 3,
+  "protected_paths": [],
+  "test_paths": [
+    "test/*",
+    "tests/*",
+    "*/test/*",
+    "*/tests/*",
+    "test_*",
+    "*_test.*",
+    "*.test.*",
+    "*.spec.*"
+  ],
+  "routing": {
+    "low": {
+      "plan": false,
+      "reviewers": []
+    },
+    "medium": {
+      "plan": true,
+      "reviewers": [
+        "brutal-reviewer",
+        "code-review"
+      ]
+    },
+    "high": {
+      "plan": true,
+      "reviewers": [
+        "brutal-reviewer",
+        "code-review",
+        "security-reviewer"
+      ]
+    }
+  },
+  "surface_reviewers": {
+    "security": "security-reviewer",
+    "ui": "qa-engineer"
+  },
+  "keywords": {
+    "high": [
+      "auth",
+      "password",
+      "token",
+      "secret",
+      "permission",
+      "tenant",
+      "migration",
+      "payment",
+      "money",
+      "encrypt",
+      "concurren",
+      "race condition",
+      "transaction",
+      "delete data",
+      "data loss"
+    ],
+    "low": [
+      "typo",
+      "rename",
+      "comment",
+      "docs",
+      "readme",
+      "wording",
+      "spacing",
+      "color"
+    ],
+    "security": [
+      "auth",
+      "password",
+      "token",
+      "secret",
+      "permission",
+      "tenant",
+      "crypto",
+      "payment",
+      "session",
+      "cookie",
+      "xss",
+      "inject",
+      "upload",
+      "sql",
+      "sanitiz",
+      "csrf"
+    ],
+    "ui": [
+      "ui",
+      "page",
+      "screen",
+      "button",
+      "form",
+      "css",
+      "layout",
+      "component",
+      "modal",
+      "table"
+    ]
+  },
+  "live_check": {
+    "command": "",
+    "env": [],
+    "env_file": "",
+    "min_cases": 5,
+    "timeout": 600,
+    "required_cases": [],
+    "locked_files": [],
+    "ticket_cases": "",
+    "min_ticket_cases": 8
+  },
+  "evidence_required": [
+    "code-review"
+  ],
+  "ignore_phrases": [
+    "design token",
+    "design tokens",
+    "token budget",
+    "tokens.scss",
+    "css token",
+    "css tokens"
+  ],
+  "browser": true,
+  "browser_reviewers": [
+    "qa-engineer"
+  ],
+  "fresh_review": false
+}
