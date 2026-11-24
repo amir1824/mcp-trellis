@@ -27,7 +27,11 @@ describe("sealed payloads", () => {
   it("rejects tampered ciphertext", async () => {
     const sealed = await seal(SECRET, "consent", { userId: "u1" });
     const [iv, ciphertext] = sealed.split(".");
-    const tampered = `${iv}.${ciphertext?.slice(0, -2)}zz`;
+    // Flip a whole byte: swapping the trailing base64url characters can leave the decoded bytes
+    // unchanged, because the last character carries bits the decoder ignores.
+    const bytes = Buffer.from(ciphertext ?? "", "base64url");
+    bytes[0] = (bytes[0] ?? 0) ^ 0xff;
+    const tampered = `${iv}.${bytes.toString("base64url")}`;
     assert.equal(await unseal(SECRET, "consent", tampered), null);
   });
 
