@@ -23,3 +23,6 @@ docs/launch/
 examples/project-desk/package.json
 examples/project-desk/package-lock.json
 examples/project-desk/node_modules/
+
+# Factory job state
+.factory/

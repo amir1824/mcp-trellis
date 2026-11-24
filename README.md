@@ -60,6 +60,45 @@ npm run demo
 
 Open `http://127.0.0.1:8787` and sign in as Alice or Bob with `$DEMO_PASSWORD`. More in [examples/saas-demo](examples/saas-demo/README.md).
 
+## Attach a UI to a tool (MCP Apps)
+
+A tool can point at an HTML view that an MCP Apps host (a client that supports the [MCP Apps extension](https://github.com/modelcontextprotocol/ext-apps)) renders next to the result. mcp-trellis only serves the HTML and the tool metadata; the host renders it, and everything the view does goes back through your `/mcp` endpoint as an ordinary authenticated `tools/call`, so scopes, argument validation, `context` and `audit` apply unchanged.
+
+```ts
+import { createMcpApp, defineTool } from "mcp-trellis";
+
+const listProducts = defineTool({
+  name: "list_products",
+  description: "Show the signed-in user's products",
+  inputSchema: { type: "object", properties: {} },
+  scope: "mcp",
+  ui: { resourceUri: "ui://shop/products" }, // must match a uiResources entry
+  handler: async (ctx) => ({
+    content: [{ type: "text", text: "2 products" }], // text fallback for hosts without MCP Apps
+    structuredContent: { items: await loadProducts(ctx) }, // what the view receives
+  }),
+});
+
+export const mcp = createMcpApp({
+  // ...serverInfo, auth, context as above
+  tools: [listProducts],
+  uiResources: [{ uri: "ui://shop/products", html: productsHtml, csp: { connectDomains: ["https://api.example.com"] } }],
+});
+```
+
+Inside `productsHtml` (a bundle you build; illustrative, not shipped or tested here):
+
+```ts
+import { App } from "@modelcontextprotocol/ext-apps";
+
+const app = new App({ name: "products", version: "1.0.0" });
+app.ontoolresult = (result) => render(result.structuredContent);
+await app.connect();
+// later: await app.callServerTool({ name: "refresh_products", arguments: { category: "toys" } });
+```
+
+Limits: MCP Apps support varies by host and none is verified by this project's tests; protocol versions up to 2025-06-18 only (a newer `MCP-Protocol-Version` gets a 400); `visibility` is metadata the host enforces, never the server; the library cannot isolate tenants beyond building `context` per call; there is no per-client negotiation. Details: [docs/mcp-apps.md](docs/mcp-apps.md).
+
 ## How it fits together
 
 ![Architecture: an AI client and the user's browser reach createMcpApp inside your app. It routes to the OAuth 2.1 server and the MCP endpoint of mcp-trellis, which call your login, a shared code store, your token ports and your tools and data.](docs/media/architecture.png)
@@ -127,6 +166,7 @@ The OAuth flows above run in automated tests and in the local demo. The Claude a
 | Doc | Contents |
 |-----|----------|
 | [docs/guide.md](docs/guide.md) | Architecture, clients, recipes, ports, tools, multi-tenant |
+| [docs/mcp-apps.md](docs/mcp-apps.md) | Attach a UI to a tool: setup, CSP, visibility, host limits |
 | [docs/reference.md](docs/reference.md) | Routes, methods, status codes, options, exports |
 | [docs/security.md](docs/security.md) | Protocol promises, threat model, sessions, not in scope |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common connection and token errors |

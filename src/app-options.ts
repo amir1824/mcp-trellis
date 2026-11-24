@@ -1,6 +1,7 @@
 import type { ClientName } from "./clients.js";
 import type { ToolDef } from "./mcp/registry.js";
 import type { AuditEntry, Principal, ServerInfo } from "./mcp/types.js";
+import type { UiResource } from "./mcp/ui/types.js";
 import type { CimdCache } from "./oauth/cimd/types.js";
 import type { CodeStore } from "./oauth/crypto/codes.js";
 import type {
@@ -142,4 +143,9 @@ export type McpAppOptions<TCtx> = {
   allowedRequestOrigins?: string[];
   /** Filter `tools/list` by scope. See `McpHandlerOptions.hideToolsOutsideScope`. Default false. */
   hideToolsOutsideScope?: boolean;
+  /**
+   * MCP Apps: UI documents that tools reference with `ToolDef.ui` — see
+   * `McpHandlerOptions.uiResources` and `docs/mcp-apps.md`.
+   */
+  uiResources?: UiResource[];
 };

@@ -39,9 +39,10 @@ With defaults `resourcePath: "/mcp"` and `oauthPath: "/mcp/oauth"`:
 | `ping` | public | Empty result |
 | `tools/list` | Bearer | Lists registry entries |
 | `tools/call` | Bearer + scope | Runs the tool; no Bearer at all → 401, authenticated but missing scope → 403, `params.name` naming no registered tool → `-32602` (protocol error, not a tool result — see `docs/guide.md`) |
+| `resources/list`, `resources/read` | Bearer | Only when a UI is configured (MCP Apps, see `docs/mcp-apps.md`); otherwise `-32601` |
 | `notifications/*` | public | HTTP 202 empty body |
 
-Anything else → JSON-RPC `-32601`. Capabilities advertise **tools only**.
+Anything else → JSON-RPC `-32601`. Capabilities advertise **tools only**, plus `resources` when a UI is configured.
 
 ## HTTP and JSON-RPC status codes
 

@@ -1,6 +1,6 @@
 {
   "name": "mcp-trellis",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "description": "Plug your existing SaaS's users, auth and permissions into MCP with OAuth 2.1, so Claude, ChatGPT and other AI clients can act on your app as that user.",
   "type": "module",
   "license": "MIT",
@@ -68,7 +68,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "test": "tsx --test test/oauth/**/*.test.ts test/mcp/*.test.ts test/adapters/*.test.ts test/auth/*.test.ts test/util/*.test.ts test/*.test.ts",
+    "test": "tsx --test test/oauth/**/*.test.ts test/mcp/*.test.ts test/mcp/ui/*.test.ts test/adapters/*.test.ts test/auth/*.test.ts test/util/*.test.ts test/*.test.ts",
     "test:e2e": "tsx --test test/e2e/*.test.ts",
     "test:coverage": "node scripts/test-coverage.mjs",
     "typecheck": "tsc --noEmit",

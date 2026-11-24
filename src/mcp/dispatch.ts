@@ -28,6 +28,7 @@ import {
 } from "./request-policy.js";
 import { dispatchRpc } from "./rpc-handlers.js";
 import type { McpHandlerOptions, ResolvedMcpHandlerOptions } from "./types.js";
+import { buildUiRegistry } from "./ui/registry.js";
 
 export type {
   AuditEntry,
@@ -125,6 +126,7 @@ export const createMcpHandler = <TCtx>(handlerOptions: McpHandlerOptions<TCtx>):
   const options: ResolvedMcpHandlerOptions<TCtx> = {
     ...handlerOptions,
     publicMethods: handlerOptions.publicMethods ?? DEFAULT_PUBLIC_METHODS,
+    uiRegistry: buildUiRegistry(handlerOptions.registry, handlerOptions.uiResources),
   };
 
   const HTTP_METHODS: Record<string, HttpMethodHandler> = {

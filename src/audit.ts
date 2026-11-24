@@ -93,6 +93,7 @@ export const consoleAudit = (entry: UnifiedAuditEntry): void => {
   const line = [
     `[mcp-trellis] mcp ${logField(entry.method) || "(transport)"}`,
     entry.tool ? `tool=${logField(entry.tool)}` : undefined,
+    entry.resource ? `resource=${logField(entry.resource)}` : undefined,
     entry.ok ? "ok" : "fail",
     `${entry.durationMs}ms`,
     entry.principalId ? `user=${logField(entry.principalId)}` : undefined,

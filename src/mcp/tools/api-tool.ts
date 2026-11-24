@@ -5,13 +5,14 @@
 
 import { DEFAULT_MCP_BODY_LIMIT } from "../../http/body.js";
 import { pickDefined } from "../../util/defined.js";
-import type { ToolDef, ToolResult } from "../registry.js";
+import type { ToolDef } from "../registry.js";
 import {
   type ApiRequest,
   boundResponse,
   fetchWithTimeout,
   type RedirectMode,
 } from "./api-fetch.js";
+import type { ToolResult } from "./content.js";
 import { defineTool, type RawInput, type ToolCore, type ValidatedInput } from "./define-tool.js";
 
 type ApiExtra<TCtx, Args> = {
@@ -129,7 +130,7 @@ export const apiTool = <TCtx, Input = Record<string, unknown>>(
     name: options.name,
     description: options.description,
     inputSchema: options.inputSchema,
-    ...pickDefined(options, ["scope"]),
+    ...pickDefined(options, ["scope", "ui"]),
   };
   if (options.input) {
     return defineTool<TCtx, Input>({

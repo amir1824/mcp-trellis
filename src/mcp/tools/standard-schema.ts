@@ -4,7 +4,7 @@
  * structural type, not a dependency: nothing is imported at runtime.
  */
 
-import type { ToolResult } from "../registry.js";
+import type { ToolResult } from "./content.js";
 
 export type StandardSchemaV1<Input = unknown, Output = Input> = {
   readonly "~standard": {

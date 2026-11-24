@@ -1,5 +1,8 @@
 import type { WwwAuthenticateOptions } from "../auth/bearer.js";
+import type { JsonRpcId, JsonRpcRequest } from "./jsonrpc.js";
 import type { ToolRegistry } from "./registry.js";
+import type { UiRegistry } from "./ui/registry.js";
+import type { UiResource } from "./ui/types.js";
 
 export type Principal = {
   id: string;
@@ -18,6 +21,8 @@ export type AuditEntry = {
   /** JSON-RPC method, or `""` for transport-level rejections made before parsing. */
   method: string;
   tool?: string | undefined;
+  /** The `ui://` URI of a `resources/read`, clipped like a tool name. */
+  resource?: string | undefined;
   principalId?: string | undefined;
   ok: boolean;
   error?: string | undefined;
@@ -85,9 +90,29 @@ export type McpHandlerOptions<TCtx> = {
    * a lesser-scoped principal to see.
    */
   hideToolsOutsideScope?: boolean;
+  /**
+   * MCP Apps: the UI documents tools point at with `ToolDef.ui`. Setting it
+   * (or any tool `ui`) adds `resources/list` + `resources/read` and the
+   * `resources` capability; leave it out and the server answers exactly as before.
+   * A resource is readable by a principal who may call at least one tool that
+   * references it. See `docs/mcp-apps.md`.
+   */
+  uiResources?: UiResource[];
 };
 
 /** `McpHandlerOptions` after `createMcpHandler` resolved its defaults. */
 export type ResolvedMcpHandlerOptions<TCtx> = McpHandlerOptions<TCtx> & {
   publicMethods: Set<string>;
+  /** Built and validated once by `createMcpHandler`; `undefined` when the server has no UI. */
+  uiRegistry?: UiRegistry | undefined;
 };
+
+export type RpcMethodHandler<TCtx> = (input: {
+  req: Request;
+  body: JsonRpcRequest;
+  id: JsonRpcId;
+  principal: Principal | null;
+  options: ResolvedMcpHandlerOptions<TCtx>;
+  /** Request start, for denial-path audit timing — see `dispatchRpc`. */
+  startedAt: number;
+}) => Promise<Response>;
