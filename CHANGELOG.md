@@ -5,6 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-11-24
+
+### Added
+
+- **MCP Apps (additive, optional).** `ToolDef.ui` (`{ resourceUri: "ui://...", visibility? }`) is listed as `_meta.ui` in
+  `tools/list`; `uiResources` on `createMcpApp` and `createMcpHandler` registers the HTML a tool points at. A server
+  with a UI declares `resources` in `initialize` and answers `resources/list` and `resources/read`
+  (`text/html;profile=mcp-app`); a server without one is byte-identical to before. A resource is readable by
+  a principal who may call at least one tool that references it; both methods need authentication and are
+  audited (`AuditEntry.resource`). CSP origins are checked at construction (exact `https://` origins,
+  `https://*.host`, `wss://` for `connectDomains`). Bad UI configuration throws at construction.
+  `ToolResult` gains `structuredContent` and `_meta`, and `content` now accepts the standard blocks
+  (text, image, audio, resource_link, resource); a non-object `structuredContent` or `_meta` is a tool
+  failure. Type-level note: because `content` is now a union, `content[0].text` reads as `string | undefined`
+  for code that inspects a `ToolResult` (for example from `registry.call`); narrow on `type === "text"`.
+  See `docs/mcp-apps.md` for host limits.
+
 ## [3.3.0] - 2026-11-11
 
 ### Changed

@@ -1,9 +1,8 @@
 {
   "src/adapters/node-request.ts": 245,
   "src/adapters/node.ts": 217,
-  "src/app.ts": 275,
+  "src/app.ts": 259,
   "src/http/body.ts": 236,
-  "src/mcp/rpc-handlers.ts": 265,
   "src/mcp/validate.ts": 281,
   "src/oauth/cimd/cimd-ssrf.ts": 204,
   "src/oauth/cimd/cimd.ts": 219,

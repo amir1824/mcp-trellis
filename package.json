@@ -68,7 +68,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "test": "tsx --test test/oauth/**/*.test.ts test/mcp/*.test.ts test/adapters/*.test.ts test/auth/*.test.ts test/util/*.test.ts test/*.test.ts",
+    "test": "tsx --test test/oauth/**/*.test.ts test/mcp/*.test.ts test/mcp/ui/*.test.ts test/adapters/*.test.ts test/auth/*.test.ts test/util/*.test.ts test/*.test.ts",
     "test:e2e": "tsx --test test/e2e/*.test.ts",
     "test:coverage": "node scripts/test-coverage.mjs",
     "typecheck": "tsc --noEmit",

@@ -2,12 +2,10 @@
 
 import { jsonResponse } from "../http/http.js";
 import { clipText } from "../util/clip.js";
-import { isJsonObject } from "../util/json.js";
 import { ownValue } from "../util/own.js";
 import {
   JSONRPC_INVALID_PARAMS,
   JSONRPC_METHOD_NOT_FOUND,
-  type JsonRpcId,
   type JsonRpcRequest,
   rpcError,
   rpcResult,
@@ -16,88 +14,33 @@ import { pickProtocolVersion } from "./protocol.js";
 import {
   authFailureChallenge,
   DENIAL_REASONS,
-  hasScope,
   insufficientScope,
+  mayUse,
   resolveWwwAuthenticate,
   safeAudit,
   unauthorized,
 } from "./request-policy.js";
+import {
+  auditToolCall,
+  invalidArgumentsResponse,
+  parseToolCallArgs,
+  shownName,
+  type ToolCallDenialInput,
+} from "./tools/call-args.js";
+import { firstText } from "./tools/content.js";
 import type {
-  AuditEntry,
   McpHandlerOptions,
   Principal,
   ResolvedMcpHandlerOptions,
+  RpcMethodHandler,
 } from "./types.js";
-
-/** The one shape every "tools/call" outcome — unknown tool, missing scope, or a real call — audits. */
-const auditToolCall = <TCtx>(
-  options: McpHandlerOptions<TCtx>,
-  input: Pick<AuditEntry, "tool" | "ok" | "error"> & {
-    principal: Principal | null;
-    startedAt: number;
-  },
-): Promise<void> =>
-  safeAudit(options, {
-    method: "tools/call",
-    tool: input.tool,
-    principalId: input.principal?.id,
-    ok: input.ok,
-    error: input.error,
-    durationMs: Date.now() - input.startedAt,
-  });
+import { UI_METHODS } from "./ui/methods.js";
 
 /** Longest tool-failure text copied into an audit entry — it is tool- or caller-supplied. */
 const MAX_AUDIT_ERROR_LENGTH = 1000;
 
 const auditText = (text: string | undefined): string | undefined =>
   text === undefined ? undefined : clipText(text, MAX_AUDIT_ERROR_LENGTH, "…");
-
-/** A tool name as echoed back or audited — the name is whatever the caller sent. */
-const MAX_TOOL_NAME_LENGTH = 200;
-const shownToolName = (name: string): string => clipText(name, MAX_TOOL_NAME_LENGTH, "…");
-
-/** `args` is `null` when `arguments` is present but not an object. */
-type ParsedToolCall = { name: string; args: Record<string, unknown> | null } | { error: string };
-
-const INVALID_ARGUMENTS_MESSAGE = "tools/call params.arguments must be an object";
-
-/**
- * Omitted params default to `{}`; null, an array or a primitive fail rather
- * than being coerced. `name` is only ever a string: `String(params.name)`
- * would throw on an object with a hostile `toString`, and coerce `["a"]` or
- * `1` into a real-looking tool name. An absent `arguments` is `{}` (it is
- * optional); a malformed one must not silently become `{}` and run the tool
- * with every optional argument unset.
- */
-const parseToolCallArgs = (body: JsonRpcRequest): ParsedToolCall => {
-  const params = body.params === undefined ? {} : body.params;
-  if (!isJsonObject(params)) return { error: "tools/call params must be an object" };
-  const name = typeof params.name === "string" ? params.name : "";
-  if (params.arguments === undefined) return { name, args: {} };
-  return { name, args: isJsonObject(params.arguments) ? params.arguments : null };
-};
-
-type ToolCallDenialInput = {
-  name: string;
-  principal: Principal | null;
-  id: JsonRpcId;
-  startedAt: number;
-};
-
-const invalidArgumentsResponse = async <TCtx>(
-  options: McpHandlerOptions<TCtx>,
-  input: ToolCallDenialInput,
-): Promise<Response> => {
-  await auditToolCall(options, {
-    ...input,
-    tool: shownToolName(input.name),
-    ok: false,
-    error: DENIAL_REASONS.invalidParams,
-  });
-  return jsonResponse({
-    data: rpcError(input.id, JSONRPC_INVALID_PARAMS, INVALID_ARGUMENTS_MESSAGE),
-  });
-};
 
 /**
  * A name that doesn't refer to any registered tool is a malformed request,
@@ -113,12 +56,12 @@ const unknownToolResponse = async <TCtx>(
 ): Promise<Response> => {
   await auditToolCall(options, {
     ...input,
-    tool: shownToolName(input.name),
+    tool: shownName(input.name),
     ok: false,
     error: DENIAL_REASONS.unknownTool,
   });
   return jsonResponse({
-    data: rpcError(input.id, JSONRPC_INVALID_PARAMS, `Unknown tool: ${shownToolName(input.name)}`),
+    data: rpcError(input.id, JSONRPC_INVALID_PARAMS, `Unknown tool: ${shownName(input.name)}`),
   });
 };
 
@@ -143,22 +86,12 @@ const missingScopeResponse = async <TCtx>(
     : unauthorized(wwwAuthenticate, `Missing scope: ${input.scope}`, input.id);
 };
 
-type RpcMethodHandler<TCtx> = (input: {
-  req: Request;
-  body: JsonRpcRequest;
-  id: JsonRpcId;
-  principal: Principal | null;
-  options: McpHandlerOptions<TCtx>;
-  /** Request start, for denial-path audit timing — see `dispatchRpc`. */
-  startedAt: number;
-}) => Promise<Response>;
-
-const METHODS = {
+const CORE_METHODS = {
   initialize: async ({ id, body, options }) =>
     jsonResponse({
       data: rpcResult(id, {
         protocolVersion: pickProtocolVersion(body.params),
-        capabilities: { tools: {} },
+        capabilities: options.uiRegistry ? { tools: {}, resources: {} } : { tools: {} },
         serverInfo: options.serverInfo,
         instructions: options.instructions ?? "",
       }),
@@ -168,8 +101,7 @@ const METHODS = {
 
   "tools/list": async ({ id, options, principal }) => {
     const allowScope = options.hideToolsOutsideScope
-      ? (scope: string | null | undefined) =>
-          !scope || (principal ? hasScope(principal, scope) : false)
+      ? (scope: string | null | undefined) => mayUse(principal, scope)
       : undefined;
     return jsonResponse({ data: rpcResult(id, { tools: options.registry.list(allowScope) }) });
   },
@@ -177,15 +109,13 @@ const METHODS = {
   "tools/call": async ({ req, body, id, principal, options, startedAt }) => {
     const parsed = parseToolCallArgs(body);
     if ("error" in parsed) {
-      return jsonResponse({
-        data: rpcError(id, JSONRPC_INVALID_PARAMS, parsed.error),
-      });
+      return jsonResponse({ data: rpcError(id, JSONRPC_INVALID_PARAMS, parsed.error) });
     }
     const { name, args } = parsed;
 
     const tool = options.registry.get(name);
     if (!tool) return unknownToolResponse(options, { name, principal, id, startedAt });
-    if (tool.scope && (!principal || !hasScope(principal, tool.scope))) {
+    if (tool.scope && !mayUse(principal, tool.scope)) {
       return missingScopeResponse(req, options, {
         name,
         principal,
@@ -208,12 +138,15 @@ const METHODS = {
       tool: name,
       principal,
       ok: !result.isError,
-      error: result.isError ? auditText(result.content[0]?.text) : undefined,
+      error: result.isError ? auditText(firstText(result)) : undefined,
       startedAt: toolStartedAt,
     });
     return jsonResponse({ data: rpcResult(id, result) });
   },
 } as const satisfies Record<string, RpcMethodHandler<unknown>>;
+
+/** `resources/*` exist only on a server with a UI: without one they are as unknown as any other method. */
+const ALL_METHODS = { ...CORE_METHODS, ...UI_METHODS };
 
 export const dispatchRpc = async <TCtx>(input: {
   req: Request;
@@ -243,7 +176,7 @@ export const dispatchRpc = async <TCtx>(input: {
     if (!principal) {
       await safeAudit(options, {
         method,
-        tool: toolName === undefined ? undefined : shownToolName(toolName),
+        tool: toolName === undefined ? undefined : shownName(toolName),
         ok: false,
         error: DENIAL_REASONS.unauthorized,
         durationMs: Date.now() - startedAt,
@@ -254,7 +187,8 @@ export const dispatchRpc = async <TCtx>(input: {
 
   // A client-selected method name must not reach Object.prototype (e.g.
   // `toString` or `__proto__`): only own entries in METHODS are RPC methods.
-  const handler = ownValue(METHODS as Record<string, RpcMethodHandler<TCtx>>, method);
+  const methods = options.uiRegistry ? ALL_METHODS : CORE_METHODS;
+  const handler = ownValue(methods as Record<string, RpcMethodHandler<TCtx>>, method);
   if (!handler) {
     return jsonResponse({
       data: rpcError(id, JSONRPC_METHOD_NOT_FOUND, `Method not found: ${method}`),

@@ -17,6 +17,7 @@ export const DENIAL_REASONS = {
   queryStringToken: "query_string_token",
   originNotAllowed: "origin_not_allowed",
   unknownTool: "unknown_tool",
+  unknownResource: "unknown_resource",
   missingScope: "missing_scope",
   invalidParams: "invalid_params",
 } as const;
@@ -133,3 +134,12 @@ export const hasScope = (principal: Principal, scope: string | undefined): boole
   if (!scope) return true;
   return principal.scopes.includes(scope) || principal.scopes.includes("*");
 };
+
+/**
+ * The one scope rule for a tool call, the `hideToolsOutsideScope` listing and a
+ * UI resource: `null`, `undefined` and `""` mean "any authenticated principal"
+ * (a null principal passes only because the caller already decided anonymous
+ * access is allowed), anything else needs a principal holding it or `"*"`.
+ */
+export const mayUse = (principal: Principal | null, scope: string | null | undefined): boolean =>
+  !scope || (principal !== null && hasScope(principal, scope));

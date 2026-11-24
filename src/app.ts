@@ -17,8 +17,9 @@ import {
 } from "./clients.js";
 import { errorReason, INTERNAL_ERROR, jsonResponse } from "./http/http.js";
 import { createMcpHandler, type McpHandler, type McpHandlerOptions } from "./mcp/dispatch.js";
-import { createToolRegistry, type ToolDef } from "./mcp/registry.js";
+import { createToolRegistry } from "./mcp/registry.js";
 import { safeAudit } from "./mcp/request-policy.js";
+import { assertToolScopesConfigured } from "./mcp/tools/scope-check.js";
 import type { AuditEntry, Principal } from "./mcp/types.js";
 import { safeOAuthAudit } from "./oauth/audit.js";
 import { DEFAULT_SCOPE } from "./oauth/constants.js";
@@ -41,24 +42,6 @@ export type {
 
 export type McpApp = {
   fetch: (request: Request) => Promise<Response>;
-};
-
-/**
- * On a multi-scope server a tool with no `scope` is callable by a principal
- * holding none of the advertised scopes, silently defeating
- * `defaultScopes: []`. Single-scope servers have no such ambiguity. Pass
- * `scope: null` on a tool to state the omission on purpose.
- */
-const assertToolScopesConfigured = <TCtx>(tools: ToolDef<TCtx>[], scopes: string[]): void => {
-  if (scopes.length <= 1) return;
-  const unscoped = tools.filter((tool) => tool.scope === undefined).map((tool) => tool.name);
-  if (unscoped.length === 0) return;
-  throw new Error(
-    `scopes has more than one entry (${scopes.join(", ")}), but these tools have no ` +
-      `scope and would be callable by any authenticated principal regardless of what ` +
-      `scopes it holds: ${unscoped.join(", ")}. Set scope: "<one of the entries above>" ` +
-      `on each, or scope: null to state the omission on purpose.`,
-  );
 };
 
 /**
@@ -126,6 +109,7 @@ const buildMcpHandlerOptions = <TCtx>(
       "auditTimeoutMs",
       "allowedRequestOrigins",
       "hideToolsOutsideScope",
+      "uiResources",
     ]),
     wwwAuthenticate: (request) => ({
       realm,

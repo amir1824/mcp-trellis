@@ -9,8 +9,10 @@
  */
 
 import { pickDefined } from "../../util/defined.js";
-import type { ToolDef, ToolResult } from "../registry.js";
+import type { ToolDef } from "../registry.js";
+import type { ToolUi } from "../ui/types.js";
 import type { JsonSchema } from "../validate.js";
+import type { ToolResult } from "./content.js";
 import { issuesResult, parseWithSchema, type StandardSchemaV1 } from "./standard-schema.js";
 
 export type ToolCore = {
@@ -20,6 +22,8 @@ export type ToolCore = {
   inputSchema: JsonSchema;
   /** See `ToolDef.scope` — pass `null` to explicitly opt out of a scope check. */
   scope?: string | null | undefined;
+  /** See `ToolDef.ui` — the MCP Apps UI a host renders for this tool's result. */
+  ui?: ToolUi | undefined;
 };
 
 type TypedToolHandler<TCtx, Args> = (
@@ -48,7 +52,7 @@ export const defineTool = <TCtx, Input = Record<string, unknown>>(
   name: options.name,
   description: options.description,
   inputSchema: options.inputSchema,
-  ...pickDefined(options, ["scope"]),
+  ...pickDefined(options, ["scope", "ui"]),
   handler: async (ctx, rawArgs) => {
     if (!options.input) return options.handler(ctx, rawArgs);
     const parsed = await parseWithSchema(options.input, rawArgs);

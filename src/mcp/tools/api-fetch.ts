@@ -1,8 +1,8 @@
 /** The upstream call behind `apiTool`: a bounded, abortable fetch and a capped response body. */
 
 import { BodyReadAbortedError, BodyTooLargeError, readBoundedBytes } from "../../http/body.js";
-import type { ToolResult } from "../registry.js";
 import { anySignal, NOOP } from "./abort-signal.js";
+import type { ToolResult } from "./content.js";
 
 export type ApiRequest = string | URL | Request;
 

@@ -1,11 +1,9 @@
 import { clipText } from "../util/clip.js";
+import { isToolResult, type ToolResult } from "./tools/content.js";
+import { toolListMeta, toolUiViolations } from "./ui/registry.js";
+import type { ToolUi } from "./ui/types.js";
 import type { JsonSchema } from "./validate.js";
 import { missingObjectType, unsupportedKeywords, validateAgainstSchema } from "./validate.js";
-
-export type ToolResult = {
-  content: Array<{ type: "text"; text: string }>;
-  isError?: boolean | undefined;
-};
 
 export type ToolHandler<TCtx> = (
   ctx: TCtx,
@@ -26,6 +24,12 @@ export type ToolDef<TCtx> = {
    * that intentionally instead of by omission.
    */
   scope?: string | null | undefined;
+  /**
+   * MCP Apps: the UI a host renders for this tool's result. The resource
+   * must be registered in `uiResources`. A host without MCP Apps ignores it
+   * and shows the result's `content` text.
+   */
+  ui?: ToolUi | undefined;
   handler: ToolHandler<TCtx>;
 };
 
@@ -33,6 +37,7 @@ export type ToolListEntry = {
   name: string;
   description: string;
   inputSchema: JsonSchema;
+  _meta?: { ui: ToolUi };
 };
 
 export type ToolRegistry<TCtx> = {
@@ -84,9 +89,6 @@ const resolveToolError = (caught: unknown, onToolError: RegistryOptions["onToolE
 const MAX_VALIDATION_MESSAGE_LENGTH = 2000;
 
 const INVALID_TOOL_RESULT = "Tool returned an invalid result";
-
-const isToolResult = (out: unknown): out is ToolResult =>
-  typeof out === "object" && out !== null && Array.isArray((out as ToolResult).content);
 
 /**
  * A handler is typed to return `ToolResult | string`, but a JS tool (or a
@@ -145,6 +147,9 @@ export const createToolRegistry = <TCtx>(
     throw new Error("duplicate tool names in registry");
   }
 
+  const uiViolations = toolUiViolations(tools);
+  if (uiViolations.length > 0) throw new Error(`invalid tool ui:\n${uiViolations.join("\n")}`);
+
   const validateArgs = options.validateArgs !== false;
   if (validateArgs) assertToolSchemasValid(tools);
 
@@ -152,10 +157,11 @@ export const createToolRegistry = <TCtx>(
     list: (allowScope) =>
       tools
         .filter((tool) => !allowScope || allowScope(tool.scope))
-        .map(({ name, description, inputSchema }) => ({
+        .map(({ name, description, inputSchema, ui }) => ({
           name,
           description,
           inputSchema,
+          ...(ui !== undefined ? { _meta: toolListMeta(ui) } : {}),
         })),
 
     get: (name) => byName.get(name),
