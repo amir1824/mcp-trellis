@@ -29,16 +29,16 @@ describe("parseDocument — CIMD document validation", () => {
     assert.throws(() => parseDocument(CLIENT_ID, "<html>"), /not JSON/);
   });
 
-  it("rejects JSON that is not an object", () => {
-    for (const body of [null, [], "string", 7]) {
-      assert.throws(parse(body), /must be a JSON object/, JSON.stringify(body));
-    }
+  [null, [], "string", 7].forEach((body) => {
+    it(`rejects JSON that is not an object: ${JSON.stringify(body)}`, () => {
+      assert.throws(parse(body), /must be a JSON object/);
+    });
   });
 
-  it("rejects a client_id that differs from the fetched URL in any way", () => {
-    for (const clientId of [`${CLIENT_ID}?x=1`, CLIENT_ID.toUpperCase(), undefined]) {
+  [`${CLIENT_ID}?x=1`, CLIENT_ID.toUpperCase(), undefined].forEach((clientId) => {
+    it(`rejects a client_id that differs from the fetched URL: ${String(clientId)}`, () => {
       assert.throws(parse({ ...valid, client_id: clientId }), /must equal the request URL/);
-    }
+    });
   });
 
   it("rejects a confidential token_endpoint_auth_method", () => {
@@ -69,10 +69,10 @@ describe("parseDocument — CIMD document validation", () => {
     );
   });
 
-  it("requires a non-empty redirect_uris array", () => {
-    for (const redirectUris of [undefined, [], "https://claude.ai/cb"]) {
+  [undefined, [], "https://claude.ai/cb"].forEach((redirectUris) => {
+    it(`requires a non-empty redirect_uris array: ${JSON.stringify(redirectUris)}`, () => {
       assert.throws(parse({ ...valid, redirect_uris: redirectUris }), /non-empty redirect_uris/);
-    }
+    });
   });
 
   it("caps redirect_uris at 10 entries", () => {
@@ -81,20 +81,20 @@ describe("parseDocument — CIMD document validation", () => {
     assert.throws(parse({ ...valid, redirect_uris: uris(11) }), /at most 10/);
   });
 
-  it("rejects non-string or empty redirect_uris entries", () => {
-    for (const entry of [42, null, ""]) {
+  [42, null, ""].forEach((entry) => {
+    it(`rejects a non-string or empty redirect_uris entry: ${JSON.stringify(entry)}`, () => {
       assert.throws(parse({ ...valid, redirect_uris: [entry] }), /must be strings/);
-    }
+    });
   });
 
   it("rejects relative redirect_uris", () => {
     assert.throws(parse({ ...valid, redirect_uris: ["/cb"] }), /absolute URLs/);
   });
 
-  it("rejects redirect_uris carrying credentials or a fragment", () => {
-    for (const uri of ["https://user:pw@app.example/cb", "https://app.example/cb#frag"]) {
-      assert.throws(parse({ ...valid, redirect_uris: [uri] }), /credentials or a fragment/, uri);
-    }
+  ["https://user:pw@app.example/cb", "https://app.example/cb#frag"].forEach((uri) => {
+    it(`rejects redirect_uris carrying credentials or a fragment: ${uri}`, () => {
+      assert.throws(parse({ ...valid, redirect_uris: [uri] }), /credentials or a fragment/);
+    });
   });
 
   it("allows http only for loopback IPs, never localhost", () => {

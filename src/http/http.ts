@@ -37,10 +37,15 @@ export const runAuditBounded = async (
   }
 };
 
+const REQUEST_HEADERS = ["Content-Type", "Authorization", "MCP-Protocol-Version"];
+
+/** 2026-07-28 clients send these on every POST, so a browser preflight must allow them too. */
+const PREFLIGHT_REQUEST_HEADERS = [...REQUEST_HEADERS, "Mcp-Method", "Mcp-Name"];
+
 export const corsHeaders = (extra?: Record<string, string>): Record<string, string> => ({
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, MCP-Protocol-Version",
+  "Access-Control-Allow-Headers": REQUEST_HEADERS.join(", "),
   // Response headers are opaque to browser JS by default unless explicitly
   // exposed — without this, a browser-based MCP client reading a 401 can
   // see the status but not WWW-Authenticate itself, i.e. not the
@@ -87,7 +92,12 @@ export const optionsResponse = (options?: JsonResponseOptions): Response =>
     headers:
       options?.cors === false
         ? { "Cache-Control": "no-store" }
-        : { ...corsHeaders(), "Cache-Control": "no-store" },
+        : {
+            ...corsHeaders({
+              "Access-Control-Allow-Headers": PREFLIGHT_REQUEST_HEADERS.join(", "),
+            }),
+            "Cache-Control": "no-store",
+          },
   });
 
 /** Reflect a validated browser Origin on MCP CORS instead of `*`. */

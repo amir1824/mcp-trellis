@@ -6,6 +6,7 @@
  */
 
 import type { McpAppOptions } from "./app-options.js";
+import { buildAuditAdapters } from "./audit.js";
 import { parseBearer } from "./auth/bearer.js";
 import {
   assertClientsConfigured,
@@ -19,9 +20,10 @@ import { errorReason, INTERNAL_ERROR, jsonResponse } from "./http/http.js";
 import { createMcpHandler, type McpHandler, type McpHandlerOptions } from "./mcp/dispatch.js";
 import { createToolRegistry } from "./mcp/registry.js";
 import { safeAudit } from "./mcp/request-policy.js";
-import { assertToolScopesConfigured } from "./mcp/tools/scope-check.js";
+import { assertAllScopesConfigured } from "./mcp/tools/scope-check.js";
 import type { AuditEntry, Principal } from "./mcp/types.js";
 import { safeOAuthAudit } from "./oauth/audit.js";
+import { CIMD_PORT_KEYS } from "./oauth/cimd/options.js";
 import { DEFAULT_SCOPE } from "./oauth/constants.js";
 import {
   canonicalResource,
@@ -70,26 +72,6 @@ const buildAuthenticate = <TCtx>(
   };
 };
 
-/** Top-level `audit` wraps MCP + OAuth; `auth.audit` wins for OAuth if both set. */
-const buildAuditAdapters = <TCtx>(
-  options: McpAppOptions<TCtx>,
-): {
-  toMcpAudit: ((entry: AuditEntry) => void | Promise<void>) | undefined;
-  oauthAudit: ((entry: OAuthAuditEntry) => void | Promise<void>) | undefined;
-} => {
-  const unifiedAudit = options.audit;
-  const toMcpAudit =
-    unifiedAudit !== undefined
-      ? (entry: AuditEntry) => unifiedAudit({ source: "mcp", ...entry })
-      : undefined;
-  const oauthAudit =
-    options.auth.audit ??
-    (unifiedAudit !== undefined
-      ? (entry: OAuthAuditEntry) => unifiedAudit({ source: "oauth", ...entry })
-      : undefined);
-  return { toMcpAudit, oauthAudit };
-};
-
 const buildMcpHandlerOptions = <TCtx>(
   options: McpAppOptions<TCtx>,
   input: {
@@ -110,6 +92,8 @@ const buildMcpHandlerOptions = <TCtx>(
       "allowedRequestOrigins",
       "hideToolsOutsideScope",
       "uiResources",
+      "resources",
+      "skills",
     ]),
     wwwAuthenticate: (request) => ({
       realm,
@@ -145,8 +129,7 @@ const buildOAuthOptions = <TCtx>(
       "auditTimeoutMs",
       "allowInMemoryCodeStore",
       "cimd",
-      "cimdCache",
-      "cimdLookup",
+      ...CIMD_PORT_KEYS,
       "requireRegisteredClients",
       "consent",
     ]),
@@ -220,7 +203,8 @@ export const createMcpApp = <TCtx>(options: McpAppOptions<TCtx>): McpApp => {
   const realm = options.realm ?? options.serverInfo.name;
 
   assertClientsConfigured(clients, options.auth.clientStore);
-  assertToolScopesConfigured(options.tools, options.scopes ?? [DEFAULT_SCOPE]);
+  const scopes = options.scopes ?? [DEFAULT_SCOPE];
+  assertAllScopesConfigured(options, scopes);
 
   const registry = createToolRegistry<TCtx>(
     options.tools,

@@ -5,6 +5,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-11-25
+
+### Added
+
+- **MCP 2026-07-28 (additive; a minor release).** A POST that carries `MCP-Protocol-Version: 2026-07-28` is served by a separate path: `server/discover`; required `_meta` (`protocolVersion`, `clientCapabilities`); `Mcp-Method` and `Mcp-Name` checked against the body before any method runs (`-32020`, HTTP 400); `-32022` when a request's header and `_meta` both name a version this server lacks; `resultType: "complete"` on success results; `ttlMs: 0` and `cacheScope` on `server/discover`, `tools/list`, `resources/list` and `resources/read` (`private` for anything served after authentication or a scope check, `public` only for an anonymous `server/discover`); `initialize` and `ping` answer 404 with `-32601`; an oversized body answers `-32600` over HTTP 413 instead of `-32002`. Requests without that header are answered exactly as before for 2024-11-05, 2025-03-26 and 2025-06-18, with one narrow exception: a request whose header and `_meta` protocol version both name the same unknown version gets `-32022` instead of `-32600` (not for `initialize`); `PROTOCOL_VERSIONS` and `DEFAULT_PROTOCOL_VERSION` are unchanged. See `docs/reference.md#2026-07-28-requests`.
+- A host that set `publicMethods` keeps full control: a 2026-07-28 request is anonymous only for `server/discover` by default, or for the methods it lists (never `initialize` or `ping`).
+
+- **CIMD hardening options (additive, all off by default; a minor release).** `cimdFetch` (the fetch CIMD documents are retrieved with, so a Node host can pin the connection and close DNS rebinding), `cimdAllowedPorts` (ports a CIMD URL may use; `[443]` recommended) and `cimdRequireJsonContentType` (refuse a document not served as JSON).
+- **`hideToolsOutsideScope: "strict"`.** Hides tools the caller may not use and answers a `tools/call` for one as an unknown tool (`-32602`), not `403`. `true` and `false` are unchanged.
+- A security regression suite in `test/security/` covering cross-user and cross-tenant access, unauthorized discovery, direct access, revocation within token semantics, client and resource binding, cache isolation, malformed requests and calls that come from an MCP App; the threat model in `docs/security.md` gains the tenant-isolation boundary, a table of caches and shared state, and a restrictive profile.
+
+- **General resources (additive, opt-in; a minor release).** `resources` on `createMcpHandler` and `createMcpApp`: read-only text resources with a fixed `uri`, an optional `scope` (tool semantics) and `allow(principal)`, and `read(ctx)`. They are listed by `resources/list` and returned by `resources/read` only to principals allowed to see them, share one authorization path with MCP Apps documents, build `context` only for an authorized read, and are audited like tools. Under `hideToolsOutsideScope: true` or `"strict"` a refused read answers as an unknown URI. Not included: templates, subscriptions, completion, pagination and binary bodies. A UI-only integration is answered byte for byte as before. See `docs/resources.md`.
+- The audit `error` field can be `resource_failed` (a resource's `read` threw or returned an invalid shape; its text is never recorded), `rule_denied` (a resource's or skill's `allow` returned anything but `true`) or `rule_failed` (it threw). The caller sees the same unknown-resource answer for both rule outcomes. A host that switches exhaustively on the value should handle them.
+- `docs/mcp-apps.md` gains a comparison with the MCP Apps specification (2026-01-26) and an interoperability table; no MCP Apps host was run, so every host is listed as not tested.
+
+- **Experimental Skills over MCP (additive, opt-in; a minor release).** `skills` on `createMcpHandler` and `createMcpApp` (`@experimental`): text skills with their own `scope` and `allow`, served by `skills/list`, `skills/get` and `resources/read` at `skill://<name>/...`, with the extension `io.modelcontextprotocol/skills` declared. Pinned to `ext-skills` commit `c0705f9`; manifest with `sha256` digests and byte sizes; 512 files and 16 MiB per skill; a hidden skill answers as unknown under `hideToolsOutsideScope`. No host was tested; nested skills, dynamic content and `resources/directory/read` are not included. Without the option every response is as before. See `docs/skills.md`.
+
+### Changed
+
+- The browser preflight answer (`optionsResponse()`, used on the MCP endpoint and the OAuth endpoints) also allows the `Mcp-Method` and `Mcp-Name` request headers. `corsHeaders()` on ordinary responses is unchanged.
+- A `uiResources` URI is now checked at construction like a general resource URI: RFC 3986 ASCII characters, a lowercase scheme, at most 512 characters. A `ui://` URI with a space, a non-ASCII character or more than 512 characters now throws when the handler is created.
+
+### Fixed
+
+- A tool error result whose first text block is not a string no longer ends the request in a 500; it is returned as the tool's result.
+- A failed skill manifest hash is retried on the next call instead of being kept.
+
+### Migration
+
+None required unless a `uiResources` URI breaks the new construction check above. Otherwise existing integrations need no configuration change.
+
+Rollback: every new option defaults to the old behaviour, so a host that never sets them is unaffected; reverting this release restores the previous answers for hosts that did. For resources, remove the `resources` option. For skills, remove the `skills` option.
+
 ## [3.4.0] - 2026-11-24
 
 ### Added

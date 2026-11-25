@@ -17,9 +17,10 @@ describe("clipText", () => {
     const value = `${"a".repeat(4)}😀tail`;
     assert.equal(clipText(value, 5), "aaaa");
     assert.equal(clipText(value, 6), "aaaa😀");
-    for (let max = 1; max < value.length; max += 1) {
-      const clipped = clipText(value, max);
-      assert.doesNotMatch(clipped, /[\ud800-\udbff]$/, `max=${max}`);
-    }
+    const everyMax = Array.from({ length: value.length - 1 }, (_, index) => index + 1);
+    const danglingHighSurrogates = everyMax.filter((max) =>
+      /[\ud800-\udbff]$/.test(clipText(value, max)),
+    );
+    assert.deepEqual(danglingHighSurrogates, []);
   });
 });

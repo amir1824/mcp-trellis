@@ -8,7 +8,7 @@
 import { BodyTooLargeError } from "../http/body.js";
 import { INTERNAL_ERROR } from "../http/http.js";
 import { isAllowedOrigin, type OriginAllowlistOptions } from "../http/origins.js";
-import { JSONRPC_PAYLOAD_TOO_LARGE, rpcError } from "../mcp/jsonrpc.js";
+import { sizeErrorBody } from "../mcp/modern/errors.js";
 import {
   bodyLimitForPath,
   InvalidOriginError,
@@ -145,10 +145,10 @@ const hostDenied = (req: NodeRequestLike, options: AsNodeHandlerOptions | undefi
   return origin !== null && !loopbackHosts(origin).has(host);
 };
 
-const payloadTooLargeBody = (path: string): string =>
+const payloadTooLargeBody = (path: string, req: NodeRequestLike): string =>
   isOAuthPath(path)
     ? JSON.stringify({ error: "request body too large" })
-    : JSON.stringify(rpcError(null, JSONRPC_PAYLOAD_TOO_LARGE, "Payload too large"));
+    : sizeErrorBody(req.headers["mcp-protocol-version"]);
 
 /**
  * Validates that `options` resolves to an origin `asNodeHandler` can trust —
@@ -200,7 +200,7 @@ export const asNodeHandler = (
       await sendWebResponse(res, await mcp.fetch(request));
     } catch (caught) {
       if (caught instanceof BodyTooLargeError) {
-        sendJsonError(res, { status: 413, body: payloadTooLargeBody(path) }, () => {
+        sendJsonError(res, { status: 413, body: payloadTooLargeBody(path, req) }, () => {
           req.destroy?.();
         });
         return;

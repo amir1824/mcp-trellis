@@ -89,11 +89,11 @@ const HOSTILE_URIS: Array<{ uri: string; expected: boolean; note: string }> = [
 ];
 
 describe("redirect allowlist — hostile URI table", () => {
-  for (const { uri, expected, note } of HOSTILE_URIS) {
-    it(`${expected ? "allows" : "rejects"} ${JSON.stringify(uri)} (${note})`, () => {
+  HOSTILE_URIS.forEach(({ uri, expected, note }) => {
+    it(`isAllowedRedirectUri(${JSON.stringify(uri)}) is ${expected} (${note})`, () => {
       assert.equal(isAllowedRedirectUri(uri), expected);
     });
-  }
+  });
 });
 
 describe("redirect allowlist options", () => {

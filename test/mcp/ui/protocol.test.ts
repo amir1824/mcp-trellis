@@ -243,6 +243,17 @@ describe("M8 tool results are checked before they reach the client", () => {
     assert.deepEqual((await callTool(env, "bad_meta", token)).body.result, INVALID);
   });
 
+  it("M8 an error result whose text is not a string is returned as the tool's result, not a 500", async () => {
+    const env = makeEnv({
+      resources: null,
+      tools: [returning("bad_text", { content: [{ type: "text", text: 5 }], isError: true })],
+    });
+    const reply = await callTool(env, "bad_text", TOKENS.alice);
+    assert.equal(reply.status, 200);
+    assert.equal(env.audits[0]?.ok, false);
+    assert.equal(env.audits[0]?.error, undefined);
+  });
+
   it("M8 a non-array content never reaches the client", async () => {
     const env = makeEnv({
       resources: null,

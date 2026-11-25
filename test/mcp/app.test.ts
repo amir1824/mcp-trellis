@@ -29,6 +29,20 @@ const encodeToken = (payload: {
   claims?: Record<string, unknown>;
 }): string => Buffer.from(JSON.stringify(payload)).toString("base64url");
 
+/** Inverse of encodeToken; a malformed token verifies as no principal. */
+const decodeToken = (token: string) =>
+  Promise.resolve(token)
+    .then(
+      (raw) =>
+        JSON.parse(Buffer.from(raw, "base64url").toString("utf8")) as {
+          userId: string;
+          scopes: string[];
+          audience: string;
+          claims?: Record<string, unknown>;
+        },
+    )
+    .catch(() => null);
+
 const makeApp = (
   overrides: Partial<{
     audience: string;
@@ -57,18 +71,7 @@ const makeApp = (
         expiresIn: 3600,
       }),
       // Deliberately does NOT check the audience — the library must.
-      verifyToken: async (token) => {
-        try {
-          return JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as {
-            userId: string;
-            scopes: string[];
-            audience: string;
-            claims?: Record<string, unknown>;
-          };
-        } catch {
-          return null;
-        }
-      },
+      verifyToken: decodeToken,
     },
     context: async (_req, principal) => {
       const tenantId =
@@ -352,6 +355,16 @@ describe("createMcpApp", () => {
   });
 
   it("locks down to pre-registered clients when only gemini is configured", async () => {
+    const GEMINI_CLIENTS = new Map([
+      [
+        "gemini-client",
+        {
+          clientId: "gemini-client",
+          redirectUris: ["https://gemini.test/cb"],
+          tokenEndpointAuthMethod: "client_secret_basic" as const,
+        },
+      ],
+    ]);
     const app = createMcpApp<Ctx>({
       serverInfo: { name: "gemini-only", version: "1.0.0" },
       tools: [echo],
@@ -368,14 +381,7 @@ describe("createMcpApp", () => {
         }),
         verifyToken: async () => null,
         clientStore: {
-          get: async (clientId) =>
-            clientId === "gemini-client"
-              ? {
-                  clientId,
-                  redirectUris: ["https://gemini.test/cb"],
-                  tokenEndpointAuthMethod: "client_secret_basic",
-                }
-              : null,
+          get: async (clientId) => GEMINI_CLIENTS.get(clientId) ?? null,
           verifySecret: async (_id, presented) => presented === "s3cr3t",
         },
       },
@@ -562,17 +568,7 @@ describe("hideToolsOutsideScope", () => {
         resolveUser: async () => ({ id: "u1" }),
         loginUrl: () => "/login",
         mintAccessToken: async () => ({ accessToken: "t", expiresIn: 60 }),
-        verifyToken: async (token) => {
-          try {
-            return JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as {
-              userId: string;
-              scopes: string[];
-              audience: string;
-            };
-          } catch {
-            return null;
-          }
-        },
+        verifyToken: decodeToken,
       },
     });
 

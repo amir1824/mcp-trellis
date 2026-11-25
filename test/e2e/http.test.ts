@@ -35,10 +35,8 @@ const spawnServer = (): Promise<{ origin: string; child: ChildProcess }> =>
     });
 
     let buf = "";
-    let settled = false;
+    // Settling a promise twice is a no-op, so a late exit or chunk needs no "already settled" flag.
     const fail = (reason: string): void => {
-      if (settled) return;
-      settled = true;
       child.kill("SIGTERM");
       reject(new Error(reason));
     };
@@ -52,8 +50,7 @@ const spawnServer = (): Promise<{ origin: string; child: ChildProcess }> =>
       buf += chunk.toString();
       const match = buf.match(READY);
       const origin = match?.[1];
-      if (!origin || settled) return;
-      settled = true;
+      if (!origin) return;
       clearTimeout(timer);
       resolve({ origin, child });
     };

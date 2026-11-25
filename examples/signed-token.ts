@@ -8,14 +8,10 @@
  * the raw `secret` as the HMAC key (two-secret recipe); the library helper
  * derives via HKDF from `codeSecret`. Different threat models, different keys.
  *
- * This exists because an earlier version of these examples encoded the
- * token as plain `base64(JSON.stringify(payload))` — no signature at all.
- * That is not a simplification safe to copy: anyone can hand-craft a
- * base64 blob with any `userId`/`scope`/`resource` they like and `verifyToken`
- * would accept it as genuine, a full authentication bypass. Signing closes
- * that; it does not turn this into something to actually deploy — a real
- * app that must revoke access tokens before they expire should use an opaque server-side store like
- * `examples/project-desk/src/tokens.ts` rather than hand-rolled bearer tokens.
+ * The token is signed: an unsigned `base64(JSON.stringify(payload))` would let anyone
+ * forge any `userId`, `scope` or `resource`. Signing does not make this deployable. An app
+ * that must revoke access tokens before they expire should use an opaque server-side store
+ * like `examples/project-desk/src/tokens.ts`.
  */
 
 import { bytesToBase64Url, fromBase64Url } from "../src/oauth/crypto/base64url.js";

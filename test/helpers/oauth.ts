@@ -10,9 +10,11 @@
  *    different request bodies and exercise different branches.
  */
 
+import assert from "node:assert/strict";
 import type { AuthCodeRecord } from "../../src/oauth/crypto/codes.js";
 import { issueAuthCode } from "../../src/oauth/crypto/codes.js";
 import { randomBase64Url, sha256Base64Url } from "../../src/oauth/crypto/pkce.js";
+import { expectJson } from "./http.js";
 import { asFetch, originOf, type Target } from "./target.js";
 
 export const DEFAULT_CLIENT_ID = "harness-client";
@@ -25,12 +27,10 @@ const applyOverrides = (
   defaults: Record<string, string>,
   overrides: Record<string, string | null | undefined>,
 ): Record<string, string> => {
-  const result = { ...defaults };
-  for (const [key, value] of Object.entries(overrides)) {
-    if (value === null) delete result[key];
-    else if (value !== undefined) result[key] = value;
-  }
-  return result;
+  const present = Object.entries(overrides).filter(([, value]) => value !== undefined);
+  const merged = { ...defaults, ...Object.fromEntries(present) };
+  const kept = Object.entries(merged).filter(([, value]) => value !== null);
+  return Object.fromEntries(kept) as Record<string, string>;
 };
 
 /** A well-formed S256 challenge (RFC 7636 appendix B) for tests that never redeem it. */
@@ -91,16 +91,12 @@ const CONSENT_TICKET_HTML_RE = /name="consent_ticket"\s+value="([^"]+)"/;
 const extractTicket = (body: string, contentType: string): string => {
   if (contentType.includes("application/json")) {
     const parsed = JSON.parse(body) as { consent_ticket?: string };
-    if (!parsed.consent_ticket) {
-      throw new Error("consent JSON body missing consent_ticket");
-    }
+    assert.ok(parsed.consent_ticket, "consent JSON body missing consent_ticket");
     return parsed.consent_ticket;
   }
-  const match = body.match(CONSENT_TICKET_HTML_RE);
-  if (!match?.[1]) {
-    throw new Error('consent HTML missing a well-formed name="consent_ticket" value="..." field');
-  }
-  return match[1];
+  const ticket = body.match(CONSENT_TICKET_HTML_RE)?.[1];
+  assert.ok(ticket, 'consent HTML missing a well-formed name="consent_ticket" value="..." field');
+  return ticket;
 };
 
 /**
@@ -133,9 +129,9 @@ export const approve = async (
 
 const codeFromRedirect = (target: Target, res: Response): string => {
   const location = res.headers.get("location");
-  if (!location) throw new Error(`expected a redirect, got ${res.status}`);
+  assert.ok(location, `expected a redirect, got ${res.status}`);
   const code = new URL(location, originOf(target)).searchParams.get("code");
-  if (!code) throw new Error(`redirect carried no code: ${location}`);
+  assert.ok(code, `redirect carried no code: ${location}`);
   return code;
 };
 
@@ -168,9 +164,7 @@ export const authorizeCode = async (
   while (res.status === 200) {
     res = await approve(target, res, { approved: true }, oauthPath);
   }
-  if (res.status !== 302 && res.status !== 303) {
-    throw new Error(`authorize did not redirect: ${res.status}`);
-  }
+  assert.ok([302, 303].includes(res.status), `authorize did not redirect: ${res.status}`);
   return { code: codeFromRedirect(target, res), verifier, clientId, redirectUri, resource };
 };
 
@@ -227,10 +221,7 @@ export const accessToken = async (
 ): Promise<{ accessToken: string; scope: string; response: Response }> => {
   const session = await authorizeCode(target, authorizeOverrides, oauthPath);
   const res = await redeem(target, session, redeemOverrides, oauthPath);
-  if (res.status !== 200) {
-    throw new Error(`token exchange failed: ${res.status} ${await res.text()}`);
-  }
-  const body = (await res.json()) as { access_token: string; scope: string };
+  const body = await expectJson<{ access_token: string; scope: string }>(res, 200);
   return { accessToken: body.access_token, scope: body.scope, response: res };
 };
 

@@ -1,4 +1,4 @@
-import type { CimdCache } from "./cimd/types.js";
+import type { CimdPorts } from "./cimd/types.js";
 import type { TokenEndpointAuthMethod } from "./constants.js";
 import type { CodeStore } from "./crypto/codes.js";
 import type { RedirectAllowlistOptions } from "./policy/redirect.js";
@@ -272,16 +272,7 @@ export type OAuthRouterOptions = {
    * fetch exists; see `cimd.ts` ponytail.
    */
   cimd?: boolean;
-  /**
-   * CIMD document cache (respects Cache-Control max-age, capped at 1 h).
-   * **Strongly recommended with `cimd: true`:** without it `/token` and
-   * `/revoke` re-fetch the client's document on every call, so a flaky
-   * document host fails refresh/revoke (audited as `cimd_resolve_failed`).
-   */
-  cimdCache?: CimdCache;
-  /** Optional DNS lookup for CIMD SSRF checks — see `CimdFetchOptions.lookup`. */
-  cimdLookup?: (hostname: string) => Promise<string[]>;
-};
+} & CimdPorts;
 
 /**
  * `OAuthRouterOptions` after `createOAuthRouter` has resolved them: paths

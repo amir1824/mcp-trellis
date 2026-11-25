@@ -20,6 +20,9 @@ export const DENIAL_REASONS = {
   unknownResource: "unknown_resource",
   missingScope: "missing_scope",
   invalidParams: "invalid_params",
+  resourceFailed: "resource_failed",
+  ruleDenied: "rule_denied",
+  ruleFailed: "rule_failed",
 } as const;
 
 export const DEFAULT_PUBLIC_METHODS = new Set([

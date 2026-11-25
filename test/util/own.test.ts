@@ -10,9 +10,11 @@ describe("ownValue", () => {
   });
 
   it("never answers from Object.prototype", () => {
-    for (const key of ["constructor", "toString", "hasOwnProperty", "valueOf", "__proto__"]) {
-      assert.equal(ownValue(table, key), undefined, key);
-    }
+    const inherited = ["constructor", "toString", "hasOwnProperty", "valueOf", "__proto__"];
+    assert.deepEqual(
+      inherited.map((key) => ownValue(table, key)),
+      inherited.map(() => undefined),
+    );
   });
 
   it("returns undefined for a missing key", () => {

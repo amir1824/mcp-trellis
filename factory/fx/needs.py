@@ -2,14 +2,34 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from fx import live
 
 TEST_COMMAND = re.compile(r"\b(test|tests|pytest|unittest|jest|vitest|mocha|rspec|phpunit)\b")  # ponytail: a word list, so `make check` reads as no tests; the owner reads the line and decides
 
 
-def lines(route: dict, config: dict) -> list[str]:
-    found = []
+LINTER_FILES = ("biome.json", "biome.jsonc", "eslint.config.*", ".eslintrc*", ".prettierrc*")
+IGNORE_FILES = (".eslintignore", ".prettierignore")
+
+
+def linter_lines(project: Path) -> list[str]:
+    """The gate's first round must not lint the factory's own files: say so when a linter config never mentions `factory`.
+    ponytail: a plain substring search, so a mention anywhere counts as an exclusion, and a linter configured only in package.json is not read; the owner reads the line."""
+    configs = sorted({path for pattern in LINTER_FILES for path in project.glob(pattern) if path.is_file()})
+    if not configs:
+        return []
+    texts = [path.read_text(encoding="utf-8", errors="replace") for path in configs + [project / name for name in IGNORE_FILES if (project / name).is_file()]]
+    return [] if any("factory" in text for text in texts) else [
+        f"{configs[0].name} does not exclude factory/: the gate's first round would lint the factory's own files; exclude factory/ there"]
+
+
+def source_lines(plans: bool, has_source: bool) -> list[str]:
+    return ["no source: the owner's own words are not kept, so the reviewers judge the plan against the task file only (a summary is your reading, not the request); keep the original text before the build: `FX source <id> <file>`"] if plans and not has_source else []
+
+
+def lines(route: dict, config: dict, project: Path, has_source: bool) -> list[str]:
+    found = linter_lines(project) + source_lines(route["plan"], has_source)
     if live.enabled(config):
         _, missing = live.load_secrets(config["live_check"])
         found.append("live check needs secrets that are missing here: " + ", ".join(missing) + " (set them, or the owner waives it)" if missing

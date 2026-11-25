@@ -1,10 +1,8 @@
 # Next.js SaaS starter
 
-Drop-in App Router route that mounts mcp-trellis with `signedTokenAuth`.
-Replace `readSession` in `session.ts` with your real auth (cookie / Auth.js /
-Better Auth) before deploying.
+An App Router route that mounts mcp-trellis with `signedTokenAuth`. It is type-checked, not run in CI, and has no `next` dependency. Replace `readSession` in `session.ts` with your real auth (cookie, Auth.js, Better Auth) before deploying.
 
-## Drop-in path
+## Use it
 
 Copy into a Next.js App Router project:
 
@@ -26,22 +24,16 @@ Set one secret (≥32 characters):
 export MCP_SECRET="$(openssl rand -base64 32)"
 ```
 
-Also mount discovery: either proxy `/.well-known/*` to the same handler, or
-add matching rewrite rules so OAuth metadata reaches Trellis.
+Also route `/.well-known/*` to the same handler (a rewrite or a second route), so OAuth metadata reaches mcp-trellis.
 
 ## Deploy
 
 1. Install `mcp-trellis` in your Next app.
 2. Wire `resolveUser` to your real session (Auth.js, Better Auth, custom cookie).
-3. Replace `allowInMemoryCodeStore` with a shared `codeStore` (Redis / KV) —
-   see [`examples/stores.ts`](../stores.ts).
-4. Deploy behind HTTPS. Point Claude / ChatGPT at `https://YOUR_HOST/mcp`.
-5. Ensure `/.well-known/oauth-authorization-server` and
-   `/.well-known/oauth-protected-resource/mcp` reach the same process.
+3. Replace `allowInMemoryCodeStore` with a shared `codeStore` (see [`stores.ts`](../stores.ts)).
+4. Deploy behind HTTPS and add `https://YOUR_HOST/mcp` as a connector in Claude or ChatGPT.
+5. Check that `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource/mcp` reach the same app.
 
-## What this is / isn't
+## Scope
 
-- Shows the integration shape: one catch-all route + one secret + your session.
-- Not a full Next app (no `package.json`, no login UI). For the full fictional
-  SaaS with Alice/Bob and consent walkthrough, use
-  [`examples/project-desk`](../project-desk/) ([local docs](../saas-demo/)).
+It shows the shape: one catch-all route, one secret, your session. It has no `package.json` and no login UI. For a full walkthrough with Alice, Bob and consent, use [`project-desk`](../project-desk/) ([local docs](../saas-demo/README.md)).

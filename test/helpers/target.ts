@@ -6,6 +6,8 @@
  * which is exactly why the e2e file duplicates ~30 assertion blocks today.
  */
 
+import assert from "node:assert/strict";
+
 export type Target =
   | { fetch: (request: Request) => Promise<Response> }
   | { tryHandle: (request: Request) => Promise<Response | null> }
@@ -22,9 +24,7 @@ export const asFetch = (target: Target): ((request: Request) => Promise<Response
   if ("tryHandle" in target) {
     return async (request) => {
       const res = await target.tryHandle(request);
-      if (res === null) {
-        throw new Error(`router did not claim ${new URL(request.url).pathname}`);
-      }
+      assert.ok(res, `router did not claim ${new URL(request.url).pathname}`);
       return res;
     };
   }

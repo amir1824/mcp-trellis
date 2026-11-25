@@ -28,9 +28,12 @@ const tokenRequest = (body: Record<string, string>, auth?: string) =>
 describe("OAuth audit hook — client_auth_failed", () => {
   const gemini: ClientStore = {
     get: async (clientId) =>
-      clientId === "gemini-client"
-        ? { clientId, redirectUris: [], tokenEndpointAuthMethod: "client_secret_basic" }
-        : null,
+      new Map([
+        [
+          "gemini-client",
+          { clientId, redirectUris: [], tokenEndpointAuthMethod: "client_secret_basic" as const },
+        ],
+      ]).get(clientId) ?? null,
     verifySecret: async (_id, presented) => presented === "the-real-secret",
   };
 
@@ -125,7 +128,7 @@ describe("OAuth audit hook — client_auth_failed", () => {
     const store: ClientStore = {
       get: gemini.get,
       secretHash: async (clientId) =>
-        clientId === "has-hash" ? "hmac-sha256$doesnotmatter" : null,
+        new Map([["has-hash", "hmac-sha256$doesnotmatter"]]).get(clientId) ?? null,
     };
 
     const noHashEntries: OAuthAuditEntry[] = [];

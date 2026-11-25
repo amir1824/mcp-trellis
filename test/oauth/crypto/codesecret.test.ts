@@ -11,6 +11,25 @@ import { DEFAULT_ORIGIN } from "../../helpers/target.js";
 const ORIGIN = DEFAULT_ORIGIN;
 const RESOURCE = `${ORIGIN}/mcp`;
 const VALID_SECRET = "a-perfectly-fine-code-secret-32-chars-plus!!";
+const SHORT_PLACEHOLDERS = ["e2e-code-secret-value", "change-me", "test-secret-value"];
+const DO_NOT_REUSE_SECRETS = [
+  "example-http-server-code-secret-do-not-reuse",
+  "example-multi-tenant-code-secret-do-not-reuse",
+  "example-express-code-secret-do-not-reuse!!!!!!",
+  "example-nextjs-route-code-secret-do-not-reuse!!",
+  "my-edited-copy-of-an-example-secret-do-not-reuse-123",
+];
+const constructionPort = (codeSecret: string) => () =>
+  createOAuthRouter({ ports: stubPorts({ codeSecret }) });
+// The construction error message, or "" when the secret was accepted (which no expected pattern matches).
+const constructionError = (codeSecret: string): string => {
+  try {
+    constructionPort(codeSecret)();
+    return "";
+  } catch (error) {
+    return String(error);
+  }
+};
 
 describe("codeSecret validation — string form (construction-time)", () => {
   it("throws for a secret under 32 characters, naming the length and the fix", () => {
@@ -20,30 +39,16 @@ describe("codeSecret validation — string form (construction-time)", () => {
     );
   });
 
-  it("rejects short published placeholders on the length rule", () => {
-    for (const literal of ["e2e-code-secret-value", "change-me", "test-secret-value"]) {
-      assert.throws(
-        () => createOAuthRouter({ ports: stubPorts({ codeSecret: literal }) }),
-        /at least 32 characters/,
-        `expected construction to reject the literal ${JSON.stringify(literal)}`,
-      );
-    }
+  SHORT_PLACEHOLDERS.forEach((literal) => {
+    it(`rejects the short published placeholder ${JSON.stringify(literal)} on the length rule`, () => {
+      assert.throws(constructionPort(literal), /at least 32 characters/);
+    });
   });
 
-  it("rejects any secret carrying the do-not-reuse example marker", () => {
-    for (const literal of [
-      "example-http-server-code-secret-do-not-reuse",
-      "example-multi-tenant-code-secret-do-not-reuse",
-      "example-express-code-secret-do-not-reuse!!!!!!",
-      "example-nextjs-route-code-secret-do-not-reuse!!",
-      "my-edited-copy-of-an-example-secret-do-not-reuse-123",
-    ]) {
-      assert.throws(
-        () => createOAuthRouter({ ports: stubPorts({ codeSecret: literal }) }),
-        /published in this package's own docs or examples/,
-        `expected construction to reject the literal ${JSON.stringify(literal)}`,
-      );
-    }
+  DO_NOT_REUSE_SECRETS.forEach((literal) => {
+    it(`rejects the do-not-reuse example secret ${JSON.stringify(literal)}`, () => {
+      assert.throws(constructionPort(literal), /published in this package's own docs or examples/);
+    });
   });
 
   it("rejects every codeSecret literal published in examples/, README.md, or docs/", () => {
@@ -60,15 +65,16 @@ describe("codeSecret validation — string form (construction-time)", () => {
         .map((f) => join("docs", f)),
     ];
     const LITERAL = /(?:codeSecret|CODE_SECRET)\s*[:=]\s*["'`]([^"'`$]+)["'`]/g;
-    for (const file of files) {
-      for (const [, literal] of readFileSync(join(root, file), "utf8").matchAll(LITERAL)) {
-        assert.throws(
-          () => createOAuthRouter({ ports: stubPorts({ codeSecret: literal ?? "" }) }),
-          /published in this package's own docs or examples|at least 32 characters/,
-          `${file} publishes codeSecret ${JSON.stringify(literal)} that the library accepts`,
-        );
-      }
-    }
+    const rejection = /published in this package's own docs or examples|at least 32 characters/;
+    const accepted = files
+      .flatMap((file) =>
+        [...readFileSync(join(root, file), "utf8").matchAll(LITERAL)].map(([, literal]) => ({
+          file,
+          literal: literal ?? "",
+        })),
+      )
+      .filter(({ literal }) => !rejection.test(constructionError(literal)));
+    assert.deepEqual(accepted, [], "published codeSecret literals the library accepts");
   });
 
   it("accepts a 32+ character secret that isn't denylisted", () => {

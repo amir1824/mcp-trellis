@@ -114,14 +114,10 @@ describe("readOAuthBody content type", () => {
       body,
     });
 
-  it("parses JSON only for the application/json media type, ignoring parameters and case", async () => {
-    for (const type of [
-      "application/json",
-      "application/json; charset=utf-8",
-      "Application/JSON",
-    ]) {
-      assert.deepEqual(await readOAuthBody(post(type, '{"a":"1"}')), { a: "1" }, type);
-    }
+  ["application/json", "application/json; charset=utf-8", "Application/JSON"].forEach((type) => {
+    it(`parses JSON for the application/json media type, ignoring parameters and case: ${type}`, async () => {
+      assert.deepEqual(await readOAuthBody(post(type, '{"a":"1"}')), { a: "1" });
+    });
   });
 
   it("does not take a text/plain body for JSON because a parameter mentions it", async () => {
@@ -169,6 +165,6 @@ describe("OAuth audit entries", () => {
       }),
     );
     assert.ok(entries.length > 0);
-    for (const entry of entries) assert.ok((entry.clientId?.length ?? 0) <= 513);
+    assert.ok(entries.every((entry) => (entry.clientId?.length ?? 0) <= 513));
   });
 });

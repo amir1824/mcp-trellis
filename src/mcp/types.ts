@@ -1,7 +1,8 @@
 import type { WwwAuthenticateOptions } from "../auth/bearer.js";
 import type { JsonRpcId, JsonRpcRequest } from "./jsonrpc.js";
 import type { ToolRegistry } from "./registry.js";
-import type { UiRegistry } from "./ui/registry.js";
+import type { ResourceCatalog, ResourceDef } from "./resources/types.js";
+import type { SkillDef, SkillIndex } from "./skills/types.js";
 import type { UiResource } from "./ui/types.js";
 
 export type Principal = {
@@ -21,7 +22,7 @@ export type AuditEntry = {
   /** JSON-RPC method, or `""` for transport-level rejections made before parsing. */
   method: string;
   tool?: string | undefined;
-  /** The `ui://` URI of a `resources/read`, clipped like a tool name. */
+  /** The URI of a `resources/read`, clipped like a tool name. */
   resource?: string | undefined;
   principalId?: string | undefined;
   ok: boolean;
@@ -33,8 +34,9 @@ export type McpPorts<TCtx> = {
   authenticate: (req: Request, method: string, tool?: string) => Promise<Principal | null>;
   /**
    * Builds the tool context. Called only for a `tools/call` that passed the
-   * unknown-tool and scope checks — never for `initialize`, `ping` or
-   * `tools/list`. `principal` is null only when a host adds `tools/call`
+   * unknown-tool and scope checks, or a general `resources/read` that passed
+   * every access check — never for `initialize`, `ping`, `tools/list`,
+   * `resources/list` or a `ui://` read. `principal` is null only when a host adds `tools/call`
    * to `publicMethods`.
    */
   context: (req: Request, principal: Principal | null) => TCtx | Promise<TCtx>;
@@ -88,8 +90,12 @@ export type McpHandlerOptions<TCtx> = {
    * for a scope it doesn't hold — only worth it if listing a tool at all
    * would leak something (its name, description, or schema) you don't want
    * a lesser-scoped principal to see.
+   *
+   * `"strict"` hides the same way and also answers a `tools/call` for such a tool as an unknown
+   * tool (JSON-RPC -32602), not 403, so a caller cannot tell a hidden tool from a missing one.
+   * The denial is still audited as `missing_scope`.
    */
-  hideToolsOutsideScope?: boolean;
+  hideToolsOutsideScope?: boolean | "strict";
   /**
    * MCP Apps: the UI documents tools point at with `ToolDef.ui`. Setting it
    * (or any tool `ui`) adds `resources/list` + `resources/read` and the
@@ -98,14 +104,33 @@ export type McpHandlerOptions<TCtx> = {
    * references it. See `docs/mcp-apps.md`.
    */
   uiResources?: UiResource[];
+  /**
+   * General resources: fixed URIs served by `resources/list` and `resources/read` next to any `uiResources`.
+   * A resource is listed and read only by a principal its `scope` and `allow` admit, and its `read` runs
+   * once per authorized read, never for a list. See `docs/resources.md`.
+   */
+  resources?: ResourceDef<TCtx>[];
+  /**
+   * @experimental Skills over MCP (`io.modelcontextprotocol/skills`): text skills served by `skills/list`,
+   * `skills/get` and `resources/read` at `skill://<name>/...`, each gated by its own `scope` and `allow`.
+   * Off unless set: without it every response is as before. A skill is data and is never run. See `docs/skills.md`.
+   */
+  skills?: SkillDef[];
 };
 
 /** `McpHandlerOptions` after `createMcpHandler` resolved its defaults. */
 export type ResolvedMcpHandlerOptions<TCtx> = McpHandlerOptions<TCtx> & {
   publicMethods: Set<string>;
-  /** Built and validated once by `createMcpHandler`; `undefined` when the server has no UI. */
-  uiRegistry?: UiRegistry | undefined;
+  /** What a request that carries the 2026-07-28 header may call without authentication. */
+  modernPublicMethods: Set<string>;
+  /** Built and validated once by `createMcpHandler`; `undefined` when the server has no resources at all. */
+  resourceCatalog?: ResourceCatalog<TCtx> | undefined;
+  /** Built and validated once by `createMcpHandler`; `undefined` when no skill is registered. */
+  skillIndex?: SkillIndex | undefined;
 };
+
+/** Wraps a method's success result in its JSON-RPC response; errors never pass through it. */
+export type ResultWriter = (id: JsonRpcId, result: object) => Response;
 
 export type RpcMethodHandler<TCtx> = (input: {
   req: Request;
@@ -115,4 +140,6 @@ export type RpcMethodHandler<TCtx> = (input: {
   options: ResolvedMcpHandlerOptions<TCtx>;
   /** Request start, for denial-path audit timing — see `dispatchRpc`. */
   startedAt: number;
+  /** Writes a success result: plain for older protocol versions, with 2026-07-28 fields otherwise. */
+  respond: ResultWriter;
 }) => Promise<Response>;

@@ -21,10 +21,9 @@ const authorizeUrl = (overrides: Record<string, string | undefined> = {}): URL =
     resource: RESOURCE,
     ...overrides,
   };
-  for (const [key, value] of Object.entries(params)) {
-    if (value === undefined) continue;
-    url.searchParams.set(key, value);
-  }
+  url.search = new URLSearchParams(
+    Object.entries(params).filter(([, value]) => value !== undefined),
+  ).toString();
   return url;
 };
 
@@ -75,17 +74,14 @@ describe("authorize error delivery — RFC 6749 §4.1.2.1", () => {
       expectOAuthRedirectError(res, "invalid_request");
     });
 
-    it("malformed code_challenge (42 chars / non-base64url) → invalid_request, redirected", async () => {
-      for (const challenge of [
-        VALID_S256_CHALLENGE.slice(1),
-        `${VALID_S256_CHALLENGE.slice(1)}=`,
-      ]) {
+    [VALID_S256_CHALLENGE.slice(1), `${VALID_S256_CHALLENGE.slice(1)}=`].forEach((challenge) => {
+      it(`malformed code_challenge (42 chars / non-base64url) ${challenge} → invalid_request, redirected`, async () => {
         const res = await router().tryHandle(
           new Request(authorizeUrl({ code_challenge: challenge })),
         );
         assert.ok(res);
         expectOAuthRedirectError(res, "invalid_request");
-      }
+      });
     });
 
     it("missing code_challenge → invalid_request, redirected", async () => {

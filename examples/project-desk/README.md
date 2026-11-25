@@ -1,16 +1,12 @@
 # Project desk — reference MCP server (mcp-trellis)
 
-**Built with [mcp-trellis](https://www.npmjs.com/package/mcp-trellis).** This is a
-fictional SaaS demo (Alice / Bob + projects), not a production identity
-provider. The Official MCP Registry lists this **reference remote server** —
-not the SDK package itself.
+A fictional SaaS demo (Alice, Bob and their projects) built with [mcp-trellis](https://www.npmjs.com/package/mcp-trellis). It is not an identity provider. The Official MCP Registry entry is for this reference server, not for the SDK.
 
 | | |
 |---|---|
 | Registry name | `io.github.amir1824/project-desk` |
 | npm (self-host) | `mcp-trellis-project-desk` |
 | Transport | Streamable HTTP (`/mcp`) + OAuth |
-| SDK | [mcp-trellis](https://www.npmjs.com/package/mcp-trellis) |
 
 ## Hosted demo (Registry remotes)
 
@@ -20,13 +16,11 @@ After deploy (see [PUBLISH.md](PUBLISH.md)):
 - Demo accounts: **alice** or **bob**
 - Demo password (public, fictional data only): **`project-desk-demo`**
 
-Connect a remote MCP client to that URL, sign in, approve consent, then ask to
-list your projects. Alice sees Customer portal + Billing migration; Bob sees
-Internal analytics.
+Add that URL as a connector, sign in, approve consent, then ask for your projects. Alice sees Customer portal and Billing migration; Bob sees Internal analytics.
 
 ## Self-host (Node)
 
-From npm (after publish — see [PUBLISH.md](PUBLISH.md)):
+From npm (see [PUBLISH.md](PUBLISH.md)):
 
 ```bash
 npm install -g mcp-trellis-project-desk   # or npx
@@ -40,8 +34,7 @@ mcp-trellis-project-desk
 Open `http://127.0.0.1:8787`. Put the process behind trusted HTTPS and set
 `PUBLIC_ORIGIN` to that exact origin before connecting a real client.
 
-npm metadata for the companion package lives in [`package.npm.json`](package.npm.json)
-(not a nested `package.json`, so the monorepo can still self-import `mcp-trellis`).
+The npm metadata is in [`package.npm.json`](package.npm.json), not a nested `package.json`, so this repo can still import `mcp-trellis`.
 
 ## From this repo
 
@@ -57,10 +50,6 @@ E2E: `npx tsx --test test/e2e/saas-demo.test.ts`
 
 ## What this proves
 
-App login → OAuth consent → access token → `list_my_projects` scoped to the
-token owner. mcp-trellis supplies discovery, registration, PKCE, consent, code
-exchange and authenticated tool dispatch. Your real product keeps its own
-session, token store and data permissions.
+App login, OAuth consent, access token, then `list_my_projects` scoped to the token owner. mcp-trellis supplies discovery, registration, PKCE, consent, code exchange and tool dispatch. Your product keeps its own session, token store and data permissions.
 
-In-memory maps only — restarting clears sessions and tokens. Do not copy this
-login into production.
+Sessions and tokens live in memory and are lost on restart. Do not copy this login into production.

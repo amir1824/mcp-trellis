@@ -10,7 +10,9 @@ const chunkedRequest = (chunks: string[]): Request =>
     duplex: "half",
     body: new ReadableStream<Uint8Array>({
       start(controller) {
-        for (const chunk of chunks) controller.enqueue(new TextEncoder().encode(chunk));
+        chunks.forEach((chunk) => {
+          controller.enqueue(new TextEncoder().encode(chunk));
+        });
         controller.close();
       },
     }),
@@ -51,7 +53,7 @@ describe("readBoundedText", () => {
 
 describe("readBoundedNodeBody", () => {
   const asyncChunks = async function* (chunks: string[]) {
-    for (const chunk of chunks) yield chunk;
+    yield* chunks;
   };
 
   it("concatenates chunks within the cap", async () => {
@@ -109,12 +111,12 @@ describe("readBoundedNodeBody", () => {
     };
 
     const pending = readBoundedNodeBody(stream, 15);
-    for (const listener of listeners.data ?? []) {
-      (listener as (chunk: string) => void)("a".repeat(10));
-    }
-    for (const listener of listeners.data ?? []) {
-      (listener as (chunk: string) => void)("b".repeat(10));
-    }
+    const emit = (chunk: string) =>
+      (listeners.data ?? []).forEach((listener) => {
+        (listener as (chunk: string) => void)(chunk);
+      });
+    emit("a".repeat(10));
+    emit("b".repeat(10));
     await assert.rejects(pending, BodyTooLargeError);
     assert.equal(paused, true);
     assert.equal((listeners.data ?? []).length, 0);

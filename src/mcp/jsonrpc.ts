@@ -21,7 +21,7 @@ export type JsonRpcSuccess = {
 export type JsonRpcFailure = {
   jsonrpc: "2.0";
   id: JsonRpcId;
-  error: { code: number; message: string };
+  error: { code: number; message: string; data?: unknown };
 };
 
 export type JsonRpcResponse = JsonRpcSuccess | JsonRpcFailure;

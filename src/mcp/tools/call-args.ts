@@ -9,7 +9,13 @@ import {
   type JsonRpcRequest,
   rpcError,
 } from "../jsonrpc.js";
-import { DENIAL_REASONS, safeAudit } from "../request-policy.js";
+import {
+  DENIAL_REASONS,
+  insufficientScope,
+  resolveWwwAuthenticate,
+  safeAudit,
+  unauthorized,
+} from "../request-policy.js";
 import type { AuditEntry, McpHandlerOptions, Principal } from "../types.js";
 
 /** The one shape every "tools/call" outcome — unknown tool, missing scope, or a real call — audits. */
@@ -74,4 +80,53 @@ export const invalidArgumentsResponse = async <TCtx>(
   return jsonResponse({
     data: rpcError(input.id, JSONRPC_INVALID_PARAMS, INVALID_ARGUMENTS_MESSAGE),
   });
+};
+
+const unknownToolBody = (input: ToolCallDenialInput): Response =>
+  jsonResponse({
+    data: rpcError(input.id, JSONRPC_INVALID_PARAMS, `Unknown tool: ${shownName(input.name)}`),
+  });
+
+/**
+ * A name that doesn't refer to any registered tool is a malformed request,
+ * not a tool execution outcome — MCP distinguishes protocol errors (a
+ * standard JSON-RPC error response) from a tool's own isError: true result,
+ * and "no such tool" belongs to the former. `ToolRegistry.call`'s own
+ * "Unknown tool: …" text-result fallback stays as is for direct callers of
+ * that API outside this dispatch.
+ */
+export const unknownToolResponse = async <TCtx>(
+  options: McpHandlerOptions<TCtx>,
+  input: ToolCallDenialInput,
+): Promise<Response> => {
+  await auditToolCall(options, {
+    ...input,
+    tool: shownName(input.name),
+    ok: false,
+    error: DENIAL_REASONS.unknownTool,
+  });
+  return unknownToolBody(input);
+};
+
+export const missingScopeResponse = async <TCtx>(
+  req: Request,
+  options: McpHandlerOptions<TCtx>,
+  input: ToolCallDenialInput & { scope: string },
+): Promise<Response> => {
+  await auditToolCall(options, {
+    ...input,
+    tool: input.name,
+    ok: false,
+    error: DENIAL_REASONS.missingScope,
+  });
+  // `"strict"`: a tool the caller may not use answers exactly like a tool that does not exist.
+  if (input.principal && options.hideToolsOutsideScope === "strict") return unknownToolBody(input);
+  const wwwAuthenticate = resolveWwwAuthenticate(options, req);
+  // No principal at all (only reachable when a host adds "tools/call" to
+  // `publicMethods`) → 401, nothing was presented to authenticate with.
+  // A principal that authenticated but lacks the tool's scope → 403
+  // insufficient_scope (RFC 6750 §3.1) — see `insufficientScope`'s doc.
+  return input.principal
+    ? insufficientScope(wwwAuthenticate, input.scope, input.id)
+    : unauthorized(wwwAuthenticate, `Missing scope: ${input.scope}`, input.id);
 };

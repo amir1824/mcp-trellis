@@ -1,12 +1,9 @@
 # Guide
 
-Practical deep dive: architecture, host recipes, ports, tools, and multi-tenant
-connectors. For a working minimal server, start from the [README](../README.md).
-The **canonical example** is [`examples/project-desk`](../examples/project-desk/)
-(Project desk: login → consent → user-scoped tools; local docs in
-[`examples/saas-demo`](../examples/saas-demo/)). API tables and exports live
-in [reference.md](reference.md). Security guarantees and threat model:
-[security.md](security.md).
+Architecture, clients, ports, consent, tools and multi-tenant setup. For a working
+minimal server, start from the [README](../README.md); the reference example is
+[`examples/project-desk`](../examples/project-desk/). Options, routes and exports:
+[reference.md](reference.md). Guarantees and threat model: [security.md](security.md).
 
 [Architecture](#how-it-fits-together) · [Clients](#clients) · [Recipes](#recipes) ·
 [Compose the primitives](#advanced-compose-the-primitives) ·
@@ -15,8 +12,7 @@ in [reference.md](reference.md). Security guarantees and threat model:
 
 ## How it fits together
 
-What `createMcpApp` wires for you — two pieces, one deciding which requests go
-to the other:
+`createMcpApp` wires two pieces and routes each request to one of them:
 
 ![Architecture: connector → edge → OAuth or MCP → your ports](diagrams/architecture.svg)
 
@@ -24,14 +20,14 @@ Typical first-connection path:
 
 ![Sequence: OAuth authorize and token, then MCP tool call](diagrams/first-connection.svg)
 
-You only touch this routing directly if you skip `createMcpApp` — see
+You touch this routing only if you skip `createMcpApp`: see
 [Advanced: compose the primitives](#advanced-compose-the-primitives).
 
 ## Clients
 
-Name the connector clients you serve; the AS is configured to match. Each name is a
-compatibility preset (callback URIs and token-endpoint auth methods), not an allowlist:
-see [Locking down who can register](#locking-down-who-can-register).
+Name the connector clients you serve. Each name is a preset (callback URIs and
+token-endpoint auth methods), not an allowlist: see
+[Locking down who can register](#locking-down-who-can-register).
 
 | Client | Registration | Token endpoint auth | Notes |
 |--------|--------------|---------------------|-------|
@@ -78,31 +74,30 @@ are accepted as written.
 
 ## Recipes
 
-### Cloudflare Worker, Next.js, Deno, Bun
-
-`createMcpApp` returns a plain `fetch`, so the same object mounts everywhere:
+`createMcpApp` returns an object with a plain `fetch(Request)`, so it mounts anywhere:
 
 ```ts
-// Worker
+// Cloudflare Worker
 export default { fetch: (req: Request, env: Env) => buildApp(env).fetch(req) };
 
-// Next.js App Router — see examples/nextjs-saas/
+// Next.js App Router: see examples/nextjs-saas/
 export const GET = (req: Request) => app.fetch(req);
 export const POST = (req: Request) => app.fetch(req);
 export const OPTIONS = (req: Request) => app.fetch(req);
 
-// Node / Express / Cloud Run
+// Node: http.createServer, Express, Cloud Run
 import { asNodeHandler } from "mcp-trellis/node";
 export const mcp = asNodeHandler(app, { origin: process.env.MCP_PUBLIC_ORIGIN! });
 ```
 
-The Node bridge reads the request stream when `req.body` is absent, so raw
-`http.createServer` works without a body-parser. Runnable recipe:
-[`examples/http-server.ts`](../examples/http-server.ts).
+Also route `/.well-known/*` and `/mcp/oauth/*` to the same app. The Node bridge reads
+the request stream when `req.body` is absent, so raw `http.createServer` needs no body parser.
+Runnable: [`examples/http-server.ts`](../examples/http-server.ts) (set `MCP_SECRET`, for
+example from `openssl rand -base64 32`, then `npx tsx examples/http-server.ts`).
 
 ## Advanced: compose the primitives
 
-Skip `createMcpApp` when you want to own the routing. Same behavior, more wiring:
+Skip `createMcpApp` to own the routing. In a Next.js route, call `oauth.tryHandle(req)` first and then `handler.fetch(req)`, as below.
 
 ```ts
 import { createMcpHandler, createToolRegistry, parseBearer } from "mcp-trellis";
@@ -167,42 +162,9 @@ export default {
 };
 ```
 
-### Next.js App Router
-
-Delegate Web `Request` straight through — same handler as above:
-
-```ts
-// app/mcp/route.ts
-import { handler, oauth } from "@/lib/mcp"; // your shared setup
-
-export async function GET(req: Request) {
-  const oauthResponse = await oauth.tryHandle(req);
-  if (oauthResponse) return oauthResponse;
-  return handler.fetch(req);
-}
-
-export async function POST(req: Request) {
-  const oauthResponse = await oauth.tryHandle(req);
-  if (oauthResponse) return oauthResponse;
-  return handler.fetch(req);
-}
-
-export async function OPTIONS() {
-  return handler.fetch(new Request("https://local/mcp", { method: "OPTIONS" }));
-}
-```
-
-Also mount `.well-known/*` and `/mcp/oauth/*` the same way (or route everything through one catch-all that calls `oauth.tryHandle` first).
-
-### Node HTTP `(req, res)`
-
-Express, Cloud Functions, Cloud Run, `http.createServer` — bridge with
-`asNodeHandler`. Runnable recipe: [`examples/http-server.ts`](../examples/http-server.ts)
-(set `MCP_SECRET`, e.g. from `openssl rand -base64 32`, then `npx tsx examples/http-server.ts`).
-
 ## Ports — what you implement
 
-The library stays protocol-shaped. Your app plugs in the seams:
+Your app plugs into these seams:
 
 ![Ports: library calls into your authenticate, context, resolveUser, mintAccessToken](diagrams/ports.svg)
 
@@ -219,11 +181,10 @@ below is the advanced port surface when you outgrow the helper.
 | `clientStore?` | Pre-registered clients; required for confidential clients like Gemini |
 | `refreshAccessToken?` | If set, metadata advertises `refresh_token`. Receives `resource` and optional reduced `scope` — **MUST reject tokens not originally issued for that resource, and any `scope` outside the originally granted set** (see [security.md](security.md)). Return `null` to refuse an unknown or mismatched token. Throw `AccessDeniedError` only after the token is verified and bound to this client and resource, and before you rotate it; both answer `400 invalid_grant` |
 | `revokeToken?` | RFC 7009; presence mounts `/revoke` and advertises `revocation_endpoint` |
+| `context?`, `audit?` | `context` defaults to `{}`. `audit` is a **unified** sink for MCP and OAuth (`entry.source` is `"mcp"` or `"oauth"`). `auth.audit` overrides OAuth delivery when both are set |
 
-`consent?` (approval-page policy — see [Consent](#consent), below) and
-`defaultScopes?` sit as top-level `McpAppOptions`, not under `auth` — they
-are policy, not credentials, the same reasoning as `allowLoopback`.
-| `context?`, `audit?` | `context` defaults to `{}`. Top-level `audit` is a **unified** sink for MCP and OAuth (`entry.source` is `"mcp"` or `"oauth"`). `auth.audit` overrides OAuth delivery when both are set |
+`context`, `audit`, `consent` ([Consent](#consent)) and `defaultScopes` are top-level `createMcpApp` options, not under `auth`: they are policy, not credentials.
+
 
 ### MCP (`createMcpHandler`)
 
@@ -274,7 +235,7 @@ are not escaped, so escape or parameterize them for your sink.
 
 `wwwAuthenticate` can be a static object or `(req) => …` when the PRM URL depends on origin.
 
-By default `initialize`, `ping`, and notifications are public. Override `publicMethods` if every method must require Bearer.
+By default `initialize`, `ping`, and notifications are public. Override `publicMethods` if every method must require Bearer. A 2026-07-28 request is anonymous only for `server/discover` unless you list more.
 
 **Browser `Origin`.** MCP Streamable HTTP expects servers to validate the
 request `Origin` header. Pass `allowedRequestOrigins` on `createMcpHandler` /
@@ -286,7 +247,7 @@ This is separate from Node Host `allowedOrigins` on `asNodeHandler`.
 
 | Port | Role |
 |------|------|
-| `codeSecret` | Secret(s) sealing auth codes, consent tickets, and DCR client assertions, and keying `secretHash` (string, `string[]`, or `(req) => string \| string[]`). A single string works as before; pass an array to rotate keys — see [security.md](security.md#rotating-codesecret) |
+| `codeSecret` | Secret(s) sealing auth codes, consent tickets, and DCR client assertions, and keying `secretHash` (string, `string[]`, or `(req) => string \| string[]`). Pass an array to rotate keys — see [security.md](security.md#rotating-codesecret) |
 | `resolveUser` | Consenting user, or `null` → redirect to `loginUrl` |
 | `loginUrl` | Where unauthenticated authorize requests go |
 | `mintAccessToken` | Issue a **user-bound**, **audience-bound** access token (`resource` is the RFC 8707 URI) — never a shared god token. To refuse a user on purpose (not a tenant member, say), throw `AccessDeniedError`: the client gets `400 invalid_grant` and your message goes to `audit` only. Any other throw is a `500` |
@@ -305,11 +266,11 @@ const stored = await hashClientSecret(theSecretYouGenerated, codeSecretValue);
 // clientStore.secretHash(clientId) at verify time.
 ```
 
-Auth codes carry `userId`, `resource`, and the granted `scope`. Clients **must** send `resource` on authorize and token (MCP MUST) — omitting it is a **breaking** requirement vs earlier 0.1.x drafts that ignored the parameter. Advertised grants come only from the handlers you configure. AS metadata sets `resource_parameter_supported: true`.
+Auth codes carry `userId`, `resource`, and the granted `scope`. Clients **must** send `resource` on authorize and token (MCP MUST). Advertised grants come only from the handlers you configure. AS metadata sets `resource_parameter_supported: true`.
 
 **Scope is negotiated:** `authorize` validates the requested `scope` against `scopes` (default `["mcp"]`) and rejects anything outside it with `invalid_scope`. An omitted `scope` grants `defaultScopes` — which defaults to the full advertised set **only when `scopes` has a single entry**. Once `scopes` names more than one, `createOAuthRouter` throws at construction unless you set `defaultScopes` explicitly: silently granting everything advertised to a client that asked for nothing is exactly the escalation least-privilege scoping exists to prevent. The auth code carries the grant, and `mintAccessToken` receives it — so `ToolDef.scope` and `principal.scopes` sit on a chain that actually reaches the OAuth layer.
 
-**Client authentication:** unknown `client_id`s are public (PKCE only) unless `allowUnregisteredClients` is `false` — then DCR is unmounted, dropped from metadata, and unrecognized ids are rejected (`unauthorized_client` at authorize, `invalid_client` at token and revoke). `createMcpApp` derives the flag from `clients` via `hasDynamicClient`. Separately, `requireRegisteredClients` (default **true** since 1.0) keeps DCR mounted but rejects any `client_id` that isn't `clientStore`-resolved or a sealed id this server itself issued via `/register` — see [security.md](security.md). Set `requireRegisteredClients: false` only when you intentionally accept invented public ids.
+**Client authentication:** unknown `client_id`s are public (PKCE only) unless `allowUnregisteredClients` is `false` — then DCR is unmounted, dropped from metadata, and unrecognized ids are rejected (`unauthorized_client` at authorize, `invalid_client` at token and revoke). `createMcpApp` derives the flag from `clients` via `hasDynamicClient`. Separately, `requireRegisteredClients` (default **true**) keeps DCR mounted but rejects any `client_id` that isn't `clientStore`-resolved or a sealed id this server itself issued via `/register` — see [security.md](security.md). Set `requireRegisteredClients: false` only when you intentionally accept invented public ids.
 
 ### Consent
 
@@ -379,7 +340,7 @@ createToolRegistry(tools) // validateArgs defaults to true; pass { validateArgs:
   outside that dispatch.
 - Thrown exceptions are **redacted** by default (`"Tool execution failed"`); pass `onToolError` to map them. An `onToolError` that itself throws or returns a non-string falls back to the redacted default
 - Duplicate tool names throw at registry construction
-- Turn `validateArgs: true` once clients send schema-valid args. The evaluated
+- `validateArgs` is on by default (`createToolRegistry` and `createMcpApp`). The evaluated
   subset is `type`, `enum`, `required`, `properties`, `items`, `minimum`,
   `maximum`, and boolean `additionalProperties`. Pure metadata (`description`, `title`, `$schema`, `$id`,
   `$comment`, `default`, `examples`, `deprecated`, `readOnly`, `writeOnly`,
@@ -387,6 +348,12 @@ createToolRegistry(tools) // validateArgs defaults to true; pass { validateArgs:
   evaluated — and with `validateArgs: true` `createToolRegistry` throws at
   construction so a schema like `pattern` or a schema-valued
   `additionalProperties` cannot silently look enforced
+
+### Hiding tools, and other opt-ins
+
+- `hideToolsOutsideScope: true` lists only tools the caller's scopes allow. `"strict"` also answers a `tools/call` for a hidden tool as an unknown tool (`-32602`) instead of `403`.
+- `uiResources` attaches an HTML view to a tool: [mcp-apps.md](mcp-apps.md). `resources` serves read-only data: [resources.md](resources.md). `skills` (experimental) serves Agent Skills: [skills.md](skills.md).
+- `cimd: true` turns on Client ID Metadata Documents; `cimdCache`, `cimdFetch`, `cimdAllowedPorts` and `cimdRequireJsonContentType` tune it: see [reference.md](reference.md#createmcpapp-options).
 
 ### Wrapping an API as a tool
 

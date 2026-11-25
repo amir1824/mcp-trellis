@@ -7,6 +7,11 @@ import { createToolRegistry } from "../../src/mcp/registry.js";
 describe("dispatch", () => {
   type Ctx = { who: string };
 
+  const PRINCIPALS = new Map([
+    ["Bearer read-tok", { id: "u1", scopes: ["read"] }],
+    ["Bearer ingest-tok", { id: "u1", scopes: ["ingest", "read"] }],
+  ]);
+
   const registry = createToolRegistry<Ctx>(
     [
       {
@@ -40,17 +45,7 @@ describe("dispatch", () => {
       resourceMetadataUrl: "https://example.test/.well-known/oauth-protected-resource/mcp",
     },
     ports: {
-      authenticate: async (req, _method, tool) => {
-        const auth = req.headers.get("authorization");
-        if (auth === "Bearer read-tok") {
-          return { id: "u1", scopes: ["read"] };
-        }
-        if (auth === "Bearer ingest-tok") {
-          return { id: "u1", scopes: ["ingest", "read"] };
-        }
-        void tool;
-        return null;
-      },
+      authenticate: async (req) => PRINCIPALS.get(req.headers.get("authorization") ?? "") ?? null,
       context: async () => ({ who: "tester" }),
     },
   });
@@ -613,6 +608,8 @@ describe("dispatch survives a throwing port", () => {
 describe("context port is built only for a tools/call that will run", () => {
   type Ctx = { userId: string };
 
+  const TOKEN_PRINCIPALS = new Map([["Bearer tok", { id: "u1", scopes: ["read"] }]]);
+
   const makeCountingHandler = () => {
     const contextCalls: Array<string | null> = [];
     const handler = createMcpHandler<Ctx>({
@@ -636,11 +633,11 @@ describe("context port is built only for a tools/call that will run", () => {
       wwwAuthenticate: { realm: "test", resourceMetadataUrl: "https://example.test/.well-known/x" },
       ports: {
         authenticate: async (req) =>
-          req.headers.get("authorization") === "Bearer tok" ? { id: "u1", scopes: ["read"] } : null,
+          TOKEN_PRINCIPALS.get(req.headers.get("authorization") ?? "") ?? null,
         // Mirrors the README quickstart: dereferences the principal unconditionally.
         context: (_req, principal) => {
           contextCalls.push(principal?.id ?? null);
-          if (!principal) throw new Error("context called without a principal");
+          assert.ok(principal, "context called without a principal");
           return { userId: principal.id };
         },
       },

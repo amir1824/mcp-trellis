@@ -279,13 +279,12 @@ describe("requireRegisteredClients", () => {
       ports: stubPorts({
         clientStore: {
           get: async (clientId) =>
-            clientId === "preregistered"
-              ? {
-                  clientId,
-                  redirectUris: [REDIRECT_A],
-                  tokenEndpointAuthMethod: "none",
-                }
-              : null,
+            new Map([
+              [
+                "preregistered",
+                { clientId, redirectUris: [REDIRECT_A], tokenEndpointAuthMethod: "none" as const },
+              ],
+            ]).get(clientId) ?? null,
         },
       }),
       requireRegisteredClients: true,

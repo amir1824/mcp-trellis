@@ -34,7 +34,7 @@ export type ToolResult = {
 /** The first block's text, or `undefined` when there is none or the first block is not text. */
 export const firstText = (result: ToolResult): string | undefined => {
   const first = result.content[0];
-  return first?.type === "text" ? first.text : undefined;
+  return first?.type === "text" && typeof first.text === "string" ? first.text : undefined;
 };
 
 /**
