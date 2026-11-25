@@ -14,6 +14,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`hideToolsOutsideScope: "strict"`.** Hides tools the caller may not use and answers a `tools/call` for one as an unknown tool (`-32602`), not `403`. `true` and `false` are unchanged.
 - A security regression suite in `test/security/` covering cross-user and cross-tenant access, unauthorized discovery, direct access, revocation within token semantics, client and resource binding, cache isolation, malformed requests and calls that come from an MCP App; the threat model in `docs/security.md` gains the tenant-isolation boundary, a table of caches and shared state, and a restrictive profile; `docs/modernization/oauth-cimd-review.md` records the OAuth and CIMD review.
 
+- **General resources (additive, opt-in; a minor release).** `resources` on `createMcpHandler` and `createMcpApp`: read-only text resources with a fixed `uri`, an optional `scope` (tool semantics) and `allow(principal)`, and `read(ctx)`. They are listed by `resources/list` and returned by `resources/read` only to principals allowed to see them, share one authorization path with MCP Apps documents, build `context` only for an authorized read, and are audited like tools. Under `hideToolsOutsideScope: true` or `"strict"` a refused read answers as an unknown URI. Not included: templates, subscriptions, completion, pagination and binary bodies. A UI-only integration is answered byte for byte as before. See `docs/resources.md`.
+- The audit `error` field can be `resource_failed` (a resource's `read` threw or returned an invalid shape; its text is never recorded). A host that switches exhaustively on the value should handle it.
+- `docs/mcp-apps.md` gains a comparison with the MCP Apps specification (2026-01-26) and an interoperability table; no MCP Apps host was run, so every host is listed as not tested.
+
 ### Changed
 
 - The browser preflight (`OPTIONS`) on the MCP endpoint also allows the `Mcp-Method` and `Mcp-Name` request headers.
@@ -22,7 +26,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 None required. Existing integrations need no configuration change.
 
-Rollback: every new option defaults to the old behaviour, so a host that never sets them is unaffected; reverting this release restores the previous answers for hosts that did.
+Rollback: every new option defaults to the old behaviour, so a host that never sets them is unaffected; reverting this release restores the previous answers for hosts that did. For resources, remove the `resources` option.
 
 ## [3.4.0] - 2026-11-24
 

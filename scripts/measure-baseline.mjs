@@ -15,6 +15,16 @@ const PROTOCOL_VERSION = "2025-06-18";
 const MEDIAN = 0.5;
 const P95 = 0.95;
 
+const RESOURCE_COUNT = 50;
+const RESOURCE_URI = "docs://baseline/25";
+
+const resources = Array.from({ length: RESOURCE_COUNT }, (_, index) => ({
+  uri: `docs://baseline/${index}`,
+  name: `Baseline ${index}`,
+  scope: "mcp",
+  read: () => `resource ${index}`,
+}));
+
 const registry = createToolRegistry([
   {
     name: "echo",
@@ -27,6 +37,7 @@ const registry = createToolRegistry([
 
 const handler = createMcpHandler({
   registry,
+  resources,
   serverInfo: { name: "baseline", version: "0.0.0" },
   wwwAuthenticate: { realm: "mcp", resourceMetadataUrl: "http://127.0.0.1/.well-known" },
   ports: {
@@ -42,6 +53,13 @@ const REQUESTS = {
     id: 2,
     method: "tools/call",
     params: { name: "echo", arguments: { text: "hello" } },
+  },
+  "resources/list": { jsonrpc: "2.0", id: 3, method: "resources/list" },
+  "resources/read": {
+    jsonrpc: "2.0",
+    id: 4,
+    method: "resources/read",
+    params: { uri: RESOURCE_URI },
   },
 };
 

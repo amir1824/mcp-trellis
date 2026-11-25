@@ -97,7 +97,7 @@ await app.connect();
 // later: await app.callServerTool({ name: "refresh_products", arguments: { category: "toys" } });
 ```
 
-Limits: MCP Apps support varies by host and none is verified by this project's tests; protocol versions up to 2025-06-18 only (a newer `MCP-Protocol-Version` gets a 400); `visibility` is metadata the host enforces, never the server; the library cannot isolate tenants beyond building `context` per call; there is no per-client negotiation. Details: [docs/mcp-apps.md](docs/mcp-apps.md).
+Limits: MCP Apps support varies by host and none is verified by this project's tests; protocol versions 2024-11-05 to 2025-06-18, plus 2026-07-28 behind its header (any other `MCP-Protocol-Version` gets a 400); `visibility` is metadata the host enforces, never the server; the library cannot isolate tenants beyond building `context` per call; there is no per-client negotiation. Details: [docs/mcp-apps.md](docs/mcp-apps.md).
 
 ## How it fits together
 
@@ -166,7 +166,8 @@ The OAuth flows above run in automated tests and in the local demo. The Claude a
 | Doc | Contents |
 |-----|----------|
 | [docs/guide.md](docs/guide.md) | Architecture, clients, recipes, ports, tools, multi-tenant |
-| [docs/mcp-apps.md](docs/mcp-apps.md) | Attach a UI to a tool: setup, CSP, visibility, host limits |
+| [docs/mcp-apps.md](docs/mcp-apps.md) | Attach a UI to a tool: setup, CSP, visibility, spec comparison, host results |
+| [docs/resources.md](docs/resources.md) | Serve read-only data as resources: setup, who sees what, limits |
 | [docs/reference.md](docs/reference.md) | Routes, methods, status codes, options, exports |
 | [docs/security.md](docs/security.md) | Protocol promises, threat model, sessions, not in scope |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common connection and token errors |

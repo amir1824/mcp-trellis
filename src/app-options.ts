@@ -1,5 +1,6 @@
 import type { ClientName } from "./clients.js";
 import type { ToolDef } from "./mcp/registry.js";
+import type { ResourceDef } from "./mcp/resources/types.js";
 import type { AuditEntry, Principal, ServerInfo } from "./mcp/types.js";
 import type { UiResource } from "./mcp/ui/types.js";
 import type { CimdPorts } from "./oauth/cimd/types.js";
@@ -141,4 +142,9 @@ export type McpAppOptions<TCtx> = {
    * `McpHandlerOptions.uiResources` and `docs/mcp-apps.md`.
    */
   uiResources?: UiResource[];
+  /**
+   * General resources next to `uiResources`: fixed URIs gated by `scope` and `allow` — see
+   * `McpHandlerOptions.resources` and `docs/resources.md`.
+   */
+  resources?: ResourceDef<TCtx>[];
 } & CimdPorts;

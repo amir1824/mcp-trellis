@@ -66,6 +66,7 @@ export {
   type ToolListEntry,
   type ToolRegistry,
 } from "./mcp/registry.js";
+export type { ResourceBody, ResourceDef } from "./mcp/resources/types.js";
 export type { ApiRequest } from "./mcp/tools/api-fetch.js";
 export { type ApiToolOptions, apiTool } from "./mcp/tools/api-tool.js";
 export type { ContentBlock, ToolResult } from "./mcp/tools/content.js";

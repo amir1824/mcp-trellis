@@ -14,6 +14,7 @@ import {
   safeAudit,
   unauthorized,
 } from "./request-policy.js";
+import { RESOURCE_METHODS } from "./resources/methods.js";
 import {
   auditToolCall,
   invalidArgumentsResponse,
@@ -24,7 +25,6 @@ import {
 } from "./tools/call-args.js";
 import { firstText } from "./tools/content.js";
 import type { Principal, ResolvedMcpHandlerOptions, RpcMethodHandler } from "./types.js";
-import { UI_METHODS } from "./ui/methods.js";
 
 /** Longest tool-failure text copied into an audit entry — it is tool- or caller-supplied. */
 const MAX_AUDIT_ERROR_LENGTH = 1000;
@@ -37,7 +37,7 @@ const CORE_METHODS = {
     jsonResponse({
       data: rpcResult(id, {
         protocolVersion: pickProtocolVersion(body.params),
-        capabilities: serverCapabilities(options.uiRegistry),
+        capabilities: serverCapabilities(options.resourceCatalog),
         serverInfo: options.serverInfo,
         instructions: options.instructions ?? "",
       }),
@@ -91,8 +91,8 @@ const CORE_METHODS = {
   },
 } as const satisfies Record<string, RpcMethodHandler<unknown>>;
 
-/** `resources/*` exist only on a server with a UI: without one they are as unknown as any other method. */
-const ALL_METHODS = { ...CORE_METHODS, ...UI_METHODS };
+/** `resources/*` exist only on a server with resources: without one they are as unknown as any other method. */
+const ALL_METHODS = { ...CORE_METHODS, ...RESOURCE_METHODS };
 
 /** What a request that carries the 2026-07-28 header can call: no `initialize`, no `ping`. */
 const MODERN_CORE_METHODS = {
@@ -100,12 +100,12 @@ const MODERN_CORE_METHODS = {
   "tools/list": CORE_METHODS["tools/list"],
   "tools/call": CORE_METHODS["tools/call"],
 };
-const MODERN_ALL_METHODS = { ...MODERN_CORE_METHODS, ...UI_METHODS };
+const MODERN_ALL_METHODS = { ...MODERN_CORE_METHODS, ...RESOURCE_METHODS };
 
-/** The method table of each version, without and with the UI methods. */
+/** The method table of each version, without and with the resource methods. */
 const METHOD_TABLES = {
-  legacy: { core: CORE_METHODS, withUi: ALL_METHODS },
-  modern: { core: MODERN_CORE_METHODS, withUi: MODERN_ALL_METHODS },
+  legacy: { core: CORE_METHODS, withResources: ALL_METHODS },
+  modern: { core: MODERN_CORE_METHODS, withResources: MODERN_ALL_METHODS },
 } as const;
 
 export const dispatchRpc = async <TCtx>(input: {
@@ -150,7 +150,7 @@ export const dispatchRpc = async <TCtx>(input: {
   // A client-selected method name must not reach Object.prototype (e.g.
   // `toString` or `__proto__`): only own entries in METHODS are RPC methods.
   const table = METHOD_TABLES[profile.name];
-  const methods = options.uiRegistry ? table.withUi : table.core;
+  const methods = options.resourceCatalog ? table.withResources : table.core;
   const handler = ownValue(methods as Record<string, RpcMethodHandler<TCtx>>, method);
   if (!handler) return profile.notFound(id, method);
 

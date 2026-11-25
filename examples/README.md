@@ -26,6 +26,7 @@ npm run demo
 
 | Path | What it shows |
 |------|----------------|
+| [`resources-app.ts`](resources-app.ts) | General resources, an MCP App with its text fallback, two users with different access; booted by `test/resources-example.test.ts` |
 | [`multi-tenant.ts`](multi-tenant.ts) | Host → tenant, membership check at mint and per call, explicit mint/verify ports |
 | [`stores.ts`](stores.ts) | Shared `codeStore` / revocation shapes |
 | [`audit-store.ts`](audit-store.ts) | Unified audit sink |

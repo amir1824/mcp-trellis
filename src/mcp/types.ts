@@ -1,7 +1,7 @@
 import type { WwwAuthenticateOptions } from "../auth/bearer.js";
 import type { JsonRpcId, JsonRpcRequest } from "./jsonrpc.js";
 import type { ToolRegistry } from "./registry.js";
-import type { UiRegistry } from "./ui/registry.js";
+import type { ResourceCatalog, ResourceDef } from "./resources/types.js";
 import type { UiResource } from "./ui/types.js";
 
 export type Principal = {
@@ -21,7 +21,7 @@ export type AuditEntry = {
   /** JSON-RPC method, or `""` for transport-level rejections made before parsing. */
   method: string;
   tool?: string | undefined;
-  /** The `ui://` URI of a `resources/read`, clipped like a tool name. */
+  /** The URI of a `resources/read`, clipped like a tool name. */
   resource?: string | undefined;
   principalId?: string | undefined;
   ok: boolean;
@@ -33,8 +33,9 @@ export type McpPorts<TCtx> = {
   authenticate: (req: Request, method: string, tool?: string) => Promise<Principal | null>;
   /**
    * Builds the tool context. Called only for a `tools/call` that passed the
-   * unknown-tool and scope checks — never for `initialize`, `ping` or
-   * `tools/list`. `principal` is null only when a host adds `tools/call`
+   * unknown-tool and scope checks, or a general `resources/read` that passed
+   * every access check — never for `initialize`, `ping`, `tools/list`,
+   * `resources/list` or a `ui://` read. `principal` is null only when a host adds `tools/call`
    * to `publicMethods`.
    */
   context: (req: Request, principal: Principal | null) => TCtx | Promise<TCtx>;
@@ -102,6 +103,12 @@ export type McpHandlerOptions<TCtx> = {
    * references it. See `docs/mcp-apps.md`.
    */
   uiResources?: UiResource[];
+  /**
+   * General resources: fixed URIs served by `resources/list` and `resources/read` next to any `uiResources`.
+   * A resource is listed and read only by a principal its `scope` and `allow` admit, and its `read` runs
+   * once per authorized read, never for a list. See `docs/resources.md`.
+   */
+  resources?: ResourceDef<TCtx>[];
 };
 
 /** `McpHandlerOptions` after `createMcpHandler` resolved its defaults. */
@@ -109,8 +116,8 @@ export type ResolvedMcpHandlerOptions<TCtx> = McpHandlerOptions<TCtx> & {
   publicMethods: Set<string>;
   /** What a request that carries the 2026-07-28 header may call without authentication. */
   modernPublicMethods: Set<string>;
-  /** Built and validated once by `createMcpHandler`; `undefined` when the server has no UI. */
-  uiRegistry?: UiRegistry | undefined;
+  /** Built and validated once by `createMcpHandler`; `undefined` when the server has no resources at all. */
+  resourceCatalog?: ResourceCatalog<TCtx> | undefined;
 };
 
 /** Wraps a method's success result in its JSON-RPC response; errors never pass through it. */

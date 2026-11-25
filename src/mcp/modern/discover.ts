@@ -3,14 +3,14 @@
 import { jsonResponse } from "../../http/http.js";
 import { rpcResult } from "../jsonrpc.js";
 import type { RpcMethodHandler } from "../types.js";
-import type { UiRegistry } from "../ui/registry.js";
 import { discoverHints } from "./cache.js";
 import { SUPPORTED_VERSIONS } from "./errors.js";
 
 const SERVER_INFO_META_KEY = "io.modelcontextprotocol/serverInfo";
 
-export const serverCapabilities = (uiRegistry: UiRegistry | undefined) =>
-  uiRegistry ? { tools: {}, resources: {} } : { tools: {} };
+/** `resources: {}` says only that the server has resources, never which. */
+export const serverCapabilities = (catalog: ReadonlyMap<string, unknown> | undefined) =>
+  catalog ? { tools: {}, resources: {} } : { tools: {} };
 
 /** Sets `resultType` and the hints itself: the hints depend on whether the caller was authenticated. */
 export const DISCOVER_METHODS = {
@@ -19,7 +19,7 @@ export const DISCOVER_METHODS = {
       data: rpcResult(id, {
         resultType: "complete",
         supportedVersions: SUPPORTED_VERSIONS,
-        capabilities: serverCapabilities(options.uiRegistry),
+        capabilities: serverCapabilities(options.resourceCatalog),
         _meta: { [SERVER_INFO_META_KEY]: options.serverInfo },
         ...(options.instructions !== undefined ? { instructions: options.instructions } : {}),
         ...discoverHints(principal === null),

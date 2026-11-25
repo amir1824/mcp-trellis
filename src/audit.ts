@@ -1,4 +1,6 @@
-import type { UnifiedAuditEntry } from "./app-options.js";
+import type { McpAppOptions, UnifiedAuditEntry } from "./app-options.js";
+import type { AuditEntry } from "./mcp/types.js";
+import type { OAuthAuditEntry } from "./oauth/types.js";
 import { clipText } from "./util/clip.js";
 
 /** Longest field value a log line carries — `client_id` and tool names are caller-chosen. */
@@ -107,4 +109,24 @@ export const consoleAudit = (entry: UnifiedAuditEntry): void => {
     return;
   }
   console.log(line);
+};
+
+/** Top-level `audit` wraps MCP + OAuth; `auth.audit` wins for OAuth if both set. */
+export const buildAuditAdapters = <TCtx>(
+  options: McpAppOptions<TCtx>,
+): {
+  toMcpAudit: ((entry: AuditEntry) => void | Promise<void>) | undefined;
+  oauthAudit: ((entry: OAuthAuditEntry) => void | Promise<void>) | undefined;
+} => {
+  const unifiedAudit = options.audit;
+  const toMcpAudit =
+    unifiedAudit !== undefined
+      ? (entry: AuditEntry) => unifiedAudit({ source: "mcp", ...entry })
+      : undefined;
+  const oauthAudit =
+    options.auth.audit ??
+    (unifiedAudit !== undefined
+      ? (entry: OAuthAuditEntry) => unifiedAudit({ source: "oauth", ...entry })
+      : undefined);
+  return { toMcpAudit, oauthAudit };
 };

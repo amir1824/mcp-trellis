@@ -26,9 +26,9 @@ import {
   safeAudit,
   unauthorized,
 } from "./request-policy.js";
+import { buildResourceCatalog } from "./resources/catalog.js";
 import { dispatchRpc } from "./rpc-handlers.js";
 import type { McpHandlerOptions, ResolvedMcpHandlerOptions } from "./types.js";
-import { buildUiRegistry } from "./ui/registry.js";
 
 export type {
   AuditEntry,
@@ -140,7 +140,7 @@ export const createMcpHandler = <TCtx>(handlerOptions: McpHandlerOptions<TCtx>):
     ...handlerOptions,
     publicMethods: handlerOptions.publicMethods ?? DEFAULT_PUBLIC_METHODS,
     modernPublicMethods: resolveModernPublicMethods(handlerOptions.publicMethods),
-    uiRegistry: buildUiRegistry(handlerOptions.registry, handlerOptions.uiResources),
+    resourceCatalog: buildResourceCatalog(handlerOptions.registry, handlerOptions),
   };
 
   const HTTP_METHODS: Record<string, HttpMethodHandler> = {
