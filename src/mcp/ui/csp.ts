@@ -6,6 +6,8 @@ import type { UiCsp } from "./types.js";
 const ALLOWED_PROTOCOLS = {
   connectDomains: ["https:", "wss:"],
   resourceDomains: ["https:"],
+  frameDomains: ["https:"],
+  baseUriDomains: ["https:"],
 } as const;
 
 type CspKey = keyof typeof ALLOWED_PROTOCOLS;
@@ -23,7 +25,7 @@ const originOrUndefined = (entry: string): URL | undefined => {
 };
 
 /** True for an exact origin: nothing but scheme, a DNS host and an optional port. */
-const isExactOrigin = (entry: string, protocols: readonly string[]): boolean => {
+export const isExactOrigin = (entry: string, protocols: readonly string[]): boolean => {
   const url = originOrUndefined(entry);
   return (
     url !== undefined &&
@@ -64,12 +66,9 @@ export const parseCsp = (csp: unknown): UiCsp => {
   const known = Object.keys(ALLOWED_PROTOCOLS);
   const extra = Object.keys(csp).filter((key) => !known.includes(key));
   if (extra.length > 0) throw new Error(`csp has unsupported keys: ${extra.join(", ")}`);
-  return {
-    ...(csp.connectDomains !== undefined
-      ? { connectDomains: parseDomains("connectDomains", csp.connectDomains) }
-      : {}),
-    ...(csp.resourceDomains !== undefined
-      ? { resourceDomains: parseDomains("resourceDomains", csp.resourceDomains) }
-      : {}),
-  };
+  return Object.fromEntries(
+    (Object.keys(ALLOWED_PROTOCOLS) as CspKey[])
+      .filter((key) => csp[key] !== undefined)
+      .map((key) => [key, parseDomains(key, csp[key])]),
+  );
 };

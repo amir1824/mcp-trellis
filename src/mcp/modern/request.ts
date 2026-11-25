@@ -5,6 +5,7 @@ import { ownValue } from "../../util/own.js";
 import type { JsonRpcId, JsonRpcRequest } from "../jsonrpc.js";
 import { MODERN_PROTOCOL_VERSION, PROTOCOL_VERSIONS } from "../protocol.js";
 import { headerMismatch, invalidMeta, unsupportedVersion } from "./errors.js";
+import { type ClientContext, clientContextOf } from "./extensions.js";
 
 const PROTOCOL_VERSION_HEADER = "MCP-Protocol-Version";
 const METHOD_HEADER = "Mcp-Method";
@@ -45,13 +46,20 @@ const metaOf = (envelope: JsonRpcRequest): Record<string, unknown> => {
   return isJsonObject(meta) ? meta : {};
 };
 
-/** A header value, with the spec's `=?base64?...?=` form for non-ASCII text decoded; `undefined` if it does not decode. */
-const decodeHeaderValue = (value: string): string | undefined => {
+/**
+ * A header value, with the spec's `=?base64?...?=` form for non-ASCII text decoded; `undefined` if it does not decode.
+ * `strict` (the `Mcp-Param-*` check) also refuses non-canonical base64 and keeps a leading BOM, so the header and a
+ * strict gateway read the same text.
+ */
+export const decodeHeaderValue = (value: string, strict = false): string | undefined => {
   const match = BASE64_WRAPPED_VALUE.exec(value);
   if (!match) return value;
   try {
-    const bytes = Uint8Array.from(atob(match[1] ?? ""), (char) => char.charCodeAt(0));
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    const encoded = match[1] ?? "";
+    const binary = atob(encoded);
+    if (strict && btoa(binary) !== encoded) return undefined;
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: strict }).decode(bytes);
   } catch {
     return undefined;
   }
@@ -93,6 +101,12 @@ export const modernRequestError = (request: Request, envelope: JsonRpcRequest): 
     );
   }
   return standardHeaderError(request, envelope);
+};
+
+/** The declared extensions of a request `modernRequestError` accepted; malformed ones are left out. */
+export const modernClientOf = (envelope: JsonRpcRequest): ClientContext => {
+  const capabilities = metaOf(envelope)[META_CLIENT_CAPABILITIES];
+  return clientContextOf(isJsonObject(capabilities) ? capabilities : {});
 };
 
 /**

@@ -18,7 +18,7 @@ import {
 } from "./clients.js";
 import { errorReason, INTERNAL_ERROR, jsonResponse } from "./http/http.js";
 import { createMcpHandler, type McpHandler, type McpHandlerOptions } from "./mcp/dispatch.js";
-import { createToolRegistry } from "./mcp/registry.js";
+import { createToolRegistry, REGISTRY_OPTION_KEYS } from "./mcp/registry.js";
 import { safeAudit } from "./mcp/request-policy.js";
 import { assertAllScopesConfigured } from "./mcp/tools/scope-check.js";
 import type { AuditEntry, Principal } from "./mcp/types.js";
@@ -208,7 +208,7 @@ export const createMcpApp = <TCtx>(options: McpAppOptions<TCtx>): McpApp => {
 
   const registry = createToolRegistry<TCtx>(
     options.tools,
-    pickDefined(options, ["validateArgs", "onToolError"]),
+    pickDefined(options, REGISTRY_OPTION_KEYS),
   );
 
   const authenticate = buildAuthenticate(options, resourcePath);

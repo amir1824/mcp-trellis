@@ -12,11 +12,8 @@ const tool = (ui: unknown): ToolDef<Ctx> => ({
   handler: () => "x",
 });
 
-const resource = (overrides: Partial<UiResource>): UiResource => ({
-  uri: "ui://x/y",
-  html: "<html></html>",
-  ...overrides,
-});
+const resource = (overrides: Partial<UiResource>): UiResource =>
+  ({ uri: "ui://x/y", html: "<html></html>", ...overrides }) as UiResource;
 
 const uiTool = (uri: string): ToolDef<Ctx> => tool({ resourceUri: uri });
 
@@ -168,7 +165,7 @@ describe("M5 CSP origins are exact", () => {
     assert.throws(withCsp({ resourceDomains: "https://cdn.example.com" as never }), /array/);
     assert.throws(withCsp({ resourceDomains: [5 as never] }), /csp\.resourceDomains/);
     assert.throws(
-      withCsp({ frameDomains: ["https://a.example.com"] } as never),
+      withCsp({ scriptDomains: ["https://a.example.com"] } as never),
       /unsupported keys/,
     );
   });

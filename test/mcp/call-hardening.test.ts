@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createMcpHandler } from "../../src/mcp/dispatch.js";
 import { createToolRegistry, type ToolDef } from "../../src/mcp/registry.js";
+import { MAX_VALIDATION_ERRORS } from "../../src/mcp/schema/limits.js";
+import { validateAgainstSchema } from "../../src/mcp/schema/validate.js";
 import type { AuditEntry } from "../../src/mcp/types.js";
-import { MAX_VALIDATION_ERRORS, validateAgainstSchema } from "../../src/mcp/validate.js";
 
 type Ctx = Record<string, never>;
 

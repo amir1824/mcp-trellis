@@ -13,7 +13,13 @@ import {
   type RedirectMode,
 } from "./api-fetch.js";
 import type { ToolResult } from "./content.js";
-import { defineTool, type RawInput, type ToolCore, type ValidatedInput } from "./define-tool.js";
+import {
+  defineTool,
+  type RawInput,
+  TOOL_CORE_OPTIONAL_KEYS,
+  type ToolCore,
+  type ValidatedInput,
+} from "./define-tool.js";
 
 type ApiExtra<TCtx, Args> = {
   request: (ctx: TCtx, args: Args) => ApiRequest | Promise<ApiRequest>;
@@ -130,7 +136,7 @@ export const apiTool = <TCtx, Input = Record<string, unknown>>(
     name: options.name,
     description: options.description,
     inputSchema: options.inputSchema,
-    ...pickDefined(options, ["scope", "ui"]),
+    ...pickDefined(options, TOOL_CORE_OPTIONAL_KEYS),
   };
   if (options.input) {
     return defineTool<TCtx, Input>({

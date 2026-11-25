@@ -11,14 +11,13 @@ import { isAllowedOrigin, type OriginAllowlistOptions } from "../http/origins.js
 import { sizeErrorBody } from "../mcp/modern/errors.js";
 import {
   bodyLimitForPath,
-  InvalidOriginError,
   isOAuthPath,
   type NodeRequestLike,
   readNodeBody,
   requestPath,
-  resolveOrigin,
   toWebRequest,
 } from "./node-request.js";
+import { InvalidOriginError, resolveOrigin } from "./origin.js";
 
 export {
   isAllowedOrigin,
@@ -27,14 +26,12 @@ export {
 } from "../http/origins.js";
 export {
   bodyLimitForPath,
-  InvalidOriginError,
   type NodeRequestLike,
-  type ResolveOriginOptions,
   readNodeBody,
-  resolveOrigin,
   type ToWebRequestOptions,
   toWebRequest,
 } from "./node-request.js";
+export { InvalidOriginError, type ResolveOriginOptions, resolveOrigin } from "./origin.js";
 
 export type NodeResponseLike = {
   statusCode: number;

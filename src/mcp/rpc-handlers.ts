@@ -5,6 +5,8 @@ import { clipText } from "../util/clip.js";
 import { ownValue } from "../util/own.js";
 import { JSONRPC_INVALID_PARAMS, type JsonRpcRequest, rpcError, rpcResult } from "./jsonrpc.js";
 import { DISCOVER_METHODS, serverCapabilities } from "./modern/discover.js";
+import { paramHeaderError } from "./modern/errors.js";
+import { clientSupports } from "./modern/extensions.js";
 import type { VersionProfile } from "./modern/profile.js";
 import { pickProtocolVersion } from "./protocol.js";
 import {
@@ -25,7 +27,9 @@ import {
   unknownToolResponse,
 } from "./tools/call-args.js";
 import { firstText } from "./tools/content.js";
+import { paramHeaderFault } from "./tools/wire/param-headers.js";
 import type { Principal, ResolvedMcpHandlerOptions, RpcMethodHandler } from "./types.js";
+import { UI_EXTENSION_ID } from "./ui/types.js";
 
 /** Longest tool-failure text copied into an audit entry — it is tool- or caller-supplied. */
 const MAX_AUDIT_ERROR_LENGTH = 1000;
@@ -46,14 +50,16 @@ const CORE_METHODS = {
 
   ping: async ({ id }) => jsonResponse({ data: rpcResult(id, {}) }),
 
-  "tools/list": async ({ id, options, principal, respond }) => {
+  "tools/list": async ({ id, options, principal, respond, client }) => {
     const allowScope = options.hideToolsOutsideScope
       ? (scope: string | null | undefined) => mayUse(principal, scope)
       : undefined;
-    return respond(id, { tools: options.registry.list(allowScope) });
+    return respond(id, {
+      tools: options.registry.list(allowScope, clientSupports(client, UI_EXTENSION_ID)),
+    });
   },
 
-  "tools/call": async ({ req, body, id, principal, options, startedAt, respond }) => {
+  "tools/call": async ({ req, body, id, principal, options, startedAt, respond, client }) => {
     const parsed = parseToolCallArgs(body);
     if ("error" in parsed) {
       return jsonResponse({ data: rpcError(id, JSONRPC_INVALID_PARAMS, parsed.error) });
@@ -75,6 +81,18 @@ const CORE_METHODS = {
     // After the scope check, so a caller without the scope is told so (403 +
     // step-up challenge), not that its arguments are malformed.
     if (args === null) return invalidArgumentsResponse(options, { name, principal, id, startedAt });
+
+    const headerFault = client ? paramHeaderFault(req, tool.inputSchema, args) : undefined;
+    if (headerFault) {
+      await auditToolCall(options, {
+        tool: shownName(name),
+        principal,
+        ok: false,
+        error: DENIAL_REASONS.paramHeaderMismatch,
+        startedAt,
+      });
+      return paramHeaderError(id, headerFault);
+    }
 
     // Built only for a call that will actually run: `initialize`, `ping`,
     // `tools/list` and denied calls never reach the host's `context` port.
@@ -169,5 +187,14 @@ export const dispatchRpc = async <TCtx>(input: {
   if (!handler) return profile.notFound(id, method);
 
   const respond = profile.writer(method);
-  return handler({ req, body, id, principal, options, startedAt, respond });
+  return handler({
+    req,
+    body,
+    id,
+    principal,
+    options,
+    startedAt,
+    respond,
+    client: profile.client(body),
+  });
 };

@@ -71,10 +71,14 @@ describe("server/discover", () => {
     assert.equal(res.status, 200);
   });
 
-  it("R2 a server with a UI advertises resources", async () => {
+  it("R2 a server with a UI advertises resources and the Apps extension", async () => {
     const body = await json<Discover>(
       await send(buildHandler({}, true).handler, modern("server/discover")),
     );
-    assert.deepEqual(body.result.capabilities, { tools: {}, resources: {} });
+    assert.deepEqual(body.result.capabilities, {
+      tools: {},
+      resources: {},
+      extensions: { "io.modelcontextprotocol/ui": {} },
+    });
   });
 });

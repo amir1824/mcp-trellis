@@ -67,14 +67,23 @@ export {
   type ToolRegistry,
 } from "./mcp/registry.js";
 export type { ResourceBody, ResourceDef } from "./mcp/resources/types.js";
+export type { JsonSchema } from "./mcp/schema/types.js";
 export type { SkillDef, SkillFile } from "./mcp/skills/types.js";
 export type { ApiRequest } from "./mcp/tools/api-fetch.js";
 export { type ApiToolOptions, apiTool } from "./mcp/tools/api-tool.js";
 export type { ContentBlock, ToolResult } from "./mcp/tools/content.js";
 export { type DefineToolOptions, defineTool } from "./mcp/tools/define-tool.js";
 export type { StandardSchemaV1 } from "./mcp/tools/standard-schema.js";
-export type { ToolUi, UiCsp, UiResource, UiVisibility } from "./mcp/ui/types.js";
-export type { JsonSchema } from "./mcp/validate.js";
+export type { ToolAnnotations } from "./mcp/tools/wire/annotations.js";
+export type {
+  ToolUi,
+  UiCsp,
+  UiDocument,
+  UiPermission,
+  UiPermissions,
+  UiResource,
+  UiVisibility,
+} from "./mcp/ui/types.js";
 export type { CodeStore } from "./oauth/crypto/codes.js";
 export { AccessDeniedError } from "./oauth/errors.js";
 /** Auth-port types used by `McpAppAuth` — annotate extracted stores/callbacks. */

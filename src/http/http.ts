@@ -86,7 +86,14 @@ export const emptyResponse = (status: number): Response =>
     headers: { ...corsHeaders(), "Cache-Control": "no-store" },
   });
 
-export const optionsResponse = (options?: JsonResponseOptions): Response =>
+/**
+ * `extraRequestHeaders` are request headers a browser may also send, added after the fixed list and only
+ * to this preflight: the `Mcp-Param-*` names of a server's tools, which only the server knows.
+ */
+export const optionsResponse = (
+  options?: JsonResponseOptions,
+  extraRequestHeaders: readonly string[] = [],
+): Response =>
   new Response(null, {
     status: 204,
     headers:
@@ -94,7 +101,10 @@ export const optionsResponse = (options?: JsonResponseOptions): Response =>
         ? { "Cache-Control": "no-store" }
         : {
             ...corsHeaders({
-              "Access-Control-Allow-Headers": PREFLIGHT_REQUEST_HEADERS.join(", "),
+              "Access-Control-Allow-Headers": [
+                ...PREFLIGHT_REQUEST_HEADERS,
+                ...extraRequestHeaders,
+              ].join(", "),
             }),
             "Cache-Control": "no-store",
           },

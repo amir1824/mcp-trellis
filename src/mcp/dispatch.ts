@@ -29,6 +29,7 @@ import {
 import { buildResourceCatalog } from "./resources/catalog.js";
 import { dispatchRpc } from "./rpc-handlers.js";
 import { compileSkills } from "./skills/compile.js";
+import { paramHeaderNames } from "./tools/wire/param-headers.js";
 import type { McpHandlerOptions, ResolvedMcpHandlerOptions } from "./types.js";
 
 export type {
@@ -135,8 +136,13 @@ export const createMcpHandler = <TCtx>(handlerOptions: McpHandlerOptions<TCtx>):
     skillIndex: skills?.index,
   };
 
+  // The preflight is anonymous: with `hideToolsOutsideScope` it names only the headers of tools that need no scope.
+  const preflightHeaders = paramHeaderNames(
+    options.registry.list(options.hideToolsOutsideScope ? (scope) => !scope : undefined),
+  );
+
   const HTTP_METHODS: Record<string, HttpMethodHandler> = {
-    OPTIONS: () => optionsResponse(),
+    OPTIONS: () => optionsResponse(undefined, preflightHeaders),
     GET: (request, startedAt) => handleGet(request, options, startedAt),
     POST: (request, startedAt) => handlePost(request, options, startedAt),
   };

@@ -1,11 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createToolRegistry } from "../../src/mcp/registry.js";
-import {
-  missingObjectType,
-  unsupportedKeywords,
-  validateAgainstSchema,
-} from "../../src/mcp/validate.js";
+import { missingObjectType, unsupportedKeywords } from "../../src/mcp/schema/check.js";
+import { validateAgainstSchema } from "../../src/mcp/schema/validate.js";
 
 describe("schema validation", () => {
   const schema = {
@@ -233,15 +230,17 @@ describe("missingObjectType", () => {
 });
 
 describe("unsupportedKeywords / validateArgs construction", () => {
-  const withPattern = {
+  const withUnsupported = {
     type: "object",
     properties: {
-      code: { type: "string", pattern: "^[A-Z]{3}$" },
+      code: { type: "string", unevaluatedItems: false },
     },
   };
 
-  it("lists pattern as unsupported", () => {
-    assert.deepEqual(unsupportedKeywords(withPattern), ["args.properties.code.pattern"]);
+  it("lists a keyword the evaluator does not implement as unsupported", () => {
+    assert.deepEqual(unsupportedKeywords(withUnsupported), [
+      "args.properties.code.unevaluatedItems",
+    ]);
   });
 
   it("lists nested items violations", () => {
@@ -251,11 +250,11 @@ describe("unsupportedKeywords / validateArgs construction", () => {
         properties: {
           rows: {
             type: "array",
-            items: { type: "string", maxLength: 10 },
+            items: { type: "string", $dynamicRef: "#x" },
           },
         },
       }),
-      ["args.properties.rows.items.maxLength"],
+      ["args.properties.rows.items.$dynamicRef"],
     );
   });
 
@@ -305,14 +304,14 @@ describe("unsupportedKeywords / validateArgs construction", () => {
     assert.deepEqual(unsupportedKeywords({ type: "object", additionalProperties: true }), []);
   });
 
-  it("lists schema-valued additionalProperties as unsupported", () => {
+  it("accepts schema-valued additionalProperties", () => {
     assert.deepEqual(
       unsupportedKeywords({
         type: "object",
         additionalProperties: { type: "string" },
         properties: { nested: { type: "object", additionalProperties: { type: "number" } } },
       }),
-      ["args.additionalProperties", "args.properties.nested.additionalProperties"],
+      [],
     );
   });
 
@@ -347,7 +346,7 @@ describe("unsupportedKeywords / validateArgs construction", () => {
     );
   });
 
-  it("throws at createToolRegistry when validateArgs sees pattern", () => {
+  it("throws at createToolRegistry when validateArgs sees an unsupported keyword", () => {
     assert.throws(
       () =>
         createToolRegistry(
@@ -355,24 +354,24 @@ describe("unsupportedKeywords / validateArgs construction", () => {
             {
               name: "coded",
               description: "x",
-              inputSchema: withPattern,
+              inputSchema: withUnsupported,
               handler: () => "ok",
             },
           ],
           { validateArgs: true },
         ),
-      /unsupported JSON Schema keyword.*pattern/,
+      /unsupported JSON Schema keyword.*unevaluatedItems/,
     );
   });
 
-  it("accepts the same pattern schema when validateArgs is off", () => {
+  it("accepts the same schema when validateArgs is off", () => {
     assert.doesNotThrow(() =>
       createToolRegistry(
         [
           {
             name: "coded",
             description: "x",
-            inputSchema: withPattern,
+            inputSchema: withUnsupported,
             handler: () => "ok",
           },
         ],

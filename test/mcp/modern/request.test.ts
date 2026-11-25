@@ -106,6 +106,20 @@ describe("2026-07-28 request validation", () => {
     assert.equal(res.status, 200);
   });
 
+  it("an Mcp-Name in the base64 form without its padding still matches the body value", async () => {
+    const name = "é";
+    const unpadded = btoa(String.fromCharCode(...new TextEncoder().encode(name))).replace(
+      /=+$/,
+      "",
+    );
+    const call = modern("tools/call", { name }, READ_TOKEN);
+    const res = await send(buildHandler().handler, {
+      ...call,
+      headers: { ...call.headers, "Mcp-Name": `=?base64?${unpadded}?=` },
+    });
+    assert.notEqual((await json<ErrorBody>(res)).error?.code, -32020);
+  });
+
   it("R5 a header in the base64 form that does not decode is -32020", async () => {
     const call = modern("tools/call", { name: "echo" }, READ_TOKEN);
     const res = await send(buildHandler().handler, {

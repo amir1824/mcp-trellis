@@ -340,14 +340,26 @@ createToolRegistry(tools) // validateArgs defaults to true; pass { validateArgs:
   outside that dispatch.
 - Thrown exceptions are **redacted** by default (`"Tool execution failed"`); pass `onToolError` to map them. An `onToolError` that itself throws or returns a non-string falls back to the redacted default
 - Duplicate tool names throw at registry construction
-- `validateArgs` is on by default (`createToolRegistry` and `createMcpApp`). The evaluated
-  subset is `type`, `enum`, `required`, `properties`, `items`, `minimum`,
-  `maximum`, and boolean `additionalProperties`. Pure metadata (`description`, `title`, `$schema`, `$id`,
-  `$comment`, `default`, `examples`, `deprecated`, `readOnly`, `writeOnly`,
-  `format`) is allowed and never evaluated. Any other keyword is not
-  evaluated — and with `validateArgs: true` `createToolRegistry` throws at
-  construction so a schema like `pattern` or a schema-valued
-  `additionalProperties` cannot silently look enforced
+- `validateArgs` is on by default (`createToolRegistry` and `createMcpApp`). Arguments are checked against `inputSchema` with a built-in JSON Schema 2020-12 evaluator. A keyword it cannot honour (`unevaluatedProperties`, `$dynamicRef`, a non-local `$ref`, a `pattern` with a backreference or lookahead, ...) throws at construction, so a schema never looks enforced when it is not. `$schema` may be 2020-12, 2019-09 or draft-07. `format` and `x-*` are annotations. To use a schema the evaluator rejects, pass `schemaValidator` (your own check; the construction-time checks are then yours). Keywords, bounds and the `pattern` caveat: [reference.md](reference.md#json-schema-2020-12)
+- `outputSchema` describes a result's `structuredContent`, and `validateOutput` (default: follows `validateArgs`) rejects a result that breaks it with "Tool returned an invalid result". `annotations` are hints for clients and never authorize anything. `x-mcp-header` mirrors an argument into a `Mcp-Param-*` header for 2026-07-28 clients. All three: [reference.md](reference.md#tool-results-and-annotations)
+
+A property annotated `x-mcp-header` is sent by a 2026-07-28 client as a request header too, and the server answers `-32020` over HTTP 400 when the header and the argument differ:
+
+```ts
+import { defineTool } from "mcp-trellis";
+
+export const regionReport = defineTool({
+  name: "region_report",
+  description: "Sales report for one region",
+  inputSchema: {
+    type: "object",
+    properties: { region: { type: "string", "x-mcp-header": "Region" } }, // client sends Mcp-Param-Region
+    required: ["region"],
+  },
+  scope: "mcp",
+  handler: async (_ctx, args) => `Report for ${String(args.region)}`,
+});
+```
 
 ### Hiding tools, and other opt-ins
 

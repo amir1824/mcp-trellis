@@ -102,6 +102,18 @@ For a server where even the existence of a tool or a client document must not le
 - `cimdFetch`: on Node, a fetch that connects only to an address that passed the check, to close DNS rebinding. It must honour `redirect: "manual"`; a response that followed a redirect is refused. Without it, the check runs before the request and again after the body, so a resolver that changes its answer can cause one blind request.
 - `isUserActive`, a short `ttlSeconds`, and `allowedRequestOrigins` set to your known origins.
 
+### Tool schemas, results and UI documents
+
+| Risk | What the library does |
+|------|-----------------------|
+| A `pattern` in a tool schema hangs the server (ReDoS) | `pattern` and `patternProperties` run on a built-in non-backtracking matcher (linear in input length times program size), not on `RegExp`, so there is no catastrophic case and no heuristic to bypass. Bounds: source 512 characters, program 2000 instructions, group depth 32, string 4096 code units (worst accepted program: 49 ms). Each match is charged to the validation step budget, so many strings or keys end in a rejection. Backreferences, lookaround and `\p{...}` are refused at construction; use a `schemaValidator` for them. [Details](reference.md#json-schema-2020-12) |
+| A schema or a value built to exhaust CPU or memory | Depth, subschema count, recursion, `$ref` hops, work units and `uniqueItems` size are bounded. Over a bound at construction throws; while validating, the call is rejected, never passed. `$ref` is local only and is never fetched |
+| A result leaks data through its validation error | A result that breaks `outputSchema` is replaced by "Tool returned an invalid result". The client sees neither the data nor the violations. `onOutputViolation` receives them and they can hold the data: log them on the server only |
+| A `schemaValidator` that throws or misbehaves | It fails closed: "Invalid arguments" or "Tool returned an invalid result", and the thrown message is not shown. It also replaces the construction checks, so you vet the schemas |
+| `annotations` taken as access control | They are hints that clients must treat as untrusted, and the library never reads them to authorize a call. Enforce access with `scope`, `allow` and `context` |
+| An intermediary routes on `Mcp-Param-*` headers while the handler sees a different value | On a 2026-07-28 `tools/call`, an annotated header that differs from the body answers `-32020` before the handler runs, with fixed text and no value echoed. The Node adapter rejects a repeated header; a host that builds its own `Request` must too. Integers must be canonical (`42` or `42.0`, not `+42`, `042`, `-0`) and a base64 value keeps a leading BOM. The browser preflight lists every annotated `Mcp-Param-*` name, so those names are visible to anonymous callers. This is a consistency check, not authentication |
+| A UI document asks for more than it needs | `csp` origins, `permissions` (only `camera`, `microphone`, `geolocation`, `clipboardWrite`, each `{}`) and `blob` size (16 MiB decoded) are checked at construction. The host decides what to grant. A 2026-07-28 client that did not declare MCP Apps never sees `ui://` documents. See [mcp-apps.md](mcp-apps.md) |
+
 ## Sessions and expiry
 
 The connector holds a token, never the app's login cookie. What each event does to it, with `signedTokenAuth`:

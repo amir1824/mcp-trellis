@@ -1,6 +1,7 @@
 import type { ClientName } from "./clients.js";
 import type { ToolDef } from "./mcp/registry.js";
 import type { ResourceDef } from "./mcp/resources/types.js";
+import type { SchemaValidator } from "./mcp/schema/types.js";
 import type { SkillDef } from "./mcp/skills/types.js";
 import type { AuditEntry, Principal, ServerInfo } from "./mcp/types.js";
 import type { UiResource } from "./mcp/ui/types.js";
@@ -108,6 +109,23 @@ export type McpAppOptions<TCtx> = {
    * **true** since 2.0. Set false only to skip schema checks intentionally.
    */
   validateArgs?: boolean;
+  /**
+   * Check each successful tool result against the tool's `outputSchema`; a result that does not
+   * conform becomes the generic error "Tool returned an invalid result". Default: follows
+   * `validateArgs` (**true**). See `RegistryOptions.validateOutput`.
+   */
+  validateOutput?: boolean;
+  /**
+   * Receives the tool name and the violations of a result rejected by `outputSchema`. They can
+   * contain the result's data, so log them server-side only. See `RegistryOptions.onOutputViolation`.
+   */
+  onOutputViolation?: (tool: string, violations: string[]) => void;
+  /**
+   * Replaces the built-in JSON Schema evaluator for tool inputs and outputs (for example with
+   * Ajv); the construction-time keyword and `pattern` checks are then yours. See
+   * `RegistryOptions.schemaValidator`.
+   */
+  schemaValidator?: SchemaValidator;
   /**
    * See `OAuthRouterOptions.allowInMemoryCodeStore`. Default false.
    */

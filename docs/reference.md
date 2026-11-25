@@ -79,6 +79,175 @@ Nothing is required. Registering `resources` adds `resources/list`, `resources/r
 
 Experimental and opt-in; nothing is required. Registering `skills` adds `skills/list`, `skills/get`, the files at `skill://<name>/...` and the skills extension. To go back, remove the option. See [skills.md](skills.md).
 
+### Migrating to the schema evaluator, tool results and extensions
+
+- A tool schema with a `$schema` other than 2020-12, 2019-09 or draft-07, a draft-style keyword (`definitions`, `dependencies`, array-form `items`, `additionalItems`, `$recursiveRef`, `$recursiveAnchor`), a non-local `$ref` or another [unsupported](#json-schema-2020-12) keyword throws at construction while `validateArgs` is on. Fix the schema, pass a `schemaValidator`, or set `validateArgs: false`.
+- `pattern` is now evaluated instead of throwing. A string over 4096 code units is rejected, and a pattern outside the supported regex subset throws at construction (see [`pattern`](#json-schema-2020-12)).
+- `JsonSchema` subschema fields (`properties`, `items`, `allOf`, ...) are `JsonSchema | boolean`. Code that reads `schema.properties.x.type` needs a narrowing step. `ToolResult.structuredContent` is `unknown`.
+- A non-object `structuredContent` was a tool failure; on a 2026-07-28 request it now passes.
+- A 2026-07-28 client that did not declare `io.modelcontextprotocol/ui` no longer sees `_meta.ui` on tools or `ui://` documents. Older clients are unchanged.
+- `UiResource` is a union of an `html` and a `blob` variant. Code that spreads or assigns a `Partial<UiResource>` needs a narrower type.
+- A result is checked against `outputSchema` when a tool sets one (`validateOutput` follows `validateArgs`). Set `validateOutput: false` to skip it.
+
+## JSON Schema 2020-12
+
+`inputSchema` and `outputSchema` are evaluated by the library's own JSON Schema 2020-12 evaluator. It never fetches anything and never throws on a value. A violation is one short message per problem; the value itself is not echoed.
+
+| Group | Keywords evaluated |
+|-------|--------------------|
+| Any value | `type` (a name or a list), `enum`, `const` |
+| Object | `properties`, `patternProperties`, `additionalProperties`, `propertyNames`, `required`, `minProperties`, `maxProperties`, `dependentRequired`, `dependentSchemas` |
+| Array | `items`, `prefixItems`, `contains`, `minContains`, `maxContains`, `minItems`, `maxItems`, `uniqueItems` |
+| Number | `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf` |
+| String | `minLength`, `maxLength`, `pattern` |
+| Combinators | `allOf`, `anyOf`, `oneOf`, `not`, `if`, `then`, `else` |
+| References | `$ref`, `$defs`, `$anchor`: local only (`#`, `#/$defs/name`, `#anchor`) |
+
+- **Annotations, never evaluated:** `description`, `title`, `$comment`, `default`, `examples`, `deprecated`, `readOnly`, `writeOnly`, `format`, `contentEncoding`, `contentMediaType`, `contentSchema`, a root `$id` and any key starting with `x-`. `format` is not enforced: check it in the handler or with a `schemaValidator`.
+- **Numbers:** `type: number` and `integer` reject a non-finite value (`JSON.parse("1e999")` is `Infinity`).
+- **`$schema`:** 2020-12, 2019-09 and draft-07 URIs are accepted and all evaluated as 2020-12. Any other value throws.
+- **Throws at construction** while `validateArgs` is on (`validateOutput` for `outputSchema`):
+  - the keywords `unevaluatedProperties`, `unevaluatedItems`, `$dynamicRef`, `$dynamicAnchor`, `$vocabulary` and any other unknown keyword;
+  - draft-style keywords that mean something else in 2020-12: `definitions`, `dependencies`, array-form `items`, `additionalItems`, `$recursiveRef`, `$recursiveAnchor` (the message names the 2020-12 spelling);
+  - a keyword value of the wrong shape, a `pattern` outside the supported regex subset, a `$ref` that is not local or does not resolve, a `$id` below the root, a duplicate `$anchor`, and `properties` or `required` without `type: "object"`.
+- **Bounds.** Going over one at construction throws. Going over one while validating rejects the call; it never passes.
+
+| Bound | Value | Constant in `src/mcp/schema/limits.ts` |
+|-------|-------|--------------------------------------|
+| Subschema nesting | 64 levels | `MAX_SCHEMA_DEPTH` |
+| Subschemas per schema | 10,000 | `MAX_SCHEMA_NODES` |
+| Recursion while validating one value | 256 steps | `MAX_EVALUATION_DEPTH` |
+| Active `$ref` hops | 32 | `MAX_REF_DEPTH` |
+| Work units per validation | 1,000,000 | `MAX_EVALUATION_STEPS` |
+| String length matched by `pattern` | 4096 UTF-16 code units | `MAX_PATTERN_INPUT_LENGTH` |
+| Items compared by `uniqueItems` | 10,000 | `MAX_UNIQUE_ITEMS` |
+| Errors reported per value | 20 | `MAX_VALIDATION_ERRORS` |
+
+**`pattern`.** `pattern` and `patternProperties` keys run on the library's own matcher, not on `RegExp`: a Thompson NFA simulation, linear in input length times program size, so no pattern can hang a call. It is an unanchored search over code points, like `RegExp(source, "u").test(input)`, and a differential test pins that. Supported (ECMAScript syntax):
+
+- literals and the escapes `\\ \/ \. \* \+ \? \( \) \[ \] \{ \} \| \^ \$ \t \n \r \f \v \0 \xHH \uHHHH \u{H...}` (and `\-` inside a class);
+- `\d \D \w \W \s \S` (ASCII `\d` and `\w`), `.` (not a line terminator), classes `[...]` and `[^...]` with ranges and class escapes, `\b` and `\B`, `^` and `$` (no multiline);
+- groups `(...)`, `(?:...)`, `(?<name>...)` (captures are ignored), alternation, and the quantifiers `* + ? {n} {n,} {n,m}`, greedy or lazy (laziness cannot change a yes/no match).
+
+Refused at construction, with the construct named and the schema path: backreferences (`\1`, `\k<n>`), lookahead and lookbehind, `\p{...}` and `\P{...}`, inline flags (`(?i:...)`), `\c`, and any invalid or unterminated syntax. Nothing is partly accepted.
+
+| Bound | Value | Constant in `src/mcp/schema/regex/limits.ts` |
+|-------|-------|--------------------------------------|
+| Pattern source | 512 characters | `MAX_REGEX_SOURCE_LENGTH` |
+| Compiled program (counted repeats are expanded: `a{0,9999}` is refused) | 2000 instructions | `MAX_REGEX_PROGRAM_SIZE` |
+| Group nesting | 32 levels | `MAX_REGEX_GROUP_DEPTH` |
+| Instruction visits per step of the work budget | 64 | `REGEX_VISITS_PER_STEP` |
+
+Every match is charged to the same work budget as the rest of the validation (input length times program size, divided by 64), so many strings or many property names against a pattern end in the usual "validation stopped" rejection. The worst accepted program (about 2000 instructions with every thread live) took 49 ms on a 4096-character string (28 ms on 2048, Node 22, arm64). A pattern outside the subset needs a `schemaValidator`.
+
+**`schemaValidator`.** `(value, schema) => string[]` replaces the built-in evaluator for every `inputSchema` and `outputSchema`, for example by wrapping Ajv. Pass it to `createMcpApp` or `createToolRegistry`. The construction checks for keywords, `pattern` and object type are skipped, so you vet the schemas. It runs only while `validateArgs` or `validateOutput` is on. It must return one message per violation (`[]` when valid), not throw and not echo `value`. If it throws or returns anything but an array of strings (a promise included), the call fails closed with "Invalid arguments" or "Tool returned an invalid result", and the thrown message is not shown.
+
+`validateAgainstSchema(value, schema)` is exported from `mcp-trellis/advanced` and returns the violations; `SchemaValidator` is exported there as a type.
+
+```ts
+import { createToolRegistry } from "mcp-trellis";
+import type { JsonSchema } from "mcp-trellis";
+import { type SchemaValidator, validateAgainstSchema } from "mcp-trellis/advanced";
+
+const schema: JsonSchema = {
+  type: "object",
+  $defs: { sku: { type: "string", pattern: "^[A-Z]{3}-\\d{4}$" } },
+  properties: { sku: { $ref: "#/$defs/sku" } },
+  required: ["sku"],
+};
+
+console.log(validateAgainstSchema({ sku: "abc" }, schema)); // one message per violation; [] when valid
+
+// Replace the evaluator, here with a wrapper that stands in for Ajv.
+const schemaValidator: SchemaValidator = (value, s) => validateAgainstSchema(value, s);
+export const registry = createToolRegistry([], { schemaValidator });
+```
+
+## Tool results and annotations
+
+| `ToolDef` field | Meaning |
+|-----------------|---------|
+| `outputSchema` | JSON Schema of `structuredContent`, listed in `tools/list`. The root may be any type. |
+| `annotations` | `title` (string) and `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` (booleans), listed in `tools/list`. An unknown field or a wrong type throws at construction. |
+
+- **Hints only.** A client must treat annotations as untrusted, and the library never reads them to authorize a call. Use `scope` for that.
+- **`structuredContent`** may be any JSON value for a 2026-07-28 client. A client on 2024-11-05, 2025-03-26 or 2025-06-18 never receives a `structuredContent` that is not an object, and `tools/list` leaves out an `outputSchema` whose root `type` is not `"object"`. Always put the answer in `content` as text too: it is all such a client gets.
+- **Output check.** While `validateOutput` is on, a result without `isError` from a tool with an `outputSchema` must carry a `structuredContent` that conforms to it. Otherwise the client gets the error result "Tool returned an invalid result", with no violation text and no data. An `isError` result is not checked.
+
+| Option (`createMcpApp`, `createToolRegistry`) | Default | Description |
+|-----------------------------------------------|---------|-------------|
+| `validateOutput` | follows `validateArgs` (`true`) | Check results against `outputSchema`. A bad `outputSchema` throws at construction while it is on |
+| `schemaValidator` | built-in evaluator | Replaces the evaluator for arguments and results: [`schemaValidator`](#json-schema-2020-12) |
+| `onOutputViolation(tool, violations)` | none | Called when a result is rejected. The violations can hold the result's data: log them on the server only. A hook that throws never fails the call |
+
+```ts
+import { createMcpApp, defineTool, signedTokenAuth } from "mcp-trellis";
+
+const stock = defineTool({
+  name: "stock_levels",
+  description: "Stock per SKU",
+  inputSchema: {
+    type: "object",
+    properties: { warehouse: { type: "string", "x-mcp-header": "Warehouse" } },
+    required: ["warehouse"],
+  },
+  outputSchema: { type: "array", items: { type: "integer", minimum: 0 } },
+  annotations: { title: "Stock levels", readOnlyHint: true },
+  scope: "mcp",
+  handler: async () => ({
+    content: [{ type: "text", text: "[3,0,12]" }], // the only part a pre-2026-07-28 client gets
+    structuredContent: [3, 0, 12],
+  }),
+});
+
+export const app = createMcpApp({
+  serverInfo: { name: "stock", version: "1.0.0" },
+  auth: signedTokenAuth({
+    secret: process.env.OAUTH_CODE_SECRET as string,
+    resolveUser: async () => ({ id: "alice" }),
+    loginUrl: (_req, next) => `/login?next=${encodeURIComponent(next)}`,
+  }),
+  allowInMemoryCodeStore: true,
+  tools: [stock],
+  onOutputViolation: (tool, violations) => console.error(tool, violations), // server log only
+});
+```
+
+### `x-mcp-header`
+
+Put `"x-mcp-header": "Name"` on an `inputSchema` property to have a 2026-07-28 client mirror its value in the `Mcp-Param-Name` request header. Checked at construction, whatever `validateArgs` says:
+
+- The property is reached through `properties` alone from the root (not through `items`, `allOf`, `$ref` and the like).
+- The value is a non-empty header token. Names compare case-insensitively and are unique within a tool.
+- The property's `type` is `integer`, `string` or `boolean` (`null` may be added).
+- A tool has at most 16 of them.
+
+On a 2026-07-28 `tools/call`, after the scope check and before the handler runs, each annotated header must match the body, or the call answers `-32020` over HTTP 400 and the audit entry has `error: "param_header_mismatch"`. The message is fixed text that names the header and never a value.
+
+- Missing, different, longer than 8192 characters, or not decodable: "header does not match the request body". Characters outside visible ASCII, space and tab: "header contains invalid characters".
+- A property that is `null` or absent in the body expects no header.
+- Strings compare exactly and booleans are `true` or `false`. An integer must be within ±(2^53−1) and written canonically: `0`, `-7`, `42`, or `42.0`, which equals `42`. `+7`, `042`, `-0`, `42.000`, `0x2A` and `1e1` do not match.
+- A `=?base64?...?=` value keeps a leading byte-order mark, so `=?base64?77u/YQ==?=` is not `a`.
+- A value with other characters is sent as `=?base64?...?=`.
+- A header for a property without the annotation is ignored. Older protocol versions skip the check.
+
+Limits:
+
+- The Node adapter (`asNodeHandler`) refuses a repeated annotated `Mcp-Param-*` header by reading `rawHeaders`. A host that builds its own `Request` sees repeated headers merged into one value and must reject them first.
+- The browser preflight lists every registered `Mcp-Param-*` name, so the names of annotated parameters are visible to anonymous callers. With `hideToolsOutsideScope` on, the anonymous preflight lists only the names of tools that have no `scope`.
+
+## Client extensions
+
+A 2026-07-28 client lists the extensions it supports per request, in `_meta["io.modelcontextprotocol/clientCapabilities"].extensions` (an object of extension id to settings object). An entry that is not an object, or an `extensions` that is not an object, counts as not declared. A request on an older version, including `initialize`, declares nothing and sees everything.
+
+A 2026-07-28 request is shown MCP Apps (`_meta.ui` on tools, `ui://` documents) only when the client declared `io.modelcontextprotocol/ui` with `mimeTypes` that include `text/html;profile=mcp-app`. Otherwise:
+
+- `tools/list` has no `_meta.ui`,
+- `resources/list` has no `ui://` documents,
+- `resources/read` of a `ui://` URI is answered as an unknown resource (`-32602`).
+
+A server with `uiResources` declares `extensions["io.modelcontextprotocol/ui"]: {}` in `initialize` and `server/discover`, next to the Skills extension when `skills` is set.
+
 ## Status codes
 
 | HTTP | When |
@@ -102,7 +271,7 @@ Experimental and opt-in; nothing is required. Registering `skills` adds `skills/
 | `-32001` | `JSONRPC_UNAUTHORIZED` (401) |
 | `-32002` | Payload too large (413), except under 2026-07-28 |
 | `-32003` | Insufficient scope (403) |
-| `-32020` | 2026-07-28 header mismatch (`Mcp-Method`, `Mcp-Name` or protocol version) |
+| `-32020` | 2026-07-28 header mismatch (`Mcp-Method`, `Mcp-Name`, `Mcp-Param-*` or protocol version) |
 | `-32022` | 2026-07-28 unsupported protocol version |
 
 ## `createMcpHandler` options
@@ -178,7 +347,8 @@ Pre-registered clients, and clients whose id this server sealed in `/register`, 
 | `scopes`, `defaultScopes`, `realm` | `["mcp"]`, full `scopes`, `serverInfo.name` | As on the router. `realm` is the `WWW-Authenticate` realm |
 | `extraRedirectUris`, `allowLoopback` | `[]`, `true` | Callbacks beyond the client profiles; loopback redirects |
 | `consent`, `requireRegisteredClients`, `allowInMemoryCodeStore`, `cimd`, `cimdCache`, `cimdLookup`, `cimdFetch`, `cimdAllowedPorts`, `cimdRequireJsonContentType` | as on the router | Passed to the router |
-| `validateArgs` | `true` | Validate `tools/call` arguments against each tool's `inputSchema` |
+| `validateArgs` | `true` | Validate `tools/call` arguments against each tool's `inputSchema` ([keywords](#json-schema-2020-12)); also checks the schemas at construction |
+| `validateOutput`, `onOutputViolation`, `schemaValidator` | follows `validateArgs`, none, built-in | Check results against `outputSchema`, and replace the evaluator: [Tool results](#tool-results-and-annotations) |
 | `instructions`, `onToolError`, `context`, `allowedRequestOrigins` | none | Passed to the MCP handler. `context` defaults to `{}`. `onToolError` maps a thrown error to client-visible text (default `"Tool execution failed"`) |
 | `audit`, `auditTimeoutMs` | none, `1000` | `audit` is one sink for MCP and OAuth events, each tagged `source: "mcp"` or `"oauth"`. `auth.audit` overrides OAuth delivery. `auditTimeoutMs` applies to both |
 | `hideToolsOutsideScope` | `false` | `true` lists only tools the caller's scopes satisfy (a tool with no `scope` is always listed). `tools/call` enforces scope either way, with 403. `"strict"` also answers a call to a hidden tool as an unknown tool (`-32602`), so a caller cannot tell it from a missing one. The denial is still audited as `missing_scope` |
@@ -203,7 +373,7 @@ Pre-registered clients, and clients whose id this server sealed in `/register`, 
 - `rpcResult`, `rpcError`, the `JSONRPC_*` error constants
 - `PROTOCOL_VERSIONS`, `DEFAULT_PROTOCOL_VERSION`
 - `jsonResponse({ data, status?, headers?, cors? })`
-- Types: `McpApp`, `McpAppOptions`, `McpAppAuth`, `UnifiedAuditEntry`, `VerifiedToken`, `SignedTokenAuthOptions`, `ClientName`, `ClientProfile`, `McpHandler`, `McpHandlerOptions`, `McpPorts`, `Principal`, `AuditEntry`, `ServerInfo`, `ToolDef`, `ToolHandler`, `ToolListEntry`, `ToolRegistry`, `RegistryOptions`, `ToolResult`, `ContentBlock`, `JsonSchema`, `StandardSchemaV1`, `DefineToolOptions`, `ApiToolOptions`, `ApiRequest`, `ToolUi`, `UiCsp`, `UiResource`, `UiVisibility`, `ResourceDef`, `ResourceBody`, `SkillDef`, `SkillFile`, `JsonResponseInput`, `JsonResponseOptions`, `JsonRpcId`, `JsonRpcRequest`, `JsonRpcResponse`, `WwwAuthenticateOptions`, `ClientStore`, `RegisteredClient`, `CodeStore`, `ConsentOptions`, `ConsentRequest`, `MintAccessTokenInput`, `RefreshAccessTokenInput`, `RevokeTokenInput`, `MintedToken`, `OAuthUser`
+- Types: `McpApp`, `McpAppOptions`, `McpAppAuth`, `UnifiedAuditEntry`, `VerifiedToken`, `SignedTokenAuthOptions`, `ClientName`, `ClientProfile`, `McpHandler`, `McpHandlerOptions`, `McpPorts`, `Principal`, `AuditEntry`, `ServerInfo`, `ToolDef`, `ToolHandler`, `ToolListEntry`, `ToolRegistry`, `RegistryOptions`, `ToolResult`, `ContentBlock`, `JsonSchema`, `StandardSchemaV1`, `DefineToolOptions`, `ApiToolOptions`, `ApiRequest`, `ToolAnnotations`, `ToolUi`, `UiCsp`, `UiDocument`, `UiPermission`, `UiPermissions`, `UiResource`, `UiVisibility`, `ResourceDef`, `ResourceBody`, `SkillDef`, `SkillFile`, `JsonResponseInput`, `JsonResponseOptions`, `JsonRpcId`, `JsonRpcRequest`, `JsonRpcResponse`, `WwwAuthenticateOptions`, `ClientStore`, `RegisteredClient`, `CodeStore`, `ConsentOptions`, `ConsentRequest`, `MintAccessTokenInput`, `RefreshAccessTokenInput`, `RevokeTokenInput`, `MintedToken`, `OAuthUser`
 
 </details>
 
@@ -228,7 +398,7 @@ Pre-registered clients, and clients whose id this server sealed in `/register`, 
 Building blocks for hosts that assemble their own transport or OAuth flow. Less stable than the entries above.
 
 - `timingSafeEqual`, `matchesAny`
-- `validateAgainstSchema`, `JSON_SCHEMA_TYPES`, `SUPPORTED_SCHEMA_KEYWORDS`, `IGNORED_SCHEMA_KEYWORDS`, `unsupportedKeywords`, `missingObjectType`
+- `validateAgainstSchema`, `JSON_SCHEMA_TYPES`, `SUPPORTED_SCHEMA_KEYWORDS`, `IGNORED_SCHEMA_KEYWORDS`, `unsupportedKeywords`, `missingObjectType`; type `SchemaValidator`
 - `pickProtocolVersion`, `ASSUMED_HEADER_PROTOCOL_VERSION`
 - `emptyResponse`, `optionsResponse`, `corsHeaders`, `methodNotAllowed`
 - `issueAuthCode`, `consumeAuthCode` (pass `codeStore`; omitting it is deprecated), `newClientId`

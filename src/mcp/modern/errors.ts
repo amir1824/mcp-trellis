@@ -44,6 +44,18 @@ const modernError = ({ id, status, code, message, data }: ModernErrorInput): Res
 export const headerMismatch = (id: JsonRpcId, message: string): Response =>
   modernError({ id, status: 400, code: JSONRPC_HEADER_MISMATCH, message });
 
+/** Fixed text: the header name is the server's own, and no header or argument value is echoed. */
+export const paramHeaderError = (
+  id: JsonRpcId,
+  fault: { header: string; reason: "mismatch" | "invalid_characters" },
+): Response =>
+  headerMismatch(
+    id,
+    fault.reason === "invalid_characters"
+      ? `${fault.header} header contains invalid characters`
+      : `${fault.header} header does not match the request body`,
+  );
+
 export const invalidMeta = (id: JsonRpcId, message: string): Response =>
   modernError({ id, status: 400, code: JSONRPC_INVALID_PARAMS, message });
 

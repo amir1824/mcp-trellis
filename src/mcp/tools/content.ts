@@ -25,8 +25,15 @@ export type ContentBlock =
 
 export type ToolResult = {
   content: ContentBlock[];
-  /** A plain JSON object for a UI or a typed client; `content` stays the text fallback. */
-  structuredContent?: Record<string, unknown> | undefined;
+  /**
+   * Machine-readable result for a UI or a typed client; `content` stays the text fallback
+   * (MCP: a tool that returns structured content should also return it serialized as text).
+   * Any JSON value is allowed (object, array, string, number, boolean or `null`) when the
+   * client speaks 2026-07-28. A client on an older protocol version only ever receives a
+   * plain object: any other value is left out of its response and only `content` reaches it.
+   * With `ToolDef.outputSchema` set, this must conform to that schema.
+   */
+  structuredContent?: unknown;
   _meta?: Record<string, unknown> | undefined;
   isError?: boolean | undefined;
 };
@@ -39,13 +46,10 @@ export const firstText = (result: ToolResult): string | undefined => {
 
 /**
  * A handler can be plain JS: anything without an array `content`, or with a
- * `structuredContent` / `_meta` that is not an object, never reaches the client.
+ * `_meta` that is not an object, never reaches the client. `structuredContent`
+ * may be any JSON value, so it is not checked here.
  */
-export const isToolResult = (out: unknown): out is ToolResult => {
-  if (!isJsonObject(out) || !Array.isArray(out.content)) return false;
-  const { structuredContent, _meta } = out;
-  return (
-    (structuredContent === undefined || isJsonObject(structuredContent)) &&
-    (_meta === undefined || isJsonObject(_meta))
-  );
-};
+export const isToolResult = (out: unknown): out is ToolResult =>
+  isJsonObject(out) &&
+  Array.isArray(out.content) &&
+  (out._meta === undefined || isJsonObject(out._meta));

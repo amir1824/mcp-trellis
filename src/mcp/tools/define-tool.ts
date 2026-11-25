@@ -10,10 +10,11 @@
 
 import { pickDefined } from "../../util/defined.js";
 import type { ToolDef } from "../registry.js";
+import type { JsonSchema } from "../schema/types.js";
 import type { ToolUi } from "../ui/types.js";
-import type { JsonSchema } from "../validate.js";
 import type { ToolResult } from "./content.js";
 import { issuesResult, parseWithSchema, type StandardSchemaV1 } from "./standard-schema.js";
+import type { ToolAnnotations } from "./wire/annotations.js";
 
 export type ToolCore = {
   name: string;
@@ -24,12 +25,19 @@ export type ToolCore = {
   scope?: string | null | undefined;
   /** See `ToolDef.ui` — the MCP Apps UI a host renders for this tool's result. */
   ui?: ToolUi | undefined;
+  /** See `ToolDef.outputSchema` — the JSON Schema of the result's `structuredContent`. */
+  outputSchema?: JsonSchema | undefined;
+  /** See `ToolDef.annotations` — hints only, untrusted by clients, never used for authorization. */
+  annotations?: ToolAnnotations | undefined;
 };
 
 type TypedToolHandler<TCtx, Args> = (
   ctx: TCtx,
   args: Args,
 ) => Promise<ToolResult | string> | ToolResult | string;
+
+/** The `ToolCore` fields that are forwarded to the `ToolDef` as given. */
+export const TOOL_CORE_OPTIONAL_KEYS = ["scope", "ui", "outputSchema", "annotations"] as const;
 
 export type ValidatedInput<Input> = {
   /** Standard Schema v1 validator. Parsed and typed before `handler` runs. */
@@ -52,7 +60,7 @@ export const defineTool = <TCtx, Input = Record<string, unknown>>(
   name: options.name,
   description: options.description,
   inputSchema: options.inputSchema,
-  ...pickDefined(options, ["scope", "ui"]),
+  ...pickDefined(options, TOOL_CORE_OPTIONAL_KEYS),
   handler: async (ctx, rawArgs) => {
     if (!options.input) return options.handler(ctx, rawArgs);
     const parsed = await parseWithSchema(options.input, rawArgs);

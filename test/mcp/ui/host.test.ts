@@ -93,7 +93,11 @@ const runHost = async (app: McpApp, token: string) => {
 describe("simulated MCP Apps host", () => {
   it("R3 the host finds the UI in tools/list, reads its html, and hands it the tool result (simulated: a real MCP Apps host is not exercised)", async () => {
     const { initialize, uiTool, resource, toolResult } = await runHost(makeApp(), TOKENS.bob);
-    assert.deepEqual(initialize.result?.capabilities, { tools: {}, resources: {} });
+    assert.deepEqual(initialize.result?.capabilities, {
+      tools: {},
+      resources: {},
+      extensions: { "io.modelcontextprotocol/ui": {} },
+    });
     assert.equal(uiTool?.name, "list_products");
     assert.deepEqual(resource.result?.contents, [
       {
