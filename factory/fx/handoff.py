@@ -20,7 +20,9 @@ def render(project: Path, job: dict, config: dict) -> str:
                  if plan_lines else ("(plan.md is missing: this job needs one)" if job["plan"] else "(no plan: a LOW job)"))
     changed = changed_files(project, job["base"])
     parts = [f"# Handoff for job {job_id}", f"stage={job['stage']} risk={job['risk']} reviewers={','.join(job['reviewers']) or 'none'} base={job['base'][:12]}",
-             f"task: .factory/jobs/{job_id}/task.md (read it for the ticket's own words)", "", "## Plan", plan_text, "",
+             f"task: .factory/jobs/{job_id}/task.md (read it for the ticket's own words)",
+             *([f"source: .factory/jobs/{job_id}/source.md (the owner's words, verbatim: judge the plan and the code against it)"] if job.get("source_sha256") else []),
+             "", "## Plan", plan_text, "",
              f"## Changed files ({len(changed)})", *changed[:FILE_LINES], *([f"... and {len(changed) - FILE_LINES} more"] if len(changed) > FILE_LINES else []), "",
              "## Where it stands", *_standing(project, job, config, now), "", "## Next, in order", *_next(project, job, config, now)]
     return "\n".join(parts) + "\n"
@@ -74,5 +76,5 @@ def _next(project: Path, job: dict, config: dict, now: str) -> list[str]:
         steps.append(f"FX livecheck {job['id']}  (fix what a failing CASE line names, FX gate, run it again; reviewers only after it is green)")
     waiting = [name for name in job["reviewers"] if not waive.is_waived(job, "verdict", name)
                and (job["verdicts"].get(name) is None or job["verdicts"][name]["verdict"] != "PASS" or job["verdicts"][name]["fingerprint"] != now)]
-    steps += [f"call {name} with the diff, the plan and the ids; record FX verdict {job['id']} {name} PASS|CHANGES" for name in waiting]
+    steps += [f"call {name} with the diff, the plan and the ids; record FX verdict {job['id']} {name} PASS|CHANGES --saw <the gate line's fp>" for name in waiting]
     return steps + [f"FX finish {job['id']}  (it must print DONE)"]

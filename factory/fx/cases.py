@@ -42,7 +42,8 @@ def enabled(config: dict) -> bool:
 def brief(project: Path, job_id: str, config: dict) -> str:
     if not enabled(config):
         raise state.StateError("config has no live_check.ticket_cases: name the file the author writes, e.g. scripts/ticket_cases.py")
-    task = state.job_dir(project, job_id) / "task.md"
+    folder = state.job_dir(project, job_id)
+    task = folder / "source.md" if (folder / "source.md").is_file() else folder / "task.md"  # the owner's words first
     if not task.is_file():
         raise state.StateError(f"no task.md for job {job_id}")
     return BRIEF.format(task=task.relative_to(project), path=live.ticket_cases_path(settings(config)), minimum=minimum(config))

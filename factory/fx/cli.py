@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -15,6 +16,7 @@ from fx.route import classify, load_config, raise_to, routing_for
 
 RISKS = ("low", "medium", "high")
 DEP_STATUS = ("ok", "accepted", "blocked")
+ENGINE = 2  # bump when the skill and the engine must change together; the skill names the same number and a test checks it
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -25,6 +27,10 @@ def _parser() -> argparse.ArgumentParser:
     new.add_argument("job")
     new.add_argument("task_file")
     new.add_argument("--risk", choices=RISKS, help="the owner's class; it stands")
+    source = sub.add_parser("source", help="keep the owner's own words for a job made without --source (before the build)")
+    source.add_argument("job")
+    source.add_argument("file")
+    new.add_argument("--source", help="the owner's own words, verbatim (the ticket text, the email): kept as source.md; each R line of the plan quotes it")
     route = sub.add_parser("route", help="classify words without creating a job")
     route.add_argument("words", nargs="+")
     move = sub.add_parser("move", help="move a job to a legal next stage")
@@ -37,10 +43,13 @@ def _parser() -> argparse.ArgumentParser:
     for name in ("show", "gate", "finish", "deps", "timeline"):
         sub.add_parser(name).add_argument("job")
     sub.add_parser("status", help="list the jobs")
+    sub.add_parser("version", help="the engine number the skill checks before it runs anything")
     verdict = sub.add_parser("verdict", help="a reviewer's verdict on the code as it is now. ponytail: it names no identity, any caller can record any reviewer")
     verdict.add_argument("job")
     verdict.add_argument("reviewer")
     verdict.add_argument("verdict", choices=("PASS", "CHANGES"))
+    verdict.add_argument("--saw", help="the `fp=` of the gate line the reviewer was briefed on (8+ characters); a PASS is refused when the code is no longer that code")
+    verdict.add_argument("--self", dest="by_self", action="store_true", help="the chair ran this review itself, on its own work: finish prints it as a self-review")
     verdict.add_argument("--evidence", help="a file under .factory/ that shows what the reviewer ran (required for the reviewers in `evidence_required`)")
     sub.add_parser("livecheck", help="run the project's live script against the real provider (config `live_check`)").add_argument("job")
     author = sub.add_parser("cases", help="the case author step: print the author's brief, or --check the file it wrote")
@@ -55,7 +64,7 @@ def _parser() -> argparse.ArgumentParser:
     waiver = sub.add_parser("waive", help="record the owner's waiver of a check that cannot run here")
     waiver.add_argument("job")
     waiver.add_argument("kind", choices=waive.KINDS)
-    waiver.add_argument("name", nargs="?", default="live", help="the reviewer for `verdict`; ignored for `livecheck`")
+    waiver.add_argument("name", nargs="?", default="live", help="the reviewer for `verdict`, the plan id (R3) for `criterion`; ignored for `livecheck`")
     waiver.add_argument("--owner-said", required=True)
     waiver.add_argument("--reason", required=True)
     record = sub.add_parser("deps-record", help="record the check of one new dependency")
@@ -71,11 +80,36 @@ def _new(project: Path, args, config: dict) -> int:
     if stray:
         raise state.StateError("commit the factory first, so the job's base holds it: " + ", ".join(stray))
     text = Path(args.task_file).read_text(encoding="utf-8")
+    source = _read_source(args.source)
     route = classify(f"{args.risk}: {text}" if args.risk else text, config)
-    state.create(project, args.job, text, head(project), route)
+    state.create(project, args.job, text, head(project), route, source)
     print(f"CREATED {args.job} risk={route['risk']} surfaces={','.join(route['surfaces']) or 'none'} "
-          f"plan={route['plan']} reviewers={','.join(route['reviewers']) or 'none'} because={route['because']}")
-    print("\n".join(f"NEEDS {line}" for line in needs.lines(route, config)))
+          f"plan={route['plan']} reviewers={','.join(route['reviewers']) or 'none'} because={route['because']} source={'kept' if source else 'none'}")
+    print("\n".join(f"NEEDS {line}" for line in needs.lines(route, config, project, source is not None)))
+    return 0
+
+
+SECRET = re.compile(r"sk-[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY")  # ponytail: common key shapes only; the chair also strips credentials by the skill
+
+
+def _read_source(path: str | None) -> bytes | None:
+    """The file as bytes: the owner's words are kept as they came, a CRLF included."""
+    source = Path(path).read_bytes() if path else None
+    if source is not None and not source.strip():
+        raise state.StateError(f"--source {path} is empty")
+    if source is not None:
+        try:
+            source.decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise state.StateError(f"--source {path} is not UTF-8 text: {error}") from error
+        if SECRET.search(source.decode("utf-8")):
+            raise state.StateError(f"--source {path} holds something shaped like a credential: source.md goes to every reviewer, so replace it with [removed] in a copy and pass the copy")
+    return source
+
+
+def _source(project: Path, args, config: dict) -> int:
+    state.add_source(project, args.job, _read_source(args.file))
+    print(f"SOURCE kept for {args.job}: .factory/jobs/{args.job}/source.md")
     return 0
 
 
@@ -86,6 +120,7 @@ def _raise(project: Path, args, config: dict) -> int:
         job.update(risk=route["risk"], plan=route["plan"], reviewers=route["reviewers"], skipped=route["skipped"])
     job = state.update(project, args.job, change)
     print(f"RISK {job['risk']} plan={job['plan']} reviewers={','.join(job['reviewers']) or 'none'}")
+    print("\n".join(f"NEEDS {line}" for line in needs.source_lines(job["plan"] and job["stage"] in ("intake", "plan"), "source_sha256" in job)))
     return 0
 
 
@@ -111,7 +146,9 @@ def _verdict(project: Path, args, config: dict) -> int:
         pending = live.live_reasons(project, job, config, now)
         if pending:
             raise state.StateError("the live check comes before the reviewers: " + "; ".join(pending))
-        entry = {"verdict": args.verdict, "fingerprint": now, "at": state.now()}
+        if args.verdict == "PASS" and args.saw and not (len(args.saw) >= 8 and now.startswith(args.saw.lower())):
+            raise state.StateError(f"the reviewer read {args.saw}, the code is {now[:12]}: it changed after the reviewer read it (or the prefix is under 8 characters, or it is not the bare hex of `fp=`); brief the reviewer again on this code")
+        entry = {"verdict": args.verdict, "fingerprint": now, "at": state.now(), "saw": args.saw or None, "self": args.by_self}
         if evidence:
             entry["evidence"] = evidence
         elif args.verdict == "PASS" and args.reviewer in config.get("evidence_required", []):
@@ -152,8 +189,8 @@ def _deps_record(project: Path, args, config: dict) -> int:
 def _finish(project: Path, args, config: dict) -> int:
     reasons = finish.finish(project, args.job, config)
     job = state.load(project, args.job)
-    notes = [] if reasons else waive.lines(job) + live.relock_lines(job) + needs.skipped_lines(job)
-    print("NOT DONE" if reasons else "DONE")
+    notes = [] if reasons else waive.lines(job) + live.relock_lines(job) + needs.skipped_lines(job) + finish.plan_changed_lines(project, job) + finish.verdict_notes(job)
+    print("NOT DONE" if reasons else "DONE (partial)" if waive.criteria(job) else "DONE")
     print("\n".join([f"- {reason}" for reason in reasons] + notes))
     return 1 if reasons else 0
 
@@ -230,6 +267,8 @@ def _move(project: Path, args, config: dict) -> int:
         if problems:
             raise state.StateError("the case author step is not done (FX cases " + args.job + "): " + "; ".join(problems))
     job = state.move(project, args.job, args.stage, " ".join(args.note))
+    if args.stage == "build" and current["plan"] and "plan_sha256" not in current:  # the first move to build, from wherever; "" means no plan.md yet
+        state.update(project, args.job, lambda item: item.update(plan_sha256=finish.plan_digest(project, args.job)))
     if was in ("intake", "plan") and args.stage == "build" and live.enabled(config):
         live.lock_new(project, args.job, config["live_check"])  # a script that exists when work starts is frozen; a later one at its first run
     print(f"MOVED {args.job} -> {job['stage']}")
@@ -241,13 +280,18 @@ def _show(project: Path, args, config: dict) -> int:
     return 0
 
 
+def _version(project: Path, args, config: dict) -> int:
+    print(f"engine {ENGINE}")
+    return 0
+
+
 def _status(project: Path, args, config: dict) -> int:
     print("\n".join(f"{job['id']}\t{job['stage']}\t{job['risk']}" for job in state.list_jobs(project)) or "no jobs")
     return 0
 
 
-HANDLERS = {"new": _new, "route": _route, "move": _move, "raise": _raise, "show": _show, "status": _status,
-            "gate": _gate, "timeline": _timeline, "livecheck": _livecheck, "cases": _cases, "live-init": _live_init, "livecheck-relock": _relock, "handoff": _handoff, "waive": _waive, "verdict": _verdict, "deps": _deps, "deps-record": _deps_record, "finish": _finish}
+HANDLERS = {"new": _new, "route": _route, "move": _move, "raise": _raise, "show": _show, "status": _status, "version": _version,
+            "gate": _gate, "timeline": _timeline, "livecheck": _livecheck, "cases": _cases, "live-init": _live_init, "livecheck-relock": _relock, "handoff": _handoff, "source": _source, "waive": _waive, "verdict": _verdict, "deps": _deps, "deps-record": _deps_record, "finish": _finish}
 
 
 def main(argv: list[str] | None = None) -> int:

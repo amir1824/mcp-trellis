@@ -8,7 +8,7 @@ from pathlib import Path
 OWNER_CLASS = re.compile(r"^\s*(low|medium|high)\b\s*(?:[:,;\-]|$)", re.IGNORECASE)
 RAISING_WORD = re.compile(r"^\s*(medium|high)\b", re.IGNORECASE)  # a bare leading 'low' is an ordinary word
 ORDER = ("low", "medium", "high")
-DEFAULTS = Path(__file__).resolve().parent.parent / "config.json"
+DEFAULTS = Path(__file__).resolve().parent.parent / "defaults.json.txt"  # JSON kept as text: a project's linter or formatter reads *.json, and a defaults file it would rewrite fails the first gate round
 
 
 def load_config(project: Path) -> dict:

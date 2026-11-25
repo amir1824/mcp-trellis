@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -43,6 +44,20 @@ def job_dir(project: Path, job_id: str) -> Path:
     return project / STATE_DIR / "jobs" / job_id
 
 
+PLAN_LINE = re.compile(r"^\s*[-*]\s*([RM]\d+):(.*)$", re.MULTILINE)  # the one definition of a plan line: its id, then its text
+
+
+def plan_lines(project: Path, job_id: str) -> list[tuple[str, str]]:
+    """(id, text) for each R<n> and M<n> line plan.md lists, in order."""
+    plan = job_dir(project, job_id) / "plan.md"
+    return PLAN_LINE.findall(plan.read_text(encoding="utf-8")) if plan.is_file() else []
+
+
+def plan_ids(project: Path, job_id: str) -> list[str]:
+    """The R<n> and M<n> ids plan.md lists, in order."""
+    return [name for name, _ in plan_lines(project, job_id)]
+
+
 def load(project: Path, job_id: str) -> dict:
     path = job_dir(project, job_id) / "job.json"
     if not path.is_file():
@@ -50,7 +65,26 @@ def load(project: Path, job_id: str) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def create(project: Path, job_id: str, task_text: str, base: str, route: dict) -> dict:
+def record_source(job: dict, source: bytes) -> None:
+    """The owner's own words, byte for byte (a CRLF stays): R lines quote them and finish checks the quotes. The file is written after job.json, so a crash leaves a hash with no file (finish says so), never a file nobody knows.
+    ponytail: the hash is taken here, so what the chair passes counts as the owner's words (the skill forbids a summary), and job.json can be edited with source.md like every other record."""
+    job["source_sha256"] = hashlib.sha256(source).hexdigest()
+
+
+def add_source(project: Path, job_id: str, source: bytes) -> dict:
+    """For a job made without one, before the build starts."""
+    def change(job: dict) -> None:
+        if "source_sha256" in job:
+            raise StateError(f"job {job_id} already has a source")
+        if job["stage"] not in ("intake", "plan"):
+            raise StateError(f"job {job_id} is in {job['stage']}: a source is kept before the build starts")
+        record_source(job, source)
+    job = update(project, job_id, change)
+    (job_dir(project, job_id) / "source.md").write_bytes(source)
+    return job
+
+
+def create(project: Path, job_id: str, task_text: str, base: str, route: dict, source: bytes | None = None) -> dict:
     folder = job_dir(project, job_id)
     with locked(project, job_id, create=True):
         if (folder / "job.json").exists():
@@ -60,7 +94,11 @@ def create(project: Path, job_id: str, task_text: str, base: str, route: dict) -
                "risk": route["risk"], "surfaces": route["surfaces"], "owner_class": route["owner"],
                "plan": route["plan"], "reviewers": route["reviewers"], "skipped": route["skipped"],
                "gates": [], "verdicts": {}, "deps": {}, "lives": [], "waivers": []}
+        if source is not None:
+            record_source(job, source)
         _write(folder / "job.json", job)
+        if source is not None:
+            (folder / "source.md").write_bytes(source)
         return job
 
 
