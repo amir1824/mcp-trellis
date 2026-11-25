@@ -4,28 +4,33 @@ import { mayUse } from "../request-policy.js";
 import type { Principal } from "../types.js";
 import type { GeneralCatalogEntry, ResourceEntry } from "./types.js";
 
-/** `scope`: the principal lacks the scope to step up to. `rule`: the host's `allow` said no, so there is nothing to step up to. */
+/**
+ * `scope`: the principal lacks the scope to step up to. `rule`: the host's `allow` said no (`failed: false`)
+ * or threw (`failed: true`), so there is nothing to step up to; the audit tells the two apart.
+ */
 export type Access =
   | { allowed: true }
   | { allowed: false; reason: "scope"; scope: string }
-  | { allowed: false; reason: "rule" };
+  | { allowed: false; reason: "rule"; failed: boolean };
 
 const ALLOWED: Access = { allowed: true };
-const DENIED_BY_RULE: Access = { allowed: false, reason: "rule" };
+const DENIED_BY_RULE: Access = { allowed: false, reason: "rule", failed: false };
+const FAILED_RULE: Access = { allowed: false, reason: "rule", failed: true };
 
 /** Only an explicit `true` allows; a throw, a promise or any other value denies, and nothing of it leaks. */
-const passesRule = <TCtx>({ def }: GeneralCatalogEntry<TCtx>, principal: Principal): boolean => {
-  if (def.allow === undefined) return true;
+const ruleOutcome = <TCtx>({ def }: GeneralCatalogEntry<TCtx>, principal: Principal): Access => {
+  if (def.allow === undefined) return ALLOWED;
   try {
-    return def.allow(principal) === true;
+    return def.allow(principal) === true ? ALLOWED : DENIED_BY_RULE;
   } catch {
-    return false;
+    return FAILED_RULE;
   }
 };
 
 /** `allow` first: a caller it rejects must not learn from a scope challenge that the resource exists. */
 const generalAccess = <TCtx>(entry: GeneralCatalogEntry<TCtx>, principal: Principal): Access => {
-  if (!passesRule(entry, principal)) return DENIED_BY_RULE;
+  const rule = ruleOutcome(entry, principal);
+  if (!rule.allowed) return rule;
   const { scope } = entry.def;
   return mayUse(principal, scope)
     ? ALLOWED

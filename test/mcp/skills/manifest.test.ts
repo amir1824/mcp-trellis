@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { describe, it } from "node:test";
+import { describe, it, mock } from "node:test";
 import type { SkillDef } from "../../../src/mcp/skills/types.js";
 import { json, modern } from "../modern/harness.js";
 import {
@@ -159,5 +159,22 @@ describe("skills manifest R5", () => {
       differing?.map(({ uri }) => uri),
       ["skill://pdf-processing/templates/invoice.md"],
     );
+  });
+
+  it("a failed hash is retried on the next call, never kept", async () => {
+    const digest = mock.method(
+      globalThis.crypto.subtle,
+      "digest",
+      async () => {
+        throw new Error("digest unavailable");
+      },
+      { times: 1 },
+    );
+    const env = makeSkillEnv({ skills: [PDF] });
+    const failed = await rpc(env, "skills/list", undefined, TOKENS.alice);
+    const [entry] = await listedSkills(env, TOKENS.alice);
+    digest.mock.restore();
+    assert.equal(failed.status, 500);
+    assert.match(entry?.resources[0]?.digest ?? "", DIGEST_FORMAT);
   });
 });

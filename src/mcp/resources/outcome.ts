@@ -86,7 +86,11 @@ export const deniedResponse = async <TCtx>(
   detail: { uri: string; access: Exclude<Access, { allowed: true }> },
 ): Promise<Response> => {
   const { uri, access } = detail;
-  if (access.reason === "rule" || call.options.hideToolsOutsideScope) {
+  if (access.reason === "rule") {
+    const reason = access.failed ? DENIAL_REASONS.ruleFailed : DENIAL_REASONS.ruleDenied;
+    return unknownResponse(call, { uri, reason });
+  }
+  if (call.options.hideToolsOutsideScope) {
     return unknownResponse(call, { uri, reason: DENIAL_REASONS.missingScope });
   }
   await auditResource(call, { resource: shownName(uri), error: DENIAL_REASONS.missingScope });

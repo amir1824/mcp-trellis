@@ -123,17 +123,6 @@ const handlePost = async <TCtx>(
   return dispatchRpc({ req: request, body: envelope, options, startedAt, profile });
 };
 
-/** 2026-07-28 clients send `Mcp-Method` and `Mcp-Name`, so a browser preflight must allow them. */
-const MCP_PREFLIGHT_ALLOWED_HEADERS =
-  "Content-Type, Authorization, MCP-Protocol-Version, Mcp-Method, Mcp-Name";
-
-const mcpPreflight = (): Response => {
-  const response = optionsResponse();
-  const headers = new Headers(response.headers);
-  headers.set("Access-Control-Allow-Headers", MCP_PREFLIGHT_ALLOWED_HEADERS);
-  return new Response(null, { status: response.status, headers });
-};
-
 type HttpMethodHandler = (request: Request, startedAt: number) => Promise<Response> | Response;
 
 export const createMcpHandler = <TCtx>(handlerOptions: McpHandlerOptions<TCtx>): McpHandler => {
@@ -147,7 +136,7 @@ export const createMcpHandler = <TCtx>(handlerOptions: McpHandlerOptions<TCtx>):
   };
 
   const HTTP_METHODS: Record<string, HttpMethodHandler> = {
-    OPTIONS: () => mcpPreflight(),
+    OPTIONS: () => optionsResponse(),
     GET: (request, startedAt) => handleGet(request, options, startedAt),
     POST: (request, startedAt) => handlePost(request, options, startedAt),
   };

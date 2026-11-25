@@ -5,11 +5,7 @@ import { SKILL_URI_SCHEME } from "../skills/types.js";
 import { shownName } from "../tools/call-args.js";
 import { UI_MIME_TYPE, UI_RESOURCE_SCHEME } from "../ui/types.js";
 import type { ResourceDef } from "./types.js";
-
-/** RFC 3986 `unreserved`, `reserved` and `%`: every ASCII character a URI may carry. */
-const URI_CHARACTERS = /^[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+$/;
-const LOWERCASE_SCHEME = /^[a-z][a-z0-9+.-]*:/;
-const MAX_URI_LENGTH = 512;
+import { uriShapeViolations } from "./uri.js";
 
 const MIME_PARAMETER_SEPARATOR = ";";
 const [APP_ESSENCE = "", APP_PARAMETER = ""] = UI_MIME_TYPE.split(MIME_PARAMETER_SEPARATOR);
@@ -28,10 +24,7 @@ const isOptional = (value: unknown, type: "string" | "function"): boolean =>
 
 const uriViolations = (uri: unknown, seen: ReadonlySet<string>): string[] => {
   if (typeof uri !== "string") return ["uri must be a string"];
-  const violations: string[] = [];
-  if (!URI_CHARACTERS.test(uri)) violations.push("uri must hold only RFC 3986 ASCII characters");
-  if (!LOWERCASE_SCHEME.test(uri)) violations.push("uri must start with a lowercase `scheme:`");
-  if (uri.length > MAX_URI_LENGTH) violations.push(`uri is over ${MAX_URI_LENGTH} characters`);
+  const violations = uriShapeViolations(uri);
   if (uri.startsWith(UI_RESOURCE_SCHEME)) {
     violations.push(`uri may not use "${UI_RESOURCE_SCHEME}", which uiResources owns`);
   }

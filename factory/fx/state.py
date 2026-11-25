@@ -134,8 +134,12 @@ def move_in_place(job: dict, stage: str, note: str = "") -> None:
     job["stage"] = stage
 
 
-def move(project: Path, job_id: str, stage: str, note: str = "") -> dict:
-    return update(project, job_id, lambda job: move_in_place(job, stage, note))
+def move(project: Path, job_id: str, stage: str, note: str = "", record: dict | None = None) -> dict:
+    """`record` is written in the same update as the stage change, so a crash cannot leave one without the other."""
+    def change(job: dict) -> None:
+        move_in_place(job, stage, note)
+        job.update(record or {})
+    return update(project, job_id, change)
 
 
 def list_jobs(project: Path) -> list[dict]:

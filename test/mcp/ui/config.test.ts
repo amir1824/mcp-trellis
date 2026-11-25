@@ -29,6 +29,19 @@ describe("construction fails closed on a bad UI configuration", () => {
     assert.throws(() => makeEnv({ tools: [tool({ resourceUri: 5 })], resources: null }));
   });
 
+  it("a ui:// uri with characters a URI cannot carry, or over 512 characters", () => {
+    const spaced = "ui://x/a b";
+    const long = `ui://x/${"a".repeat(600)}`;
+    assert.throws(
+      () => makeEnv({ tools: [uiTool(spaced)], resources: [resource({ uri: spaced })] }),
+      /RFC 3986/,
+    );
+    assert.throws(
+      () => makeEnv({ tools: [uiTool(long)], resources: [resource({ uri: long })] }),
+      /over 512 characters/,
+    );
+  });
+
   it("a bad visibility", () => {
     assert.throws(
       () => makeEnv({ tools: [tool({ resourceUri: "ui://x/y", visibility: [] })] }),

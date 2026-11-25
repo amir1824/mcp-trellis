@@ -1,7 +1,9 @@
 /** The UI resources a server serves, checked once at construction and read-only afterwards. */
 
+import { clipText } from "../../util/clip.js";
 import { isJsonObject } from "../../util/json.js";
 import type { ToolRegistry } from "../registry.js";
+import { uriShapeViolations } from "../resources/uri.js";
 import { parseCsp } from "./csp.js";
 import { type ToolUi, UI_RESOURCE_SCHEME, type UiResource } from "./types.js";
 
@@ -13,6 +15,9 @@ export type UiEntry = {
 
 /** Keyed by URI in a `Map`: a request's `uri` is never looked up as an object key. */
 export type UiRegistry = ReadonlyMap<string, UiEntry>;
+
+/** Longest URI echoed in a construction error. */
+const MAX_SHOWN_URI = 200;
 
 const VISIBILITIES: ReadonlySet<string> = new Set(["model", "app"]);
 
@@ -47,6 +52,12 @@ export const toolUiViolations = (
 const parseResource = (resource: UiResource): UiResource => {
   const { uri, name, description, html, csp } = resource;
   if (!isUiUri(uri)) throw new Error(`uiResources uri must be a "${UI_RESOURCE_SCHEME}" URI`);
+  const shapeProblems = uriShapeViolations(uri);
+  if (shapeProblems.length > 0) {
+    throw new Error(
+      `uiResources ${clipText(uri, MAX_SHOWN_URI, "…")}: ${shapeProblems.join("; ")}`,
+    );
+  }
   if (typeof html !== "string" || html.trim() === "") {
     throw new Error(`uiResources ${uri}: html must be a non-empty string`);
   }

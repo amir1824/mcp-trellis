@@ -40,7 +40,10 @@ const lazyManifest = (parts: Part[]): (() => Promise<SkillResource[]>) => {
         digest: `sha256:${hex(await crypto.subtle.digest("SHA-256", encoder.encode(text)))}`,
         size,
       })),
-    );
+    ).catch((caught: unknown) => {
+      pending = undefined; // a failed hash is retried on the next call, never kept
+      throw caught;
+    });
     return pending;
   };
 };

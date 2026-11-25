@@ -61,7 +61,7 @@ A bad or duplicate URI, a reserved URI or MIME type, or a missing function throw
 | Unknown URI, or a `uri` that is not a string | `-32602` |
 | `read` throws, or returns something that is not a string or `{ text }` | `-32603 Resource read failed`; the exception text goes to neither the caller nor the audit entry |
 
-Every list and read is audited with `method`, `resource` (the URI, clipped to 200 characters), `principalId`, `ok`, `error` and `durationMs`. The denial reasons are `missing_scope`, `unknown_resource`, `invalid_params`, `unauthorized` and, new with resources, `resource_failed`. A host that switches on the audit `error` value should handle `resource_failed`.
+Every list and read is audited with `method`, `resource` (the URI, clipped to 200 characters), `principalId`, `ok`, `error` and `durationMs`. The denial reasons are `missing_scope` (the principal lacks the scope), `rule_denied` (your `allow` returned anything but `true`), `rule_failed` (your `allow` threw), `unknown_resource`, `invalid_params`, `unauthorized` and `resource_failed` (your `read` threw or returned a bad shape). The caller sees the same unknown-resource answer for `rule_denied` and `rule_failed`. A host that switches on the audit `error` value should handle the new ones.
 
 ## Context and tenants
 

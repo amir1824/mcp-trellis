@@ -58,7 +58,7 @@ const ROWS: Row[] = [
       resource: URIS.acmeOnly,
       principalId: "bob",
       ok: false,
-      error: "missing_scope",
+      error: "rule_denied",
     },
   },
   {
@@ -79,7 +79,7 @@ const ROWS: Row[] = [
       resource: URIS.broken,
       principalId: "root",
       ok: false,
-      error: "missing_scope",
+      error: "rule_failed",
     },
   },
   {

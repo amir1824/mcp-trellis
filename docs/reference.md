@@ -50,7 +50,7 @@ Anything else → JSON-RPC `-32601`. Capabilities advertise **tools only**, plus
 A POST that carries `MCP-Protocol-Version: 2026-07-28` is a 2026-07-28 request. Every other request is handled exactly as before, except the one `-32022` case below. A 2026-07-28 request must also carry:
 
 - `_meta` with `io.modelcontextprotocol/protocolVersion` (equal to the header) and `io.modelcontextprotocol/clientCapabilities` (an object), else `-32602` over HTTP 400, or `-32020` if the version differs from the header;
-- `Mcp-Method` equal to the body's `method`, and for `tools/call` and `resources/read` an `Mcp-Name` equal to the tool name or resource URI (non-ASCII values use `=?base64?...?=`), else `-32020` over HTTP 400 before any method runs.
+- `Mcp-Method` equal to the body's `method`, and for `tools/call`, `resources/read` and `skills/get` an `Mcp-Name` equal to the tool name or the URI (non-ASCII values use `=?base64?...?=`), else `-32020` over HTTP 400 before any method runs.
 
 | Method | Auth | Result |
 |--------|------|--------|
@@ -72,7 +72,7 @@ No change is required for an existing integration. `cimdFetch`, `cimdAllowedPort
 
 ### Migrating to resources
 
-No change is required for an existing integration. Registering `resources` adds `resources/list` and `resources/read` and the `resources` capability; a client that never reads resources is unaffected. The audit `error` field can now be `resource_failed`; a host that switches exhaustively on it should handle the new value. Rollback: remove the option.
+No change is required for an existing integration. Registering `resources` adds `resources/list` and `resources/read` and the `resources` capability; a client that never reads resources is unaffected. The audit `error` field can now be `resource_failed`, `rule_denied` or `rule_failed`; a host that switches exhaustively on it should handle the new value. Rollback: remove the option.
 
 ### Migrating to skills
 

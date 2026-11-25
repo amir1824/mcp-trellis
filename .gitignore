@@ -26,3 +26,4 @@ examples/project-desk/node_modules/
 
 # Factory job state
 .factory/
+__pycache__/

@@ -41,7 +41,7 @@ OAuth tells your server who is calling. It does not decide which tenant or recor
 
 Client ID Metadata Documents (CIMD) are supported and off by default: set `cimd: true`. Pass `cimdCache` too (strongly recommended: without it every refresh and revoke re-fetches the client document). Dynamic Client Registration works too.
 
-Protocol: MCP 2024-11-05, 2025-03-26 and 2025-06-18 (default 2025-06-18). The 2026-07-28 revision is served to a client that sends `MCP-Protocol-Version: 2026-07-28` with the `_meta` and `Mcp-Method` fields that revision requires (`server/discover`, `tools/list`, `tools/call`, and `resources/*` when a UI is configured; see [reference](docs/reference.md#2026-07-28-requests)). Nothing changes for the three older versions: a client that asks for another version in `initialize` is answered with the default version, and an unknown `MCP-Protocol-Version` header gets a 400. That revision deprecates Dynamic Client Registration in favor of CIMD; DCR stays on here.
+Protocol: MCP 2024-11-05, 2025-03-26 and 2025-06-18 (default 2025-06-18). The 2026-07-28 revision is served to a client that sends `MCP-Protocol-Version: 2026-07-28` with the `_meta` and `Mcp-Method` fields that revision requires (`server/discover`, `tools/list`, `tools/call`, and `resources/*` and `skills/*` when a UI, `resources` or `skills` is configured; see [reference](docs/reference.md#2026-07-28-requests)). Nothing changes for the three older versions: a client that asks for another version in `initialize` is answered with the default version, and an unknown `MCP-Protocol-Version` header gets a 400. That revision deprecates Dynamic Client Registration in favor of CIMD; DCR stays on here.
 
 ## Quick start
 

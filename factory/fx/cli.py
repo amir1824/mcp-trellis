@@ -266,9 +266,9 @@ def _move(project: Path, args, config: dict) -> int:
         problems = cases.check(project, config)  # the build starts with the author's file in place, so the freeze below covers it
         if problems:
             raise state.StateError("the case author step is not done (FX cases " + args.job + "): " + "; ".join(problems))
-    job = state.move(project, args.job, args.stage, " ".join(args.note))
-    if args.stage == "build" and current["plan"] and "plan_sha256" not in current:  # the first move to build, from wherever; "" means no plan.md yet
-        state.update(project, args.job, lambda item: item.update(plan_sha256=finish.plan_digest(project, args.job)))
+    first_build = args.stage == "build" and current["plan"] and "plan_sha256" not in current  # the first move to build, from wherever; "" means no plan.md yet
+    record = {"plan_sha256": finish.plan_digest(project, args.job)} if first_build else None
+    job = state.move(project, args.job, args.stage, " ".join(args.note), record)
     if was in ("intake", "plan") and args.stage == "build" and live.enabled(config):
         live.lock_new(project, args.job, config["live_check"])  # a script that exists when work starts is frozen; a later one at its first run
     print(f"MOVED {args.job} -> {job['stage']}")

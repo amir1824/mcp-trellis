@@ -80,7 +80,8 @@ Every place the library keeps something between requests, and what keeps it from
 | Key cache (`hkdf.ts`) | keys derived from `codeSecret` | a SHA-256 fingerprint of the secret | No user data |
 | `processCodeStore` (`codes.ts`) | single-use marks for auth codes and refresh tokens | the token's `jti` | Process-local; pass a shared `codeStore` when you run more than one instance |
 | `cimdCache` (host-supplied) | public client metadata documents | the `client_id` URL | Public data, but a changed `redirect_uris` stays valid until the entry expires (at most an hour) |
-| UI registry | the `ui://` documents tools point at | URI | Read-only, built once per server |
+| Resource catalog | the `ui://` documents, the `resources` and the skill files, built once per server | URI | Read-only. `read(ctx)` of a general resource runs once per authorized read and is never cached by the library |
+| Skill manifest (`skills/compile.ts`) | the `sha256` digests and sizes of each skill's static text, hashed on first use | skill | The same for every caller; a failed hash is retried, never kept |
 
 A client that caches results itself must key its cache by the credential or principal; the library cannot enforce that.
 
@@ -207,7 +208,7 @@ with whichever `codeSecret` value is currently primary.
 
 Explicitly **out** of this package (do not expect parity with full MCP hosts or enterprise AS products):
 
-- **No general resources, no `prompts/*`** — `resources/*` exists only to serve the `ui://` documents of MCP Apps, and capabilities advertise tools, plus resources when a UI is set
+- **No `prompts/*`, no resource templates, subscriptions or completion** — `resources/*` serves the `ui://` documents of MCP Apps, the fixed-URI `resources` and the experimental `skills` you register, each only to a principal its `scope` and `allow` admit. What a resource's `read(ctx)` returns is your code: apply the tenant from `context` there as you would in a tool. Capabilities advertise tools, plus resources when a UI, `resources` or `skills` is set
 - **No server-initiated messages** — Streamable HTTP is served as a single JSON response per POST (which the spec permits, and which Gemini Enterprise requires). No SSE response streams, so no `notifications/progress` and no long-running tool keepalive
 - **No sessions** — removed from the protocol in `2026-07-28` anyway
 - **No enterprise-managed auth** — no ID-JAG, no IdP product integration; you wire login + minting
