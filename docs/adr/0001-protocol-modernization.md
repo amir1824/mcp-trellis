@@ -45,8 +45,8 @@ Rejected on the facts read, not forever: it breaks the zero-dependency constrain
 4. Approve the budgets in the baselines document, after re-measuring on CI.
 5. Re-check the SDK v2 packages (dependencies, Workers, auth) before this ADR is approved; those facts were not readable.
 6. Whether an SDK client may be a development-only conformance peer.
-7. Keep `hideToolsOutsideScope` defaulting to `false` (documented behaviour), or change it in a major release.
-8. With the option on, a `tools/call` for a hidden tool still answers 403 and names the scope, while `resources/read` answers as unknown (matrix, R20 assessment): should T3 make a hidden tool answer like an unknown one?
+7. Keep `hideToolsOutsideScope` defaulting to `false` (documented behaviour), or change it in a major release. *Answered in T3: kept at `false`; the restrictive profile in `docs/security.md` turns it on.*
+8. With the option on, a `tools/call` for a hidden tool still answers 403 and names the scope, while `resources/read` answers as unknown (matrix, R20 assessment): should T3 make a hidden tool answer like an unknown one? *Answered in T3: yes, as the opt-in value `"strict"`; `true` keeps the 403 step-up answer because changing it would be a breaking change.*
 
 ## Rollback
 

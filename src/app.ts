@@ -22,6 +22,7 @@ import { safeAudit } from "./mcp/request-policy.js";
 import { assertToolScopesConfigured } from "./mcp/tools/scope-check.js";
 import type { AuditEntry, Principal } from "./mcp/types.js";
 import { safeOAuthAudit } from "./oauth/audit.js";
+import { CIMD_PORT_KEYS } from "./oauth/cimd/options.js";
 import { DEFAULT_SCOPE } from "./oauth/constants.js";
 import {
   canonicalResource,
@@ -145,8 +146,7 @@ const buildOAuthOptions = <TCtx>(
       "auditTimeoutMs",
       "allowInMemoryCodeStore",
       "cimd",
-      "cimdCache",
-      "cimdLookup",
+      ...CIMD_PORT_KEYS,
       "requireRegisteredClients",
       "consent",
     ]),

@@ -10,6 +10,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **MCP 2026-07-28 (additive; a minor release).** A POST that carries `MCP-Protocol-Version: 2026-07-28` is served by a separate path: `server/discover`; required `_meta` (`protocolVersion`, `clientCapabilities`); `Mcp-Method` and `Mcp-Name` checked against the body before any method runs (`-32020`, HTTP 400); `-32022` when a request's header and `_meta` both name a version this server lacks; `resultType: "complete"` on success results; `ttlMs: 0` and `cacheScope` on `server/discover`, `tools/list`, `resources/list` and `resources/read` (`private` for anything served after authentication or a scope check, `public` only for an anonymous `server/discover`); `initialize` and `ping` answer 404 with `-32601`; an oversized body answers `-32600` over HTTP 413 instead of `-32002`. Requests without that header are answered exactly as before for 2024-11-05, 2025-03-26 and 2025-06-18, with one narrow exception: a request whose header and `_meta` protocol version both name the same unknown version gets `-32022` instead of `-32600` (not for `initialize`); `PROTOCOL_VERSIONS` and `DEFAULT_PROTOCOL_VERSION` are unchanged. See `docs/reference.md#2026-07-28-requests`.
 - A host that set `publicMethods` keeps full control: a 2026-07-28 request is anonymous only for `server/discover` by default, or for the methods it lists (never `initialize` or `ping`).
 
+- **CIMD hardening options (additive, all off by default; a minor release).** `cimdFetch` (the fetch CIMD documents are retrieved with, so a Node host can pin the connection and close DNS rebinding), `cimdAllowedPorts` (ports a CIMD URL may use; `[443]` recommended) and `cimdRequireJsonContentType` (refuse a document not served as JSON).
+- **`hideToolsOutsideScope: "strict"`.** Hides tools the caller may not use and answers a `tools/call` for one as an unknown tool (`-32602`), not `403`. `true` and `false` are unchanged.
+- A security regression suite in `test/security/` covering cross-user and cross-tenant access, unauthorized discovery, direct access, revocation within token semantics, client and resource binding, cache isolation, malformed requests and calls that come from an MCP App; the threat model in `docs/security.md` gains the tenant-isolation boundary, a table of caches and shared state, and a restrictive profile; `docs/modernization/oauth-cimd-review.md` records the OAuth and CIMD review.
+
 ### Changed
 
 - The browser preflight (`OPTIONS`) on the MCP endpoint also allows the `Mcp-Method` and `Mcp-Name` request headers.
@@ -17,6 +21,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Migration
 
 None required. Existing integrations need no configuration change.
+
+Rollback: every new option defaults to the old behaviour, so a host that never sets them is unaffected; reverting this release restores the previous answers for hosts that did.
 
 ## [3.4.0] - 2026-11-24
 

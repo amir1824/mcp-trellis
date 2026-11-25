@@ -64,6 +64,10 @@ A POST that carries `MCP-Protocol-Version: 2026-07-28` is a 2026-07-28 request. 
 
 Nothing is required. Existing clients and the three older protocol versions behave exactly as before (except the `-32022` case above, which only a client sending the 2026-07-28 `_meta` key can reach); the new behaviour starts only when a client sends the 2026-07-28 header. A host that set its own `publicMethods` and wants `server/discover` anonymous must add it. A browser client needs no change on your side: the preflight now also allows the `Mcp-Method` and `Mcp-Name` headers.
 
+### Migrating to the CIMD hardening options
+
+No change is required for an existing integration. `cimdFetch`, `cimdAllowedPorts`, `cimdRequireJsonContentType` and `hideToolsOutsideScope: "strict"` are optional and off by default, so a host that sets none of them gets the same answers as before. To opt in, follow the restrictive profile in [security.md](security.md#restrictive-profile). To go back, remove the option: nothing is stored.
+
 ## HTTP and JSON-RPC status codes
 
 | HTTP | When |
@@ -162,7 +166,10 @@ validated against their own bound `redirectUris`.
 | `consent` | built-in interstitial | Same as `OAuthRouterOptions.consent` — override the approval page or pre-approve specific client ids |
 | `requireRegisteredClients` | `true` | Same as `OAuthRouterOptions.requireRegisteredClients` — inventing a public `client_id` is rejected unless it comes from `clientStore` or this server's own `/register` |
 | `instructions`, `validateArgs`, `onToolError`, `context`, `audit`, `auditTimeoutMs`, `allowedRequestOrigins` | — | Passed through to the MCP handler. Top-level `audit` is a unified MCP+OAuth sink (`source`); `auth.audit` overrides OAuth only. `auditTimeoutMs` applies to both |
-| `hideToolsOutsideScope` | `false` | Filter `tools/list` to tools the calling principal's scopes actually satisfy (an unscoped tool, or one with `scope: null`, is always listed). `tools/call` already enforces scope on its own (403 `insufficient_scope`) regardless of this setting — turning it on only changes what's discoverable via `tools/list` |
+| `hideToolsOutsideScope` | `false` | Filter `tools/list` to tools the calling principal's scopes actually satisfy (an unscoped tool, or one with `scope: null`, is always listed). `tools/call` already enforces scope on its own (403 `insufficient_scope`) regardless of this setting — turning it on only changes what's discoverable via `tools/list`. `"strict"` hides the same way and also answers a `tools/call` for such a tool as an unknown tool (`-32602`), so a caller cannot tell a hidden tool from a missing one; the denial is still audited as `missing_scope`. |
+| `cimdFetch` | `globalThis.fetch` | The fetch CIMD documents are retrieved with. Web `fetch` cannot pin the connection to the address that was checked; a host on Node that must close DNS rebinding passes a fetch that dials only a checked address. It must honour `redirect: "manual"` and `signal`; a response that followed a redirect is refused |
+| `cimdAllowedPorts` | any port | Ports a CIMD URL may use, for the first request and every redirect. `[443]` is recommended in production |
+| `cimdRequireJsonContentType` | `false` | Refuse a CIMD response that is not served as a JSON media type (`application/json` or `application/*+json`) |
 
 **A tool's `scope` (`ToolDef.scope`):** required scope, `null` for "any authenticated
 principal, deliberately" or omitted for the same at runtime. On a server

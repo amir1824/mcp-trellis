@@ -10,51 +10,28 @@ import { readBoundedText } from "../../http/body.js";
 import { parseCacheMaxAge, parseDocument } from "./cimd-parse.js";
 import { defaultLookup } from "./dns.js";
 import { CimdError, type CimdFailure, classifyCimdFailure } from "./failure.js";
+import { isCimdClientId } from "./options.js";
 import type { CimdCache, CimdDocument, CimdFetchOptions } from "./types.js";
 import { assertSafeUrl } from "./url-guard.js";
 
+export { cimdFetchOpts, isCimdClientId } from "./options.js";
 export type { CimdCache, CimdDocument, CimdFetchOptions } from "./types.js";
 
 const CIMD_MAX_BYTES = 5 * 1024;
 const CIMD_TIMEOUT_MS = 10_000;
 const CIMD_MAX_REDIRECTS = 3;
-/** The `client_id` is a cache key and an outbound URL; no real document URL needs more. */
-const CIMD_MAX_CLIENT_ID_LENGTH = 2048;
-
-/** Build fetch options from router/app CIMD ports. */
-export const cimdFetchOpts = (ports: {
-  cimdCache?: CimdCache;
-  cimdLookup?: (hostname: string) => Promise<string[]>;
-}): Pick<CimdFetchOptions, "cache" | "lookup"> => ({
-  ...(ports.cimdCache !== undefined ? { cache: ports.cimdCache } : {}),
-  ...(ports.cimdLookup !== undefined ? { lookup: ports.cimdLookup } : {}),
-});
-
-/** True when `client_id` is an HTTPS URL eligible for CIMD resolution. */
-export const isCimdClientId = (clientId: string): boolean => {
-  if (clientId.length > CIMD_MAX_CLIENT_ID_LENGTH) return false;
-  try {
-    const url = new URL(clientId);
-    return (
-      url.protocol === "https:" &&
-      url.username === "" &&
-      url.password === "" &&
-      url.hash === "" &&
-      Boolean(url.hostname)
-    );
-  } catch {
-    return false;
-  }
-};
-
 type FetchedDocument = { doc: CimdDocument; maxAge: number };
 
 type FetchCtx = {
   clientId: string;
   lookup: (hostname: string) => Promise<string[]>;
+  allowedPorts: readonly number[] | undefined;
+  requireJson: boolean;
   redirect: number;
   signal: AbortSignal;
 };
+
+const JSON_MEDIA_TYPE = /^application\/(?:[\w.+-]+\+)?json\s*(?:;|$)/i;
 
 const readCimdBody = async (
   ctx: FetchCtx,
@@ -62,11 +39,14 @@ const readCimdBody = async (
   current: URL,
 ): Promise<FetchedDocument> => {
   if (!response.ok) throw new CimdError("http_status", `status ${response.status}`);
+  if (ctx.requireJson && !JSON_MEDIA_TYPE.test(response.headers.get("content-type") ?? "")) {
+    throw new CimdError("not_json", "response is not served as JSON");
+  }
   // Stream-capped at CIMD_MAX_BYTES; signal cancels the locked reader on hop
   // timeout (body.cancel() is a no-op while getReader() holds the lock).
   const text = await readBoundedText(response, CIMD_MAX_BYTES, ctx.signal);
   // Re-check DNS after the body — see file-level ponytail on connect pinning.
-  await assertSafeUrl(current, ctx.lookup);
+  await assertSafeUrl(current, ctx.lookup, ctx.allowedPorts);
   return {
     doc: parseDocument(ctx.clientId, text),
     maxAge: parseCacheMaxAge(response.headers.get("cache-control")),
@@ -86,7 +66,7 @@ const followRedirect = async (ctx: FetchCtx, response: Response, current: URL): 
   if (next.origin !== new URL(ctx.clientId).origin) {
     throw new CimdError("redirect_refused", "cross-origin redirect");
   }
-  await assertSafeUrl(next, ctx.lookup);
+  await assertSafeUrl(next, ctx.lookup, ctx.allowedPorts);
   return next;
 };
 
@@ -102,6 +82,8 @@ type FetchSettings = {
   clientId: string;
   fetch: typeof fetch;
   lookup: (hostname: string) => Promise<string[]>;
+  allowedPorts: readonly number[] | undefined;
+  requireJson: boolean;
   timeoutMs: number;
 };
 
@@ -119,11 +101,15 @@ const fetchHop = async (
   const ctx: FetchCtx = {
     clientId: settings.clientId,
     lookup: settings.lookup,
+    allowedPorts: settings.allowedPorts,
+    requireJson: settings.requireJson,
     redirect,
     signal: controller.signal,
   };
   try {
     const response = await getCimdResponse(settings.fetch, current.toString(), controller.signal);
+    // A host fetch that ignores `redirect: "manual"` would skip the same-origin and per-hop checks.
+    if (response.redirected) throw new CimdError("redirect_refused", "fetch followed a redirect");
     if (response.status >= 300 && response.status < 400) {
       return { next: await followRedirect(ctx, response, current) };
     }
@@ -137,7 +123,7 @@ const fetchHop = async (
 
 const fetchCimdDocument = async (settings: FetchSettings): Promise<FetchedDocument> => {
   let current = new URL(settings.clientId);
-  await assertSafeUrl(current, settings.lookup);
+  await assertSafeUrl(current, settings.lookup, settings.allowedPorts);
   // Ends: followRedirect refuses any redirect past CIMD_MAX_REDIRECTS.
   for (let redirect = 0; ; redirect += 1) {
     const hop = await fetchHop(settings, current, redirect);
@@ -200,6 +186,8 @@ export const resolveCimdOutcome = async (
       clientId,
       fetch: options.fetch ?? globalThis.fetch,
       lookup: options.lookup ?? defaultLookup,
+      allowedPorts: options.allowedPorts,
+      requireJson: options.requireJsonContentType === true,
       timeoutMs: options.timeoutMs ?? CIMD_TIMEOUT_MS,
     });
   } catch (caught) {

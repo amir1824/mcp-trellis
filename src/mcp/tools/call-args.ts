@@ -82,6 +82,11 @@ export const invalidArgumentsResponse = async <TCtx>(
   });
 };
 
+const unknownToolBody = (input: ToolCallDenialInput): Response =>
+  jsonResponse({
+    data: rpcError(input.id, JSONRPC_INVALID_PARAMS, `Unknown tool: ${shownName(input.name)}`),
+  });
+
 /**
  * A name that doesn't refer to any registered tool is a malformed request,
  * not a tool execution outcome — MCP distinguishes protocol errors (a
@@ -100,9 +105,7 @@ export const unknownToolResponse = async <TCtx>(
     ok: false,
     error: DENIAL_REASONS.unknownTool,
   });
-  return jsonResponse({
-    data: rpcError(input.id, JSONRPC_INVALID_PARAMS, `Unknown tool: ${shownName(input.name)}`),
-  });
+  return unknownToolBody(input);
 };
 
 export const missingScopeResponse = async <TCtx>(
@@ -116,6 +119,8 @@ export const missingScopeResponse = async <TCtx>(
     ok: false,
     error: DENIAL_REASONS.missingScope,
   });
+  // `"strict"`: a tool the caller may not use answers exactly like a tool that does not exist.
+  if (input.principal && options.hideToolsOutsideScope === "strict") return unknownToolBody(input);
   const wwwAuthenticate = resolveWwwAuthenticate(options, req);
   // No principal at all (only reachable when a host adds "tools/call" to
   // `publicMethods`) → 401, nothing was presented to authenticate with.

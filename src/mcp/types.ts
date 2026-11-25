@@ -88,8 +88,12 @@ export type McpHandlerOptions<TCtx> = {
    * for a scope it doesn't hold — only worth it if listing a tool at all
    * would leak something (its name, description, or schema) you don't want
    * a lesser-scoped principal to see.
+   *
+   * `"strict"` hides the same way and also answers a `tools/call` for such a tool as an unknown
+   * tool (JSON-RPC -32602), not 403, so a caller cannot tell a hidden tool from a missing one.
+   * The denial is still audited as `missing_scope`.
    */
-  hideToolsOutsideScope?: boolean;
+  hideToolsOutsideScope?: boolean | "strict";
   /**
    * MCP Apps: the UI documents tools point at with `ToolDef.ui`. Setting it
    * (or any tool `ui`) adds `resources/list` + `resources/read` and the

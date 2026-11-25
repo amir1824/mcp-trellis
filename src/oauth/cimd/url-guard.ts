@@ -45,9 +45,21 @@ const resolveHost = async (hostname: string, lookup: Lookup): Promise<string[]> 
   return addrs;
 };
 
-export const assertSafeUrl = async (url: URL, lookup: Lookup): Promise<void> => {
+/** `URL.port` is empty for the scheme's default, so an https URL without one is on 443. */
+const HTTPS_DEFAULT_PORT = 443;
+
+const portOf = (url: URL): number => (url.port === "" ? HTTPS_DEFAULT_PORT : Number(url.port));
+
+export const assertSafeUrl = async (
+  url: URL,
+  lookup: Lookup,
+  allowedPorts?: readonly number[],
+): Promise<void> => {
   for (const rule of Object.values(URL_SAFETY)) {
     if (!rule.ok(url)) throw new CimdError(rule.code, rule.error);
+  }
+  if (allowedPorts && !allowedPorts.includes(portOf(url))) {
+    throw new CimdError("blocked_url", "CIMD URL uses a port that is not allowed");
   }
 
   const addrs = await resolveHost(normalizeHostname(url.hostname), lookup);
