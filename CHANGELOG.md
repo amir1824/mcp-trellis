@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **MCP 2026-07-28 (additive; a minor release).** A POST that carries `MCP-Protocol-Version: 2026-07-28` is served by a separate path: `server/discover`; required `_meta` (`protocolVersion`, `clientCapabilities`); `Mcp-Method` and `Mcp-Name` checked against the body before any method runs (`-32020`, HTTP 400); `-32022` when a request's header and `_meta` both name a version this server lacks; `resultType: "complete"` on success results; `ttlMs: 0` and `cacheScope` on `server/discover`, `tools/list`, `resources/list` and `resources/read` (`private` for anything served after authentication or a scope check, `public` only for an anonymous `server/discover`); `initialize` and `ping` answer 404 with `-32601`; an oversized body answers `-32600` over HTTP 413 instead of `-32002`. Requests without that header are answered exactly as before for 2024-11-05, 2025-03-26 and 2025-06-18, with one narrow exception: a request whose header and `_meta` protocol version both name the same unknown version gets `-32022` instead of `-32600` (not for `initialize`); `PROTOCOL_VERSIONS` and `DEFAULT_PROTOCOL_VERSION` are unchanged. See `docs/reference.md#2026-07-28-requests`.
+- A host that set `publicMethods` keeps full control: a 2026-07-28 request is anonymous only for `server/discover` by default, or for the methods it lists (never `initialize` or `ping`).
+
+### Changed
+
+- The browser preflight (`OPTIONS`) on the MCP endpoint also allows the `Mcp-Method` and `Mcp-Name` request headers.
+
+### Migration
+
+None required. Existing integrations need no configuration change.
+
 ## [3.4.0] - 2026-11-24
 
 ### Added

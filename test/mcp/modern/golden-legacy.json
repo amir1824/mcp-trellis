@@ -1,0 +1,1178 @@
+{
+  "2024-11-05": {
+    "initialize": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"test\",\"version\":\"0.0.1\"},\"instructions\":\"test server\"}}"
+    },
+    "initialize asks 2026-07-28": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"test\",\"version\":\"0.0.1\"},\"instructions\":\"test server\"}}"
+    },
+    "ping": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}"
+    },
+    "tools/list": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[{\"name\":\"echo\",\"description\":\"echo args\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}}}},{\"name\":\"secret_write\",\"description\":\"needs ingest\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}}}]}}"
+    },
+    "tools/list anonymous": {
+      "status": 401,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "www-authenticate": "Bearer realm=\"test\", resource_metadata=\"https://example.test/.well-known/oauth-protected-resource/mcp\""
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32001,\"message\":\"Unauthorized\"}}"
+    },
+    "tools/call ok": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"hi\"}],\"isError\":false}}"
+    },
+    "tools/call unknown": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"Unknown tool: nope\"}}"
+    },
+    "tools/call missing scope": {
+      "status": 403,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "www-authenticate": "Bearer realm=\"test\", resource_metadata=\"https://example.test/.well-known/oauth-protected-resource/mcp\", error=\"insufficient_scope\", scope=\"ingest\""
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32003,\"message\":\"Missing scope: ingest\"}}"
+    },
+    "tools/call bad arguments": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"tools/call params.arguments must be an object\"}}"
+    },
+    "server/discover anonymous": {
+      "status": 401,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "www-authenticate": "Bearer realm=\"test\", resource_metadata=\"https://example.test/.well-known/oauth-protected-resource/mcp\""
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32001,\"message\":\"Unauthorized\"}}"
+    },
+    "server/discover authenticated": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32601,\"message\":\"Method not found: server/discover\"}}"
+    },
+    "unknown method": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32601,\"message\":\"Method not found: nope/nope\"}}"
+    },
+    "notification": {
+      "status": 202,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store"
+      },
+      "body": ""
+    },
+    "bad envelope": {
+      "status": 400,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32600,\"message\":\"jsonrpc must be \\\"2.0\\\"\"}}"
+    },
+    "batch": {
+      "status": 400,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32600,\"message\":\"Batch requests not supported\"}}"
+    },
+    "malformed json": {
+      "status": 400,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32700,\"message\":\"Parse error\"}}"
+    },
+    "oversized body": {
+      "status": 413,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32002,\"message\":\"Payload too large\"}}"
+    },
+    "unknown version header": {
+      "status": 400,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32600,\"message\":\"Unsupported MCP-Protocol-Version: 1999-01-01\"}}"
+    },
+    "modern-looking meta, older header": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[{\"name\":\"echo\",\"description\":\"echo args\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}}}},{\"name\":\"secret_write\",\"description\":\"needs ingest\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}}}]}}"
+    },
+    "initialize, unknown header, matching meta": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"test\",\"version\":\"0.0.1\"},\"instructions\":\"test server\"}}"
+    },
+    "query-string token": {
+      "status": 401,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "www-authenticate": "Bearer realm=\"test\", resource_metadata=\"https://example.test/.well-known/oauth-protected-resource/mcp\""
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32001,\"message\":\"Token in query string is rejected. Use Authorization Bearer.\"}}"
+    },
+    "get anonymous": {
+      "status": 401,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "www-authenticate": "Bearer realm=\"test\", resource_metadata=\"https://example.test/.well-known/oauth-protected-resource/mcp\""
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32001,\"message\":\"Unauthorized\"}}"
+    },
+    "get authenticated": {
+      "status": 405,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"error\":\"Use POST for MCP\"}"
+    },
+    "hide+ui resources/list ingest": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"resources\":[{\"uri\":\"ui://test/view\",\"name\":\"ui://test/view\",\"mimeType\":\"text/html;profile=mcp-app\"}]}}"
+    },
+    "hide+ui resources/list read": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"resources\":[]}}"
+    },
+    "hide+ui resources/list anonymous": {
+      "status": 401,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "www-authenticate": "Bearer realm=\"test\", resource_metadata=\"https://example.test/.well-known/oauth-protected-resource/mcp\""
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32001,\"message\":\"Unauthorized\"}}"
+    },
+    "hide+ui resources/read ok": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"contents\":[{\"uri\":\"ui://test/view\",\"mimeType\":\"text/html;profile=mcp-app\",\"text\":\"<p>view</p>\"}]}}"
+    },
+    "hide+ui resources/read denied": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"Unknown resource: ui://test/view\"}}"
+    },
+    "hide+ui resources/read unknown": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"Unknown resource: ui://test/none\"}}"
+    },
+    "hide+ui tools/list ui": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[{\"name\":\"echo\",\"description\":\"echo args\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}}}}]}}"
+    },
+    "custom publicMethods tools/list anonymous": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[{\"name\":\"echo\",\"description\":\"echo args\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}}}},{\"name\":\"secret_write\",\"description\":\"needs ingest\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}}}]}}"
+    },
+    "custom publicMethods discover anonymous": {
+      "status": 401,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "www-authenticate": "Bearer realm=\"test\", resource_metadata=\"https://example.test/.well-known/oauth-protected-resource/mcp\""
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32001,\"message\":\"Unauthorized\"}}"
+    }
+  },
+  "2025-03-26": {
+    "initialize": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"test\",\"version\":\"0.0.1\"},\"instructions\":\"test server\"}}"
+    },
+    "initialize asks 2026-07-28": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"test\",\"version\":\"0.0.1\"},\"instructions\":\"test server\"}}"
+    },
+    "ping": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}"
+    },
+    "tools/list": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[{\"name\":\"echo\",\"description\":\"echo args\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}}}},{\"name\":\"secret_write\",\"description\":\"needs ingest\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}}}]}}"
+    },
+    "tools/list anonymous": {
+      "status": 401,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "www-authenticate": "Bearer realm=\"test\", resource_metadata=\"https://example.test/.well-known/oauth-protected-resource/mcp\""
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32001,\"message\":\"Unauthorized\"}}"
+    },
+    "tools/call ok": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"hi\"}],\"isError\":false}}"
+    },
+    "tools/call unknown": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"Unknown tool: nope\"}}"
+    },
+    "tools/call missing scope": {
+      "status": 403,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "www-authenticate": "Bearer realm=\"test\", resource_metadata=\"https://example.test/.well-known/oauth-protected-resource/mcp\", error=\"insufficient_scope\", scope=\"ingest\""
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32003,\"message\":\"Missing scope: ingest\"}}"
+    },
+    "tools/call bad arguments": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"tools/call params.arguments must be an object\"}}"
+    },
+    "server/discover anonymous": {
+      "status": 401,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "www-authenticate": "Bearer realm=\"test\", resource_metadata=\"https://example.test/.well-known/oauth-protected-resource/mcp\""
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32001,\"message\":\"Unauthorized\"}}"
+    },
+    "server/discover authenticated": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32601,\"message\":\"Method not found: server/discover\"}}"
+    },
+    "unknown method": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32601,\"message\":\"Method not found: nope/nope\"}}"
+    },
+    "notification": {
+      "status": 202,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store"
+      },
+      "body": ""
+    },
+    "bad envelope": {
+      "status": 400,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32600,\"message\":\"jsonrpc must be \\\"2.0\\\"\"}}"
+    },
+    "batch": {
+      "status": 400,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32600,\"message\":\"Batch requests not supported\"}}"
+    },
+    "malformed json": {
+      "status": 400,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32700,\"message\":\"Parse error\"}}"
+    },
+    "oversized body": {
+      "status": 413,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32002,\"message\":\"Payload too large\"}}"
+    },
+    "unknown version header": {
+      "status": 400,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32600,\"message\":\"Unsupported MCP-Protocol-Version: 1999-01-01\"}}"
+    },
+    "modern-looking meta, older header": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[{\"name\":\"echo\",\"description\":\"echo args\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}}}},{\"name\":\"secret_write\",\"description\":\"needs ingest\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}}}]}}"
+    },
+    "initialize, unknown header, matching meta": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"test\",\"version\":\"0.0.1\"},\"instructions\":\"test server\"}}"
+    },
+    "query-string token": {
+      "status": 401,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "www-authenticate": "Bearer realm=\"test\", resource_metadata=\"https://example.test/.well-known/oauth-protected-resource/mcp\""
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32001,\"message\":\"Token in query string is rejected. Use Authorization Bearer.\"}}"
+    },
+    "get anonymous": {
+      "status": 401,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "www-authenticate": "Bearer realm=\"test\", resource_metadata=\"https://example.test/.well-known/oauth-protected-resource/mcp\""
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32001,\"message\":\"Unauthorized\"}}"
+    },
+    "get authenticated": {
+      "status": 405,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"error\":\"Use POST for MCP\"}"
+    },
+    "hide+ui resources/list ingest": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"resources\":[{\"uri\":\"ui://test/view\",\"name\":\"ui://test/view\",\"mimeType\":\"text/html;profile=mcp-app\"}]}}"
+    },
+    "hide+ui resources/list read": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"resources\":[]}}"
+    },
+    "hide+ui resources/list anonymous": {
+      "status": 401,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "www-authenticate": "Bearer realm=\"test\", resource_metadata=\"https://example.test/.well-known/oauth-protected-resource/mcp\""
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32001,\"message\":\"Unauthorized\"}}"
+    },
+    "hide+ui resources/read ok": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"contents\":[{\"uri\":\"ui://test/view\",\"mimeType\":\"text/html;profile=mcp-app\",\"text\":\"<p>view</p>\"}]}}"
+    },
+    "hide+ui resources/read denied": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"Unknown resource: ui://test/view\"}}"
+    },
+    "hide+ui resources/read unknown": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"Unknown resource: ui://test/none\"}}"
+    },
+    "hide+ui tools/list ui": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[{\"name\":\"echo\",\"description\":\"echo args\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}}}}]}}"
+    },
+    "custom publicMethods tools/list anonymous": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[{\"name\":\"echo\",\"description\":\"echo args\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}}}},{\"name\":\"secret_write\",\"description\":\"needs ingest\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}}}]}}"
+    },
+    "custom publicMethods discover anonymous": {
+      "status": 401,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "www-authenticate": "Bearer realm=\"test\", resource_metadata=\"https://example.test/.well-known/oauth-protected-resource/mcp\""
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32001,\"message\":\"Unauthorized\"}}"
+    }
+  },
+  "2025-06-18": {
+    "initialize": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"test\",\"version\":\"0.0.1\"},\"instructions\":\"test server\"}}"
+    },
+    "initialize asks 2026-07-28": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"test\",\"version\":\"0.0.1\"},\"instructions\":\"test server\"}}"
+    },
+    "ping": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}"
+    },
+    "tools/list": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[{\"name\":\"echo\",\"description\":\"echo args\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}}}},{\"name\":\"secret_write\",\"description\":\"needs ingest\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}}}]}}"
+    },
+    "tools/list anonymous": {
+      "status": 401,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "www-authenticate": "Bearer realm=\"test\", resource_metadata=\"https://example.test/.well-known/oauth-protected-resource/mcp\""
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32001,\"message\":\"Unauthorized\"}}"
+    },
+    "tools/call ok": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"hi\"}],\"isError\":false}}"
+    },
+    "tools/call unknown": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"Unknown tool: nope\"}}"
+    },
+    "tools/call missing scope": {
+      "status": 403,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "www-authenticate": "Bearer realm=\"test\", resource_metadata=\"https://example.test/.well-known/oauth-protected-resource/mcp\", error=\"insufficient_scope\", scope=\"ingest\""
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32003,\"message\":\"Missing scope: ingest\"}}"
+    },
+    "tools/call bad arguments": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"tools/call params.arguments must be an object\"}}"
+    },
+    "server/discover anonymous": {
+      "status": 401,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "www-authenticate": "Bearer realm=\"test\", resource_metadata=\"https://example.test/.well-known/oauth-protected-resource/mcp\""
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32001,\"message\":\"Unauthorized\"}}"
+    },
+    "server/discover authenticated": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32601,\"message\":\"Method not found: server/discover\"}}"
+    },
+    "unknown method": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32601,\"message\":\"Method not found: nope/nope\"}}"
+    },
+    "notification": {
+      "status": 202,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store"
+      },
+      "body": ""
+    },
+    "bad envelope": {
+      "status": 400,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32600,\"message\":\"jsonrpc must be \\\"2.0\\\"\"}}"
+    },
+    "batch": {
+      "status": 400,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32600,\"message\":\"Batch requests not supported\"}}"
+    },
+    "malformed json": {
+      "status": 400,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32700,\"message\":\"Parse error\"}}"
+    },
+    "oversized body": {
+      "status": 413,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32002,\"message\":\"Payload too large\"}}"
+    },
+    "unknown version header": {
+      "status": 400,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32600,\"message\":\"Unsupported MCP-Protocol-Version: 1999-01-01\"}}"
+    },
+    "modern-looking meta, older header": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[{\"name\":\"echo\",\"description\":\"echo args\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}}}},{\"name\":\"secret_write\",\"description\":\"needs ingest\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}}}]}}"
+    },
+    "initialize, unknown header, matching meta": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"test\",\"version\":\"0.0.1\"},\"instructions\":\"test server\"}}"
+    },
+    "query-string token": {
+      "status": 401,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "www-authenticate": "Bearer realm=\"test\", resource_metadata=\"https://example.test/.well-known/oauth-protected-resource/mcp\""
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32001,\"message\":\"Token in query string is rejected. Use Authorization Bearer.\"}}"
+    },
+    "get anonymous": {
+      "status": 401,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "www-authenticate": "Bearer realm=\"test\", resource_metadata=\"https://example.test/.well-known/oauth-protected-resource/mcp\""
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32001,\"message\":\"Unauthorized\"}}"
+    },
+    "get authenticated": {
+      "status": 405,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"error\":\"Use POST for MCP\"}"
+    },
+    "hide+ui resources/list ingest": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"resources\":[{\"uri\":\"ui://test/view\",\"name\":\"ui://test/view\",\"mimeType\":\"text/html;profile=mcp-app\"}]}}"
+    },
+    "hide+ui resources/list read": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"resources\":[]}}"
+    },
+    "hide+ui resources/list anonymous": {
+      "status": 401,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "www-authenticate": "Bearer realm=\"test\", resource_metadata=\"https://example.test/.well-known/oauth-protected-resource/mcp\""
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32001,\"message\":\"Unauthorized\"}}"
+    },
+    "hide+ui resources/read ok": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"contents\":[{\"uri\":\"ui://test/view\",\"mimeType\":\"text/html;profile=mcp-app\",\"text\":\"<p>view</p>\"}]}}"
+    },
+    "hide+ui resources/read denied": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"Unknown resource: ui://test/view\"}}"
+    },
+    "hide+ui resources/read unknown": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"Unknown resource: ui://test/none\"}}"
+    },
+    "hide+ui tools/list ui": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[{\"name\":\"echo\",\"description\":\"echo args\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}}}}]}}"
+    },
+    "custom publicMethods tools/list anonymous": {
+      "status": 200,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[{\"name\":\"echo\",\"description\":\"echo args\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}}}},{\"name\":\"secret_write\",\"description\":\"needs ingest\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}}}]}}"
+    },
+    "custom publicMethods discover anonymous": {
+      "status": 401,
+      "headers": {
+        "access-control-allow-headers": "Content-Type, Authorization, MCP-Protocol-Version",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-origin": "*",
+        "access-control-expose-headers": "WWW-Authenticate",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "www-authenticate": "Bearer realm=\"test\", resource_metadata=\"https://example.test/.well-known/oauth-protected-resource/mcp\""
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32001,\"message\":\"Unauthorized\"}}"
+    }
+  }
+}

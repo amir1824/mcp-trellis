@@ -274,7 +274,7 @@ are not escaped, so escape or parameterize them for your sink.
 
 `wwwAuthenticate` can be a static object or `(req) => …` when the PRM URL depends on origin.
 
-By default `initialize`, `ping`, and notifications are public. Override `publicMethods` if every method must require Bearer.
+By default `initialize`, `ping`, and notifications are public. Override `publicMethods` if every method must require Bearer. A 2026-07-28 request is anonymous only for `server/discover` unless you list more.
 
 **Browser `Origin`.** MCP Streamable HTTP expects servers to validate the
 request `Origin` header. Pass `allowedRequestOrigins` on `createMcpHandler` /

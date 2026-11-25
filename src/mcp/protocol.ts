@@ -22,3 +22,9 @@ export const pickProtocolVersion = (params?: Record<string, unknown>): string =>
   }
   return DEFAULT_PROTOCOL_VERSION;
 };
+
+/**
+ * The 2026-07-28 revision is selected per request by its `MCP-Protocol-Version` header, never by
+ * `initialize`, so it stays out of `PROTOCOL_VERSIONS` (exported, and what `initialize` negotiates).
+ */
+export const MODERN_PROTOCOL_VERSION = "2026-07-28";

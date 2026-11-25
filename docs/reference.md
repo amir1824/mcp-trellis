@@ -44,6 +44,26 @@ With defaults `resourcePath: "/mcp"` and `oauthPath: "/mcp/oauth"`:
 
 Anything else → JSON-RPC `-32601`. Capabilities advertise **tools only**, plus `resources` when a UI is configured.
 
+## 2026-07-28 requests
+
+A POST that carries `MCP-Protocol-Version: 2026-07-28` is a 2026-07-28 request. Every other request is handled exactly as before, except the one `-32022` case below. A 2026-07-28 request must also carry:
+
+- `_meta` with `io.modelcontextprotocol/protocolVersion` (equal to the header) and `io.modelcontextprotocol/clientCapabilities` (an object), else `-32602` over HTTP 400, or `-32020` if the version differs from the header;
+- `Mcp-Method` equal to the body's `method`, and for `tools/call` and `resources/read` an `Mcp-Name` equal to the tool name or resource URI (non-ASCII values use `=?base64?...?=`), else `-32020` over HTTP 400 before any method runs.
+
+| Method | Auth | Result |
+|--------|------|--------|
+| `server/discover` | public by default | `supportedVersions`, `capabilities`, `_meta["io.modelcontextprotocol/serverInfo"]`, optional `instructions`; `cacheScope: "public"` whenever it is served without authentication (the default), `"private"` when the host requires authentication for it |
+| `tools/list` | Bearer | as before, plus `resultType` and cache hints |
+| `tools/call` | Bearer + scope | as before, plus `resultType` |
+| `resources/list`, `resources/read` | Bearer | only when a UI is configured; plus `resultType` and cache hints |
+
+`initialize`, `ping` and any other method answer `404` with `-32601` (after authentication). Every success result carries `resultType: "complete"`. `tools/list`, `resources/list` and `resources/read` carry `ttlMs: 0` and `cacheScope: "private"`: anything served after authentication or a scope check is private, and the hints never replace the per-request scope check. Responses still send `Cache-Control: no-store`. A tool whose own name has the form `=?base64?...?=` cannot be called under this header, because that form is always decoded. A request whose `MCP-Protocol-Version` header and `_meta` protocol version both name the same version this server lacks gets `-32022` and the list it supports (never for `initialize`, which has always ignored the header); a request with an unknown header and no matching `_meta` keeps its older `-32600`. An oversized body under the 2026-07-28 header answers `-32600` over HTTP 413 (`-32002` is not used there), also through `asNodeHandler`.
+
+### Migrating to 2026-07-28
+
+Nothing is required. Existing clients and the three older protocol versions behave exactly as before (except the `-32022` case above, which only a client sending the 2026-07-28 `_meta` key can reach); the new behaviour starts only when a client sends the 2026-07-28 header. A host that set its own `publicMethods` and wants `server/discover` anonymous must add it. A browser client needs no change on your side: the preflight now also allows the `Mcp-Method` and `Mcp-Name` headers.
+
 ## HTTP and JSON-RPC status codes
 
 | HTTP | When |
@@ -52,6 +72,7 @@ Anything else → JSON-RPC `-32601`. Capabilities advertise **tools only**, plus
 | **400** | Parse error, batch array, invalid request, `jsonrpc` not `"2.0"`, unsupported `MCP-Protocol-Version` |
 | **401** | Missing/invalid Bearer; includes `WWW-Authenticate`; echoes the real request id, not `null` |
 | **403** | Authenticated, but the token's scopes don't include the tool's `scope`; `WWW-Authenticate` carries `error="insufficient_scope"` and `scope="<required>"` (RFC 6750 §3.1) |
+| **404** | A 2026-07-28 request for a method this server does not implement (`-32601`) |
 | **405** | Wrong HTTP verb on MCP |
 | **413** | Request body over the cap — `/mcp` (1 MiB default), `/token`/`/revoke`/`/register` (64 KiB default) |
 
@@ -62,6 +83,8 @@ Anything else → JSON-RPC `-32601`. Capabilities advertise **tools only**, plus
 | `-32601` | `JSONRPC_METHOD_NOT_FOUND` |
 | `-32602` | `JSONRPC_INVALID_PARAMS` (unrecognized `tools/call` `params.name`) |
 | `-32603` | `JSONRPC_INTERNAL_ERROR` |
+| `-32020` | 2026-07-28 header mismatch (`Mcp-Method`, `Mcp-Name` or the protocol version) |
+| `-32022` | 2026-07-28 unsupported protocol version |
 | `-32001` | `JSONRPC_UNAUTHORIZED` |
 
 ## `createMcpHandler` options
@@ -73,7 +96,7 @@ Anything else → JSON-RPC `-32601`. Capabilities advertise **tools only**, plus
 | `serverInfo` | yes | `{ name, version }` |
 | `wwwAuthenticate` | yes | Static or `(req) => …` for RFC 9728 PRM URL |
 | `instructions` | no | Returned on `initialize` |
-| `publicMethods` | no | Default: `initialize`, `ping`, notifications |
+| `publicMethods` | no | Default: `initialize`, `ping`, notifications. A request that carries the 2026-07-28 header is anonymous only for `server/discover` by default, or for what you list here (never `initialize` or `ping`) |
 | `auditTimeoutMs` | no | Max time to wait for `ports.audit` before responding anyway. Default 1000ms — see [security.md](security.md) |
 | `allowedRequestOrigins` | no | Browser `Origin` allowlist. Omitted → reject any present `Origin`; no header → allow; `"*"` opts out. Distinct from Node Host `allowedOrigins` |
 

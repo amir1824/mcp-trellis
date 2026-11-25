@@ -103,9 +103,14 @@ export type McpHandlerOptions<TCtx> = {
 /** `McpHandlerOptions` after `createMcpHandler` resolved its defaults. */
 export type ResolvedMcpHandlerOptions<TCtx> = McpHandlerOptions<TCtx> & {
   publicMethods: Set<string>;
+  /** What a request that carries the 2026-07-28 header may call without authentication. */
+  modernPublicMethods: Set<string>;
   /** Built and validated once by `createMcpHandler`; `undefined` when the server has no UI. */
   uiRegistry?: UiRegistry | undefined;
 };
+
+/** Wraps a method's success result in its JSON-RPC response; errors never pass through it. */
+export type ResultWriter = (id: JsonRpcId, result: object) => Response;
 
 export type RpcMethodHandler<TCtx> = (input: {
   req: Request;
@@ -115,4 +120,6 @@ export type RpcMethodHandler<TCtx> = (input: {
   options: ResolvedMcpHandlerOptions<TCtx>;
   /** Request start, for denial-path audit timing — see `dispatchRpc`. */
   startedAt: number;
+  /** Writes a success result: plain for older protocol versions, with 2026-07-28 fields otherwise. */
+  respond: ResultWriter;
 }) => Promise<Response>;

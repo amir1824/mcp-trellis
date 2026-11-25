@@ -6,7 +6,7 @@
 
 import { jsonResponse } from "../../http/http.js";
 import { isJsonObject } from "../../util/json.js";
-import { JSONRPC_INVALID_PARAMS, type JsonRpcId, rpcError, rpcResult } from "../jsonrpc.js";
+import { JSONRPC_INVALID_PARAMS, type JsonRpcId, rpcError } from "../jsonrpc.js";
 import {
   DENIAL_REASONS,
   insufficientScope,
@@ -68,7 +68,7 @@ const protocolError = async <TCtx>(
 };
 
 export const UI_METHODS = {
-  "resources/list": async ({ req, id, principal, options, startedAt }) => {
+  "resources/list": async ({ req, id, principal, options, startedAt, respond }) => {
     const outcome = { method: "resources/list", principal, startedAt } as const;
     if (!principal) return anonymousResponse(req, options, outcome, id);
 
@@ -81,10 +81,10 @@ export const UI_METHODS = {
         mimeType: UI_MIME_TYPE,
       }));
     await auditResource(options, outcome);
-    return jsonResponse({ data: rpcResult(id, { resources }) });
+    return respond(id, { resources });
   },
 
-  "resources/read": async ({ req, body, id, principal, options, startedAt }) => {
+  "resources/read": async ({ req, body, id, principal, options, startedAt, respond }) => {
     const outcome = { method: "resources/read", principal, startedAt } as const;
     if (!principal) return anonymousResponse(req, options, outcome, id);
 
@@ -122,17 +122,15 @@ export const UI_METHODS = {
 
     const { html, csp } = entry.resource;
     await auditResource(options, { ...outcome, resource: shown });
-    return jsonResponse({
-      data: rpcResult(id, {
-        contents: [
-          {
-            uri,
-            mimeType: UI_MIME_TYPE,
-            text: html,
-            ...(csp !== undefined ? { _meta: { ui: { csp } } } : {}),
-          },
-        ],
-      }),
+    return respond(id, {
+      contents: [
+        {
+          uri,
+          mimeType: UI_MIME_TYPE,
+          text: html,
+          ...(csp !== undefined ? { _meta: { ui: { csp } } } : {}),
+        },
+      ],
     });
   },
 } as const satisfies Record<string, RpcMethodHandler<unknown>>;

@@ -10,6 +10,7 @@ const THRESHOLDS = ["--test-coverage-lines=94", "--test-coverage-branches=88"];
 const TEST_GLOBS = [
   "test/oauth/**/*.test.ts",
   "test/mcp/*.test.ts",
+  "test/mcp/modern/*.test.ts",
   "test/mcp/ui/*.test.ts",
   "test/adapters/*.test.ts",
   "test/auth/*.test.ts",

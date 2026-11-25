@@ -3,37 +3,27 @@
 import { jsonResponse } from "../http/http.js";
 import { clipText } from "../util/clip.js";
 import { ownValue } from "../util/own.js";
-import {
-  JSONRPC_INVALID_PARAMS,
-  JSONRPC_METHOD_NOT_FOUND,
-  type JsonRpcRequest,
-  rpcError,
-  rpcResult,
-} from "./jsonrpc.js";
+import { JSONRPC_INVALID_PARAMS, type JsonRpcRequest, rpcError, rpcResult } from "./jsonrpc.js";
+import { DISCOVER_METHODS, serverCapabilities } from "./modern/discover.js";
+import type { VersionProfile } from "./modern/profile.js";
 import { pickProtocolVersion } from "./protocol.js";
 import {
   authFailureChallenge,
   DENIAL_REASONS,
-  insufficientScope,
   mayUse,
-  resolveWwwAuthenticate,
   safeAudit,
   unauthorized,
 } from "./request-policy.js";
 import {
   auditToolCall,
   invalidArgumentsResponse,
+  missingScopeResponse,
   parseToolCallArgs,
   shownName,
-  type ToolCallDenialInput,
+  unknownToolResponse,
 } from "./tools/call-args.js";
 import { firstText } from "./tools/content.js";
-import type {
-  McpHandlerOptions,
-  Principal,
-  ResolvedMcpHandlerOptions,
-  RpcMethodHandler,
-} from "./types.js";
+import type { Principal, ResolvedMcpHandlerOptions, RpcMethodHandler } from "./types.js";
 import { UI_METHODS } from "./ui/methods.js";
 
 /** Longest tool-failure text copied into an audit entry — it is tool- or caller-supplied. */
@@ -42,56 +32,12 @@ const MAX_AUDIT_ERROR_LENGTH = 1000;
 const auditText = (text: string | undefined): string | undefined =>
   text === undefined ? undefined : clipText(text, MAX_AUDIT_ERROR_LENGTH, "…");
 
-/**
- * A name that doesn't refer to any registered tool is a malformed request,
- * not a tool execution outcome — MCP distinguishes protocol errors (a
- * standard JSON-RPC error response) from a tool's own isError: true result,
- * and "no such tool" belongs to the former. `ToolRegistry.call`'s own
- * "Unknown tool: …" text-result fallback stays as is for direct callers of
- * that API outside this dispatch.
- */
-const unknownToolResponse = async <TCtx>(
-  options: McpHandlerOptions<TCtx>,
-  input: ToolCallDenialInput,
-): Promise<Response> => {
-  await auditToolCall(options, {
-    ...input,
-    tool: shownName(input.name),
-    ok: false,
-    error: DENIAL_REASONS.unknownTool,
-  });
-  return jsonResponse({
-    data: rpcError(input.id, JSONRPC_INVALID_PARAMS, `Unknown tool: ${shownName(input.name)}`),
-  });
-};
-
-const missingScopeResponse = async <TCtx>(
-  req: Request,
-  options: McpHandlerOptions<TCtx>,
-  input: ToolCallDenialInput & { scope: string },
-): Promise<Response> => {
-  await auditToolCall(options, {
-    ...input,
-    tool: input.name,
-    ok: false,
-    error: DENIAL_REASONS.missingScope,
-  });
-  const wwwAuthenticate = resolveWwwAuthenticate(options, req);
-  // No principal at all (only reachable when a host adds "tools/call" to
-  // `publicMethods`) → 401, nothing was presented to authenticate with.
-  // A principal that authenticated but lacks the tool's scope → 403
-  // insufficient_scope (RFC 6750 §3.1) — see `insufficientScope`'s doc.
-  return input.principal
-    ? insufficientScope(wwwAuthenticate, input.scope, input.id)
-    : unauthorized(wwwAuthenticate, `Missing scope: ${input.scope}`, input.id);
-};
-
 const CORE_METHODS = {
   initialize: async ({ id, body, options }) =>
     jsonResponse({
       data: rpcResult(id, {
         protocolVersion: pickProtocolVersion(body.params),
-        capabilities: options.uiRegistry ? { tools: {}, resources: {} } : { tools: {} },
+        capabilities: serverCapabilities(options.uiRegistry),
         serverInfo: options.serverInfo,
         instructions: options.instructions ?? "",
       }),
@@ -99,14 +45,14 @@ const CORE_METHODS = {
 
   ping: async ({ id }) => jsonResponse({ data: rpcResult(id, {}) }),
 
-  "tools/list": async ({ id, options, principal }) => {
+  "tools/list": async ({ id, options, principal, respond }) => {
     const allowScope = options.hideToolsOutsideScope
       ? (scope: string | null | undefined) => mayUse(principal, scope)
       : undefined;
-    return jsonResponse({ data: rpcResult(id, { tools: options.registry.list(allowScope) }) });
+    return respond(id, { tools: options.registry.list(allowScope) });
   },
 
-  "tools/call": async ({ req, body, id, principal, options, startedAt }) => {
+  "tools/call": async ({ req, body, id, principal, options, startedAt, respond }) => {
     const parsed = parseToolCallArgs(body);
     if ("error" in parsed) {
       return jsonResponse({ data: rpcError(id, JSONRPC_INVALID_PARAMS, parsed.error) });
@@ -141,12 +87,26 @@ const CORE_METHODS = {
       error: result.isError ? auditText(firstText(result)) : undefined,
       startedAt: toolStartedAt,
     });
-    return jsonResponse({ data: rpcResult(id, result) });
+    return respond(id, result);
   },
 } as const satisfies Record<string, RpcMethodHandler<unknown>>;
 
 /** `resources/*` exist only on a server with a UI: without one they are as unknown as any other method. */
 const ALL_METHODS = { ...CORE_METHODS, ...UI_METHODS };
+
+/** What a request that carries the 2026-07-28 header can call: no `initialize`, no `ping`. */
+const MODERN_CORE_METHODS = {
+  ...DISCOVER_METHODS,
+  "tools/list": CORE_METHODS["tools/list"],
+  "tools/call": CORE_METHODS["tools/call"],
+};
+const MODERN_ALL_METHODS = { ...MODERN_CORE_METHODS, ...UI_METHODS };
+
+/** The method table of each version, without and with the UI methods. */
+const METHOD_TABLES = {
+  legacy: { core: CORE_METHODS, withUi: ALL_METHODS },
+  modern: { core: MODERN_CORE_METHODS, withUi: MODERN_ALL_METHODS },
+} as const;
 
 export const dispatchRpc = async <TCtx>(input: {
   req: Request;
@@ -154,8 +114,10 @@ export const dispatchRpc = async <TCtx>(input: {
   options: ResolvedMcpHandlerOptions<TCtx>;
   /** Request start (captured in `createMcpHandler.fetch`), for denial-path audit timing. */
   startedAt: number;
+  /** What differs by protocol version, chosen from the request's protocol version header. */
+  profile: VersionProfile;
 }): Promise<Response> => {
-  const { req, body, options, startedAt } = input;
+  const { req, body, options, startedAt, profile } = input;
   // Shape-validated in `handlePost` before routing — method is a non-empty string.
   const method = typeof body.method === "string" ? body.method : "";
   // Notifications omit `id`; explicit null is a valid request id (JSON-RPC).
@@ -168,7 +130,7 @@ export const dispatchRpc = async <TCtx>(input: {
       : undefined;
 
   // Notifications (including every `notifications/*`) already got 202 in `handlePost`.
-  const isPublic = options.publicMethods.has(method);
+  const isPublic = profile.publicMethods(options).has(method);
   let principal: Principal | null = null;
 
   if (!isPublic) {
@@ -187,13 +149,11 @@ export const dispatchRpc = async <TCtx>(input: {
 
   // A client-selected method name must not reach Object.prototype (e.g.
   // `toString` or `__proto__`): only own entries in METHODS are RPC methods.
-  const methods = options.uiRegistry ? ALL_METHODS : CORE_METHODS;
+  const table = METHOD_TABLES[profile.name];
+  const methods = options.uiRegistry ? table.withUi : table.core;
   const handler = ownValue(methods as Record<string, RpcMethodHandler<TCtx>>, method);
-  if (!handler) {
-    return jsonResponse({
-      data: rpcError(id, JSONRPC_METHOD_NOT_FOUND, `Method not found: ${method}`),
-    });
-  }
+  if (!handler) return profile.notFound(id, method);
 
-  return handler({ req, body, id, principal, options, startedAt });
+  const respond = profile.writer(method);
+  return handler({ req, body, id, principal, options, startedAt, respond });
 };

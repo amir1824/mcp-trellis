@@ -13,11 +13,11 @@ import { ownValue } from "../util/own.js";
 import {
   JSONRPC_INTERNAL_ERROR,
   JSONRPC_PARSE_ERROR,
-  JSONRPC_PAYLOAD_TOO_LARGE,
-  protocolVersionHeaderError,
   rpcError,
   validateJsonRpcEnvelope,
 } from "./jsonrpc.js";
+import { profileFor, type VersionProfile } from "./modern/profile.js";
+import { resolveModernPublicMethods } from "./modern/request.js";
 import {
   DEFAULT_PUBLIC_METHODS,
   DENIAL_REASONS,
@@ -42,17 +42,15 @@ export type McpHandler = {
   fetch: (request: Request) => Promise<Response>;
 };
 
-const parseBody = async (request: Request): Promise<Response | unknown> => {
+const parseBody = async (
+  request: Request,
+  profile: VersionProfile,
+): Promise<Response | unknown> => {
   let text: string;
   try {
     text = await readBoundedText(request, DEFAULT_MCP_BODY_LIMIT);
   } catch (caught) {
-    if (caught instanceof BodyTooLargeError) {
-      return jsonResponse({
-        data: rpcError(null, JSONRPC_PAYLOAD_TOO_LARGE, "Payload too large"),
-        status: 413,
-      });
-    }
+    if (caught instanceof BodyTooLargeError) return profile.tooLarge();
     return jsonResponse({ data: rpcError(null, JSONRPC_PARSE_ERROR, "Parse error"), status: 400 });
   }
   try {
@@ -107,17 +105,32 @@ const handlePost = async <TCtx>(
   const denied = await denyQueryStringToken(request, options, startedAt);
   if (denied) return denied;
 
-  const parsed = await parseBody(request);
+  // The header names the version and arrives before the body, so the size error can be the right one.
+  const profile = profileFor(request);
+  const parsed = await parseBody(request, profile);
   if (parsed instanceof Response) return parsed;
 
   const envelope = validateJsonRpcEnvelope(parsed);
   if (envelope instanceof Response) return envelope;
 
-  const versionError = protocolVersionHeaderError(request, envelope);
+  const versionError = profile.versionError(request, envelope);
   if (versionError) return versionError;
 
   if (isNotification(envelope)) return emptyResponse(202);
-  return dispatchRpc({ req: request, body: envelope, options, startedAt });
+  const requestError = profile.requestError(request, envelope);
+  if (requestError) return requestError;
+  return dispatchRpc({ req: request, body: envelope, options, startedAt, profile });
+};
+
+/** 2026-07-28 clients send `Mcp-Method` and `Mcp-Name`, so a browser preflight must allow them. */
+const MCP_PREFLIGHT_ALLOWED_HEADERS =
+  "Content-Type, Authorization, MCP-Protocol-Version, Mcp-Method, Mcp-Name";
+
+const mcpPreflight = (): Response => {
+  const response = optionsResponse();
+  const headers = new Headers(response.headers);
+  headers.set("Access-Control-Allow-Headers", MCP_PREFLIGHT_ALLOWED_HEADERS);
+  return new Response(null, { status: response.status, headers });
 };
 
 type HttpMethodHandler = (request: Request, startedAt: number) => Promise<Response> | Response;
@@ -126,11 +139,12 @@ export const createMcpHandler = <TCtx>(handlerOptions: McpHandlerOptions<TCtx>):
   const options: ResolvedMcpHandlerOptions<TCtx> = {
     ...handlerOptions,
     publicMethods: handlerOptions.publicMethods ?? DEFAULT_PUBLIC_METHODS,
+    modernPublicMethods: resolveModernPublicMethods(handlerOptions.publicMethods),
     uiRegistry: buildUiRegistry(handlerOptions.registry, handlerOptions.uiResources),
   };
 
   const HTTP_METHODS: Record<string, HttpMethodHandler> = {
-    OPTIONS: () => optionsResponse(),
+    OPTIONS: () => mcpPreflight(),
     GET: (request, startedAt) => handleGet(request, options, startedAt),
     POST: (request, startedAt) => handlePost(request, options, startedAt),
   };
