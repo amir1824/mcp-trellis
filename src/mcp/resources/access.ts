@@ -43,3 +43,20 @@ const uiAccess = (
 
 export const accessFor = <TCtx>(entry: ResourceEntry<TCtx>, principal: Principal): Access =>
   entry.kind === "ui" ? uiAccess(entry.scopes, principal) : generalAccess(entry, principal);
+
+/**
+ * `accessFor` for one request. The files of a skill share one decision, so a stateful `allow` cannot show
+ * `SKILL.md` and hide a sibling. The map lives and dies with the request.
+ */
+export const requestAccess = <TCtx>(
+  principal: Principal,
+): ((entry: ResourceEntry<TCtx>) => Access) => {
+  const bySkill = new Map<string, Access>();
+  return (entry) => {
+    const skill = entry.kind === "general" ? entry.skill : undefined;
+    if (skill === undefined) return accessFor(entry, principal);
+    const decided = bySkill.get(skill) ?? accessFor(entry, principal);
+    bySkill.set(skill, decided);
+    return decided;
+  };
+};

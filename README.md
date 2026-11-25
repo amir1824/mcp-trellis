@@ -168,6 +168,7 @@ The OAuth flows above run in automated tests and in the local demo. The Claude a
 | [docs/guide.md](docs/guide.md) | Architecture, clients, recipes, ports, tools, multi-tenant |
 | [docs/mcp-apps.md](docs/mcp-apps.md) | Attach a UI to a tool: setup, CSP, visibility, spec comparison, host results |
 | [docs/resources.md](docs/resources.md) | Serve read-only data as resources: setup, who sees what, limits |
+| [docs/skills.md](docs/skills.md) | Experimental: serve Agent Skills over MCP, opt-in |
 | [docs/reference.md](docs/reference.md) | Routes, methods, status codes, options, exports |
 | [docs/security.md](docs/security.md) | Protocol promises, threat model, sessions, not in scope |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common connection and token errors |

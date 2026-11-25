@@ -28,6 +28,7 @@ import {
 } from "./request-policy.js";
 import { buildResourceCatalog } from "./resources/catalog.js";
 import { dispatchRpc } from "./rpc-handlers.js";
+import { compileSkills } from "./skills/compile.js";
 import type { McpHandlerOptions, ResolvedMcpHandlerOptions } from "./types.js";
 
 export type {
@@ -136,11 +137,13 @@ const mcpPreflight = (): Response => {
 type HttpMethodHandler = (request: Request, startedAt: number) => Promise<Response> | Response;
 
 export const createMcpHandler = <TCtx>(handlerOptions: McpHandlerOptions<TCtx>): McpHandler => {
+  const skills = compileSkills(handlerOptions.skills);
   const options: ResolvedMcpHandlerOptions<TCtx> = {
     ...handlerOptions,
     publicMethods: handlerOptions.publicMethods ?? DEFAULT_PUBLIC_METHODS,
     modernPublicMethods: resolveModernPublicMethods(handlerOptions.publicMethods),
-    resourceCatalog: buildResourceCatalog(handlerOptions.registry, handlerOptions),
+    resourceCatalog: buildResourceCatalog(handlerOptions.registry, handlerOptions, skills?.entries),
+    skillIndex: skills?.index,
   };
 
   const HTTP_METHODS: Record<string, HttpMethodHandler> = {

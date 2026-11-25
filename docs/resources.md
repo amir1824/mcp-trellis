@@ -40,7 +40,7 @@ createMcpApp<Ctx>({
 
 | Field | Meaning |
 |-------|---------|
-| `uri` | Fixed, unique, ASCII, at most 512 characters, with a lowercase scheme (`docs://handbook`). `ui://` is reserved for MCP Apps documents (see [mcp-apps.md](mcp-apps.md)). |
+| `uri` | Fixed, unique, ASCII, at most 512 characters, with a lowercase scheme (`docs://handbook`). `ui://` is reserved for MCP Apps documents (see [mcp-apps.md](mcp-apps.md)) and `skill://` for [skills](skills.md). |
 | `name`, `description` | What `resources/list` shows. |
 | `mimeType` | Shown by `resources/list`; default `text/plain`. `text/html;profile=mcp-app` is reserved for MCP Apps documents. |
 | `scope` | Same meaning as a tool's `scope`: the principal needs it; `null` or omitted means any authenticated principal. |

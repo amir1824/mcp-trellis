@@ -18,9 +18,17 @@ import { shownName } from "../tools/call-args.js";
 import type { Principal, ResolvedMcpHandlerOptions } from "../types.js";
 import type { Access } from "./access.js";
 
+/** The noun an unknown-target answer uses, by method. */
+const NOUNS = {
+  "resources/list": "resource",
+  "resources/read": "resource",
+  "skills/list": "skill",
+  "skills/get": "skill",
+} as const;
+
 /** What every outcome of one request needs; the handlers build it once. */
 export type ResourceCall<TCtx> = {
-  method: "resources/list" | "resources/read";
+  method: keyof typeof NOUNS;
   req: Request;
   id: JsonRpcId;
   principal: Principal | null;
@@ -53,7 +61,7 @@ export const anonymousResponse = async <TCtx>(call: ResourceCall<TCtx>): Promise
 export const invalidParamsResponse = async <TCtx>(call: ResourceCall<TCtx>): Promise<Response> => {
   await auditResource(call, { error: DENIAL_REASONS.invalidParams });
   return jsonResponse({
-    data: rpcError(call.id, JSONRPC_INVALID_PARAMS, "resources/read params.uri must be a string"),
+    data: rpcError(call.id, JSONRPC_INVALID_PARAMS, `${call.method} params.uri must be a string`),
   });
 };
 
@@ -65,7 +73,7 @@ export const unknownResponse = async <TCtx>(
   const resource = shownName(detail.uri);
   await auditResource(call, { resource, error: detail.reason });
   return jsonResponse({
-    data: rpcError(call.id, JSONRPC_INVALID_PARAMS, `Unknown resource: ${resource}`),
+    data: rpcError(call.id, JSONRPC_INVALID_PARAMS, `Unknown ${NOUNS[call.method]}: ${resource}`),
   });
 };
 

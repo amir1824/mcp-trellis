@@ -40,9 +40,10 @@ With defaults `resourcePath: "/mcp"` and `oauthPath: "/mcp/oauth"`:
 | `tools/list` | Bearer | Lists registry entries |
 | `tools/call` | Bearer + scope | Runs the tool; no Bearer at all → 401, authenticated but missing scope → 403, `params.name` naming no registered tool → `-32602` (protocol error, not a tool result — see `docs/guide.md`) |
 | `resources/list`, `resources/read` | Bearer | Only when a UI or `resources` is configured (MCP Apps, see `docs/mcp-apps.md`; general resources, see `docs/resources.md`); otherwise `-32601`. `resources/templates/list`, `resources/subscribe` and `completion/complete` are never served (`-32601`) |
+| `skills/list`, `skills/get` | Bearer | **Experimental**, only when `skills` is configured (`docs/skills.md`); otherwise `-32601` |
 | `notifications/*` | public | HTTP 202 empty body |
 
-Anything else → JSON-RPC `-32601`. Capabilities advertise **tools only**, plus `resources` when a UI or `resources` is configured.
+Anything else → JSON-RPC `-32601`. Capabilities advertise **tools only**, plus `resources` when a UI or `resources` is configured, and the experimental `io.modelcontextprotocol/skills` extension when `skills` is configured.
 
 ## 2026-07-28 requests
 
@@ -57,8 +58,9 @@ A POST that carries `MCP-Protocol-Version: 2026-07-28` is a 2026-07-28 request. 
 | `tools/list` | Bearer | as before, plus `resultType` and cache hints |
 | `tools/call` | Bearer + scope | as before, plus `resultType` |
 | `resources/list`, `resources/read` | Bearer | only when a UI or `resources` is configured; plus `resultType` and cache hints |
+| `skills/list`, `skills/get` | Bearer | only when `skills` is configured; plus `resultType` and cache hints |
 
-`initialize`, `ping` and any other method answer `404` with `-32601` (after authentication). Every success result carries `resultType: "complete"`. `tools/list`, `resources/list` and `resources/read` carry `ttlMs: 0` and `cacheScope: "private"`: anything served after authentication or a scope check is private, and the hints never replace the per-request scope check. Responses still send `Cache-Control: no-store`. A tool whose own name has the form `=?base64?...?=` cannot be called under this header, because that form is always decoded. A request whose `MCP-Protocol-Version` header and `_meta` protocol version both name the same version this server lacks gets `-32022` and the list it supports (never for `initialize`, which has always ignored the header); a request with an unknown header and no matching `_meta` keeps its older `-32600`. An oversized body under the 2026-07-28 header answers `-32600` over HTTP 413 (`-32002` is not used there), also through `asNodeHandler`.
+`initialize`, `ping` and any other method answer `404` with `-32601` (after authentication). Every success result carries `resultType: "complete"`. `tools/list`, `resources/list`, `resources/read`, `skills/list` and `skills/get` carry `ttlMs: 0` and `cacheScope: "private"`: anything served after authentication or a scope check is private, and the hints never replace the per-request scope check. Responses still send `Cache-Control: no-store`. A tool whose own name has the form `=?base64?...?=` cannot be called under this header, because that form is always decoded. A request whose `MCP-Protocol-Version` header and `_meta` protocol version both name the same version this server lacks gets `-32022` and the list it supports (never for `initialize`, which has always ignored the header); a request with an unknown header and no matching `_meta` keeps its older `-32600`. An oversized body under the 2026-07-28 header answers `-32600` over HTTP 413 (`-32002` is not used there), also through `asNodeHandler`.
 
 ### Migrating to 2026-07-28
 
@@ -71,6 +73,10 @@ No change is required for an existing integration. `cimdFetch`, `cimdAllowedPort
 ### Migrating to resources
 
 No change is required for an existing integration. Registering `resources` adds `resources/list` and `resources/read` and the `resources` capability; a client that never reads resources is unaffected. The audit `error` field can now be `resource_failed`; a host that switches exhaustively on it should handle the new value. Rollback: remove the option.
+
+### Migrating to skills
+
+Experimental and opt-in; nothing is required of an existing integration. Registering `skills` adds `skills/list`, `skills/get` and the files at `skill://<name>/...`, and declares the skills extension. Rollback: remove the option. See [skills.md](skills.md).
 
 ## HTTP and JSON-RPC status codes
 
@@ -174,6 +180,7 @@ validated against their own bound `redirectUris`.
 | `cimdFetch` | `globalThis.fetch` | The fetch CIMD documents are retrieved with. Web `fetch` cannot pin the connection to the address that was checked; a host on Node that must close DNS rebinding passes a fetch that dials only a checked address. It must honour `redirect: "manual"` and `signal`; a response that followed a redirect is refused |
 | `cimdAllowedPorts` | any port | Ports a CIMD URL may use, for the first request and every redirect. `[443]` is recommended in production |
 | `cimdRequireJsonContentType` | `false` | Refuse a CIMD response that is not served as a JSON media type (`application/json` or `application/*+json`) |
+| `skills` | — | **Experimental.** Text skills (`SkillDef[]`), served and never run: `skills/list`, `skills/get`, files at `skill://<name>/...`. See [skills.md](skills.md) |
 | `resources` | — | General read-only resources (`ResourceDef[]`: fixed `uri`, `name`, optional `scope` and `allow`, `read(ctx)`). Adds `resources/list` and `resources/read` for the principals allowed to see them; nothing changes when it is omitted. See [resources.md](resources.md) |
 
 **A tool's `scope` (`ToolDef.scope`):** required scope, `null` for "any authenticated

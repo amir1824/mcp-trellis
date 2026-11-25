@@ -15,6 +15,7 @@ import {
   unauthorized,
 } from "./request-policy.js";
 import { RESOURCE_METHODS } from "./resources/methods.js";
+import { SKILL_METHODS } from "./skills/methods.js";
 import {
   auditToolCall,
   invalidArgumentsResponse,
@@ -37,7 +38,7 @@ const CORE_METHODS = {
     jsonResponse({
       data: rpcResult(id, {
         protocolVersion: pickProtocolVersion(body.params),
-        capabilities: serverCapabilities(options.resourceCatalog),
+        capabilities: serverCapabilities(options),
         serverInfo: options.serverInfo,
         instructions: options.instructions ?? "",
       }),
@@ -91,8 +92,9 @@ const CORE_METHODS = {
   },
 } as const satisfies Record<string, RpcMethodHandler<unknown>>;
 
-/** `resources/*` exist only on a server with resources: without one they are as unknown as any other method. */
+/** `resources/*` exist only on a server with resources, `skills/*` only on one with skills: otherwise they are as unknown as any other method. */
 const ALL_METHODS = { ...CORE_METHODS, ...RESOURCE_METHODS };
+const SKILL_TIER_METHODS = { ...ALL_METHODS, ...SKILL_METHODS };
 
 /** What a request that carries the 2026-07-28 header can call: no `initialize`, no `ping`. */
 const MODERN_CORE_METHODS = {
@@ -101,12 +103,24 @@ const MODERN_CORE_METHODS = {
   "tools/call": CORE_METHODS["tools/call"],
 };
 const MODERN_ALL_METHODS = { ...MODERN_CORE_METHODS, ...RESOURCE_METHODS };
+const MODERN_SKILL_TIER_METHODS = { ...MODERN_ALL_METHODS, ...SKILL_METHODS };
 
-/** The method table of each version, without and with the resource methods. */
+/** The method table of each version: core, with the resource methods, and with the skill methods too. */
 const METHOD_TABLES = {
-  legacy: { core: CORE_METHODS, withResources: ALL_METHODS },
-  modern: { core: MODERN_CORE_METHODS, withResources: MODERN_ALL_METHODS },
+  legacy: { core: CORE_METHODS, withResources: ALL_METHODS, withSkills: SKILL_TIER_METHODS },
+  modern: {
+    core: MODERN_CORE_METHODS,
+    withResources: MODERN_ALL_METHODS,
+    withSkills: MODERN_SKILL_TIER_METHODS,
+  },
 } as const;
+
+const tierOf = (
+  options: Parameters<typeof serverCapabilities>[0],
+): "core" | "withResources" | "withSkills" => {
+  if (options.skillIndex) return "withSkills";
+  return options.resourceCatalog ? "withResources" : "core";
+};
 
 export const dispatchRpc = async <TCtx>(input: {
   req: Request;
@@ -150,7 +164,7 @@ export const dispatchRpc = async <TCtx>(input: {
   // A client-selected method name must not reach Object.prototype (e.g.
   // `toString` or `__proto__`): only own entries in METHODS are RPC methods.
   const table = METHOD_TABLES[profile.name];
-  const methods = options.resourceCatalog ? table.withResources : table.core;
+  const methods = table[tierOf(options)];
   const handler = ownValue(methods as Record<string, RpcMethodHandler<TCtx>>, method);
   if (!handler) return profile.notFound(id, method);
 

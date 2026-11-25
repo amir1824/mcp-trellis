@@ -18,6 +18,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The audit `error` field can be `resource_failed` (a resource's `read` threw or returned an invalid shape; its text is never recorded). A host that switches exhaustively on the value should handle it.
 - `docs/mcp-apps.md` gains a comparison with the MCP Apps specification (2026-01-26) and an interoperability table; no MCP Apps host was run, so every host is listed as not tested.
 
+- **Experimental Skills over MCP (additive, opt-in; a minor release).** `skills` on `createMcpHandler` and `createMcpApp` (`@experimental`): text skills with their own `scope` and `allow`, served by `skills/list`, `skills/get` and `resources/read` at `skill://<name>/...`, with the extension `io.modelcontextprotocol/skills` declared. Pinned to `ext-skills` commit `c0705f9`; manifest with `sha256` digests and byte sizes; 512 files and 16 MiB per skill; a hidden skill answers as unknown under `hideToolsOutsideScope`. No host was tested; nested skills, dynamic content and `resources/directory/read` are not included. Without the option every response is as before. See `docs/skills.md`.
+
 ### Changed
 
 - The browser preflight (`OPTIONS`) on the MCP endpoint also allows the `Mcp-Method` and `Mcp-Name` request headers.
@@ -26,7 +28,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 None required. Existing integrations need no configuration change.
 
-Rollback: every new option defaults to the old behaviour, so a host that never sets them is unaffected; reverting this release restores the previous answers for hosts that did. For resources, remove the `resources` option.
+Rollback: every new option defaults to the old behaviour, so a host that never sets them is unaffected; reverting this release restores the previous answers for hosts that did. For resources, remove the `resources` option. For skills, remove the `skills` option.
 
 ## [3.4.0] - 2026-11-24
 

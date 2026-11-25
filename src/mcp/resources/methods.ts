@@ -9,7 +9,7 @@ import { DENIAL_REASONS } from "../request-policy.js";
 import { shownName } from "../tools/call-args.js";
 import type { RpcMethodHandler } from "../types.js";
 import { UI_MIME_TYPE } from "../ui/types.js";
-import { accessFor } from "./access.js";
+import { accessFor, requestAccess } from "./access.js";
 import {
   anonymousResponse,
   auditResource,
@@ -61,8 +61,9 @@ export const RESOURCE_METHODS = {
     const call = { method: "resources/list", req, id, principal, options, startedAt } as const;
     if (!principal) return anonymousResponse(call);
 
+    const accessOf = requestAccess<unknown>(principal);
     const resources = [...(options.resourceCatalog ?? NO_RESOURCES).values()]
-      .filter((entry) => accessFor(entry, principal).allowed)
+      .filter((entry) => accessOf(entry).allowed)
       .map(listEntry);
     await auditResource(call);
     return respond(id, { resources });

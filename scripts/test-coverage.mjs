@@ -13,6 +13,7 @@ const TEST_GLOBS = [
   "test/mcp/modern/*.test.ts",
   "test/mcp/ui/*.test.ts",
   "test/mcp/resources/*.test.ts",
+  "test/mcp/skills/*.test.ts",
   "test/security/*.test.ts",
   "test/adapters/*.test.ts",
   "test/auth/*.test.ts",

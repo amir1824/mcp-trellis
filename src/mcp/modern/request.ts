@@ -22,6 +22,7 @@ const NEVER_ANONYMOUS_WHEN_MODERN: ReadonlySet<string> = new Set(["initialize", 
 const NAME_HEADER_PARAMS: Readonly<Record<string, string>> = {
   "tools/call": "name",
   "resources/read": "uri",
+  "skills/get": "uri",
 };
 
 const BASE64_WRAPPED_VALUE = /^=\?base64\?([A-Za-z0-9+/=]*)\?=$/;

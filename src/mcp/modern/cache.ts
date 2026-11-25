@@ -12,6 +12,8 @@ const AUTHENTICATED_HINTED_METHODS: ReadonlySet<string> = new Set([
   "tools/list",
   "resources/list",
   "resources/read",
+  "skills/list",
+  "skills/get",
 ]);
 
 export const authenticatedHints = (method: string): CacheHints | undefined =>

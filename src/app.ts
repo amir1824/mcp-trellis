@@ -20,7 +20,7 @@ import { errorReason, INTERNAL_ERROR, jsonResponse } from "./http/http.js";
 import { createMcpHandler, type McpHandler, type McpHandlerOptions } from "./mcp/dispatch.js";
 import { createToolRegistry } from "./mcp/registry.js";
 import { safeAudit } from "./mcp/request-policy.js";
-import { assertToolScopesConfigured, resourceScopeItems } from "./mcp/tools/scope-check.js";
+import { assertAllScopesConfigured } from "./mcp/tools/scope-check.js";
 import type { AuditEntry, Principal } from "./mcp/types.js";
 import { safeOAuthAudit } from "./oauth/audit.js";
 import { CIMD_PORT_KEYS } from "./oauth/cimd/options.js";
@@ -93,6 +93,7 @@ const buildMcpHandlerOptions = <TCtx>(
       "hideToolsOutsideScope",
       "uiResources",
       "resources",
+      "skills",
     ]),
     wwwAuthenticate: (request) => ({
       realm,
@@ -203,8 +204,7 @@ export const createMcpApp = <TCtx>(options: McpAppOptions<TCtx>): McpApp => {
 
   assertClientsConfigured(clients, options.auth.clientStore);
   const scopes = options.scopes ?? [DEFAULT_SCOPE];
-  assertToolScopesConfigured(options.tools, scopes);
-  assertToolScopesConfigured(resourceScopeItems(options.resources), scopes, "resources");
+  assertAllScopesConfigured(options, scopes);
 
   const registry = createToolRegistry<TCtx>(
     options.tools,

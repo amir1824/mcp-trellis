@@ -2,6 +2,7 @@ import type { WwwAuthenticateOptions } from "../auth/bearer.js";
 import type { JsonRpcId, JsonRpcRequest } from "./jsonrpc.js";
 import type { ToolRegistry } from "./registry.js";
 import type { ResourceCatalog, ResourceDef } from "./resources/types.js";
+import type { SkillDef, SkillIndex } from "./skills/types.js";
 import type { UiResource } from "./ui/types.js";
 
 export type Principal = {
@@ -109,6 +110,12 @@ export type McpHandlerOptions<TCtx> = {
    * once per authorized read, never for a list. See `docs/resources.md`.
    */
   resources?: ResourceDef<TCtx>[];
+  /**
+   * @experimental Skills over MCP (`io.modelcontextprotocol/skills`): text skills served by `skills/list`,
+   * `skills/get` and `resources/read` at `skill://<name>/...`, each gated by its own `scope` and `allow`.
+   * Off unless set: without it every response is as before. A skill is data and is never run. See `docs/skills.md`.
+   */
+  skills?: SkillDef[];
 };
 
 /** `McpHandlerOptions` after `createMcpHandler` resolved its defaults. */
@@ -118,6 +125,8 @@ export type ResolvedMcpHandlerOptions<TCtx> = McpHandlerOptions<TCtx> & {
   modernPublicMethods: Set<string>;
   /** Built and validated once by `createMcpHandler`; `undefined` when the server has no resources at all. */
   resourceCatalog?: ResourceCatalog<TCtx> | undefined;
+  /** Built and validated once by `createMcpHandler`; `undefined` when no skill is registered. */
+  skillIndex?: SkillIndex | undefined;
 };
 
 /** Wraps a method's success result in its JSON-RPC response; errors never pass through it. */

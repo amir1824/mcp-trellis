@@ -37,7 +37,12 @@ export type ResourceDef<TCtx> = {
 /** A UI document keeps its static body and the scopes of the tools that reference it. */
 export type UiCatalogEntry = { kind: "ui" } & UiEntry;
 
-export type GeneralCatalogEntry<TCtx> = { kind: "general"; def: ResourceDef<TCtx> };
+export type GeneralCatalogEntry<TCtx> = {
+  kind: "general";
+  def: ResourceDef<TCtx>;
+  /** Set on the files of a skill: they share one access decision per request. */
+  skill?: string | undefined;
+};
 
 export type ResourceEntry<TCtx> = UiCatalogEntry | GeneralCatalogEntry<TCtx>;
 

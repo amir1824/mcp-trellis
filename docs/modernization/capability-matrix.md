@@ -66,6 +66,9 @@ M-1 to M-9 together are the work of T2. A server that supports the three older v
 | A-5 | `csp.frameDomains`, `csp.baseUriDomains`, `permissions`, `domain`, `prefersBorder` | `E` (read in full in T4: optional; no level for a server to set them) | optional | not supported, documented in `docs/mcp-apps.md`; omitted CSP keys mean none, so it fails closed; no host that was run failed without them | `ui/types.ts:19-24` lists two CSP keys only | none | left open in T4 (owner decision) |
 | A-6 | Capability negotiation: client advertises `extensions["io.modelcontextprotocol/ui"]` with the MIME type; server checks before registering UI tools | `E`, "Capability negotiation" (read in full in T4) | SHOULD (and MAY register variants) | not supported on purpose: the legacy path is stateless, every client sees the same `tools/list`, and a host without the extension ignores `_meta.ui` and shows the text result | none | none | left open in T4 (owner decision) |
 | A-7 | Text fallback: a tool result carries meaningful `content` | `E` (read through a summary) | stable | supported | `registry.ts:98-103`, `docs/mcp-apps.md` | `test/mcp/ui/host.test.ts` | none |
+| K-1 | Skills extension `io.modelcontextprotocol/skills`: `skills/list`, `skills/get`, files through `resources/read` at `skill://<name>/...` | `https://github.com/modelcontextprotocol/ext-skills` `specification/beta/skills.mdx` at `c0705f9` (pinned in `docs/skills.md`) | optional, experimental | supported in T5 (opt-in `skills`; flat names, static text; `directoryRead`, `"dynamic"`, nested skills and pagination are not served) | `skills/*.ts`, `modern/discover.ts` | `test/mcp/skills/*.test.ts` | done in T5 / C |
+| K-2 | Skills entry integrity: `frontmatter`, `resources` with `sha256` digest and byte `size`, 512 files and 16 MiB per skill | `https://github.com/modelcontextprotocol/ext-skills` `specification/beta/skills.mdx`, "Skill Entries", "Limits" | optional, experimental | supported in T5 | `skills/compile.ts` | `test/mcp/skills/manifest.test.ts`, `test/mcp/skills/config.test.ts` | done in T5 / C |
+| K-3 | Skill access follows the caller (list, get and every file read); a skill text never widens tool access | same file, "Security Considerations"; ticket section 5 | optional, experimental | supported in T5: per-skill `scope` and `allow`, hidden skill answers as unknown under `hideToolsOutsideScope`; host behaviour (approval, `allowed-tools`) is unverified: no Skills host was run | `skills/methods.ts`, `resources/access.ts` | `test/mcp/skills/authz.test.ts`, `test/mcp/skills/tools.test.ts` | done in T5 / C |
 | A-8 | Interoperability with real hosts | unverified: no host was run; the ticket criterion is "MCP Apps interoperability results are documented for tested hosts" | n/a | **no host was run in T4** (owner decision: no download); every host is documented as not tested in `docs/mcp-apps.md` | none | `test/mcp/ui/host.test.ts` (a harness, not a real host) | T6 / B |
 
 ## 4. Authorization and security (input to T3)
@@ -94,7 +97,7 @@ Read from `src/`, not run for this analysis:
 - **Gap against the ticket's criterion** ("cannot be accessed or discovered under restrictive policies"): `hideToolsOutsideScope` hides `tools/list` entries only. A `tools/call` by name for a tool outside the caller's scope still answers 403 `insufficient_scope` and names the scope, while an unknown name answers `-32602`, so the answers for a hidden tool and an unknown one are not the same (hidden-tool answer parity, T3) (`rpc-handlers.ts:53-87`, `:116-126`; the behaviour is pinned by the `hideToolsOutsideScope` suite in `test/mcp/app.test.ts:547`). `resources/read` behaves differently under the same option: it answers as an unknown URI (`resources/methods.ts`). Proposed for T3: decide whether a hidden tool should answer like an unknown tool. This is reported to the maintainer through the review, not written as steps (see `SECURITY.md` for private reporting).
 - `resources/list` and `resources/read` for `ui://` documents filter by the caller's scopes always, and with `hideToolsOutsideScope` a denied read looks like an unknown URI (`resources/methods.ts`).
 - A method in `publicMethods` skips authentication (`rpc-handlers.ts:171-186`); the defaults are `initialize`, `ping` and the two initialized notifications (`request-policy.ts:25-30`). `resources/*` answers 401 even when listed there (`resources/methods.ts`).
-- No Skill or general Resource exists yet, so there is nothing to discover there; these rows are open for T4 and T5.
+- General resources (T4) and Skills (T5) use the same access rule as `ui://` documents: filtered listings, and a refused read or `skills/get` answers as unknown under `hideToolsOutsideScope` (`resources/access.ts`, `skills/methods.ts`).
 
 ### Caches that depend on the caller (R21)
 
@@ -116,7 +119,7 @@ Proposed, for the maintainer to approve or change. Release letters follow the ti
 | O-12 (prompts) | none: not named in the ticket | none | Maintainer decision |
 | O-11, O-8 | undecided | A or later | Decide in the ADR review |
 | O-2, O-3, O-7 | none | none | No current use case; not proposed |
-| Skills (not in the rows above) | T5 | C | Experimental; see U-5 |
+| K-1 to K-3 | T5 | C | Done in T5: experimental, opt-in; spec pinned (U-5 resolved in `docs/skills.md`) |
 | Reference application | T6 | per release | |
 
 ### Out of scope per ticket
@@ -130,7 +133,7 @@ Listed so that they are not mistaken for missing work. Each is optional and, if 
 | Extension | Status on `https://modelcontextprotocol.io/extensions` | In Trellis |
 |---|---|---|
 | MCP Apps (`io.modelcontextprotocol/ui`) | Stable (2026-01-26) | supported (section 3) |
-| Skills over MCP (`io.modelcontextprotocol/skills`) | Beta, destination not stated; see U-5 | `missing` (`experimental`); T5 |
+| Skills over MCP (`io.modelcontextprotocol/skills`) | Beta, destination not stated; see U-5 | supported in T5 (`experimental`): K-1 to K-3 |
 | MCP Tasks | Beta, to Core | out of scope per ticket |
 | OAuth Client Credentials, Enterprise-Managed Authorization | Stable | `missing`; Enterprise-Managed Authorization matches the ticket's "Enterprise-managed identity infrastructure" exclusion, Client Credentials is not named by the ticket and needs the maintainer's decision |
 | Server Cards, Events | Beta | out of scope per ticket (Events) / not named (Server Cards) |
@@ -143,7 +146,7 @@ Things this analysis could not confirm from a primary page. None is guessed in t
 - **U-2.** Whether `cacheScope` is required or optional: the caching page lists the allowed values but does not say. `ttlMs` is stated as required on cacheable results.
 - **U-3.** The raw MCP schema file (`schema.ts`) was not read; exact field shapes of `DiscoverResult` and the error data come only from examples on the pages.
 - **U-4.** The MCP Apps specification file was read through a truncated copy whose tail is a summary; capability negotiation and some MUST/SHOULD levels are marked as summary in the rows that use them. The listing shows MCP Apps at version 2026-01-26 only; there is no 2026-07-28 Apps specification.
-- **U-5.** The Skills extension is described as "Beta, destination not yet stated" on the extensions listing and as "SEP-2640 is Final" on its overview page; the two pages disagree and this analysis did not settle which is current. T5 must pin one version before work starts.
+- **U-5.** The Skills extension is described as "Beta, destination not yet stated" on the extensions listing and as "SEP-2640 is Final" on its overview page; the two pages disagree and this analysis did not settle which is current. T5 pinned the text of `ext-skills` commit `c0705f9` (`docs/skills.md`); which status label is current stays unverified.
 - **U-6.** Pages not read: stdio transport, the OAuth Client Credentials and Enterprise-Managed Authorization extension pages, Tasks, Server Cards, Events, and the IETF CIMD draft.
 - **U-7.** Test files listed in the matrix were matched by name and by a keyword search; none was run for this matrix. Where a row says a mention is not confirmed, the coverage is unknown.
 - **U-8.** Progress notifications and the exact behaviour of `validate.ts` against JSON Schema 2020-12 were not assessed line by line.

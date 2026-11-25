@@ -18,6 +18,20 @@ const P95 = 0.95;
 const RESOURCE_COUNT = 50;
 const RESOURCE_URI = "docs://baseline/25";
 
+const SKILL_COUNT = 20;
+const SKILL_URI = "skill://baseline-10/SKILL.md";
+
+const skills = Array.from({ length: SKILL_COUNT }, (_, index) => ({
+  name: `baseline-${index}`,
+  description: `Baseline skill ${index}`,
+  instructions: `# Baseline ${index}\n`,
+  scope: "mcp",
+  files: [
+    { path: "references/a.md", text: `reference a of ${index}\n` },
+    { path: "references/b.md", text: `reference b of ${index}\n` },
+  ],
+}));
+
 const resources = Array.from({ length: RESOURCE_COUNT }, (_, index) => ({
   uri: `docs://baseline/${index}`,
   name: `Baseline ${index}`,
@@ -35,16 +49,20 @@ const registry = createToolRegistry([
   },
 ]);
 
-const handler = createMcpHandler({
-  registry,
-  resources,
-  serverInfo: { name: "baseline", version: "0.0.0" },
-  wwwAuthenticate: { realm: "mcp", resourceMetadataUrl: "http://127.0.0.1/.well-known" },
-  ports: {
-    authenticate: async () => ({ id: "baseline-user", scopes: ["mcp"] }),
-    context: () => ({}),
-  },
-});
+const buildHandler = (extra) =>
+  createMcpHandler({
+    registry,
+    serverInfo: { name: "baseline", version: "0.0.0" },
+    wwwAuthenticate: { realm: "mcp", resourceMetadataUrl: "http://127.0.0.1/.well-known" },
+    ports: {
+      authenticate: async () => ({ id: "baseline-user", scopes: ["mcp"] }),
+      context: () => ({}),
+    },
+    ...extra,
+  });
+
+const handler = buildHandler({ resources });
+const skillsHandler = buildHandler({ skills });
 
 const REQUESTS = {
   "tools/list": { jsonrpc: "2.0", id: 1, method: "tools/list" },
@@ -61,6 +79,11 @@ const REQUESTS = {
     method: "resources/read",
     params: { uri: RESOURCE_URI },
   },
+};
+
+const SKILL_REQUESTS = {
+  "skills/list": { jsonrpc: "2.0", id: 5, method: "skills/list" },
+  "skills/get": { jsonrpc: "2.0", id: 6, method: "skills/get", params: { uri: SKILL_URI } },
 };
 
 const headers = {
@@ -91,39 +114,57 @@ const measure = async (send) => {
 const report = (scenario, method, result) =>
   console.log(JSON.stringify({ scenario, method, warmup: WARMUP, samples: SAMPLES, ...result }));
 
-const server = http.createServer(asNodeHandler(handler, { origin: "http://127.0.0.1" }));
-await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-const { port } = server.address();
+const post = (target, payload) =>
+  target.fetch(new Request("http://127.0.0.1/mcp", { method: "POST", headers, body: payload }));
 
-try {
-  for (const [method, body] of Object.entries(REQUESTS)) {
-    const payload = JSON.stringify(body);
-    report(
-      "handler.fetch in-process",
-      method,
-      await measure(async () => {
-        const response = await handler.fetch(
-          new Request("http://127.0.0.1/mcp", { method: "POST", headers, body: payload }),
-        );
-        await response.text();
-      }),
-    );
-    report(
-      "node http loopback",
-      method,
-      await measure(async () => {
-        const response = await fetch(`http://127.0.0.1:${port}/mcp`, {
-          method: "POST",
-          headers,
-          body: payload,
-        });
-        await response.text();
-      }),
-    );
+/** The first skills/list on a fresh handler: it alone hashes the 60 files, so it is reported apart. */
+const coldFirstCall = async () => {
+  const fresh = buildHandler({ skills });
+  const startedAt = performance.now();
+  await (await post(fresh, JSON.stringify(SKILL_REQUESTS["skills/list"]))).text();
+  return Number((performance.now() - startedAt).toFixed(3));
+};
+
+const measureRequests = async (target, requests) => {
+  const server = http.createServer(asNodeHandler(target, { origin: "http://127.0.0.1" }));
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    for (const [method, body] of Object.entries(requests)) {
+      const payload = JSON.stringify(body);
+      report(
+        "handler.fetch in-process",
+        method,
+        await measure(async () => (await post(target, payload)).text()),
+      );
+      report(
+        "node http loopback",
+        method,
+        await measure(async () => {
+          const response = await fetch(`http://127.0.0.1:${port}/mcp`, {
+            method: "POST",
+            headers,
+            body: payload,
+          });
+          await response.text();
+        }),
+      );
+    }
+  } finally {
+    server.close();
   }
-} finally {
-  server.close();
-}
+};
+
+console.log(
+  JSON.stringify({
+    scenario: "skills cold first call",
+    method: "skills/list",
+    skills: SKILL_COUNT,
+    coldMs: await coldFirstCall(),
+  }),
+);
+await measureRequests(handler, REQUESTS);
+await measureRequests(skillsHandler, SKILL_REQUESTS);
 
 console.log(
   JSON.stringify({

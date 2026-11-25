@@ -4,20 +4,21 @@ import { isJsonObject } from "../../util/json.js";
 type ScopedItem = { name: string; scope?: string | null | undefined };
 
 /**
- * The resources' URIs and scopes, read defensively: a malformed entry is skipped here so that the
- * handler's construction check names every violation, instead of a raw TypeError from this one.
+ * The URIs or names and scopes of `resources` or `skills`, read defensively: a malformed entry is skipped
+ * here so that the handler's construction check names every violation, instead of a raw TypeError from this one.
  */
-export const resourceScopeItems = (resources: unknown): ScopedItem[] =>
-  Array.isArray(resources)
-    ? resources
+const scopedItems = (list: unknown, label: "uri" | "name"): ScopedItem[] =>
+  Array.isArray(list)
+    ? list
         .filter(isJsonObject)
-        .map(({ uri, scope }) => ({ name: String(uri), scope: scope as ScopedItem["scope"] }))
+        .map((item) => ({ name: String(item[label]), scope: item.scope as ScopedItem["scope"] }))
     : [];
 
 /** Which kind of item is checked, and how an unscoped one is described in the error. */
 const KINDS = {
   tools: "callable",
   resources: "readable",
+  skills: "readable",
 } as const;
 
 /**
@@ -40,4 +41,14 @@ export const assertToolScopesConfigured = (
       `scopes it holds: ${unscoped.join(", ")}. Set scope: "<one of the entries above>" ` +
       `on each, or scope: null to state the omission on purpose.`,
   );
+};
+
+/** The scope check of everything a host registers: tools, resources and skills. */
+export const assertAllScopesConfigured = (
+  options: { tools: ReadonlyArray<ScopedItem>; resources?: unknown; skills?: unknown },
+  scopes: string[],
+): void => {
+  assertToolScopesConfigured(options.tools, scopes);
+  assertToolScopesConfigured(scopedItems(options.resources, "uri"), scopes, "resources");
+  assertToolScopesConfigured(scopedItems(options.skills, "name"), scopes, "skills");
 };

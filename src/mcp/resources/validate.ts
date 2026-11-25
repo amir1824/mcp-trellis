@@ -1,6 +1,7 @@
 /** Construction-time checks of `resources`: every violation is listed at once, nothing is fixed up. */
 
 import { isJsonObject } from "../../util/json.js";
+import { SKILL_URI_SCHEME } from "../skills/types.js";
 import { shownName } from "../tools/call-args.js";
 import { UI_MIME_TYPE, UI_RESOURCE_SCHEME } from "../ui/types.js";
 import type { ResourceDef } from "./types.js";
@@ -33,6 +34,9 @@ const uriViolations = (uri: unknown, seen: ReadonlySet<string>): string[] => {
   if (uri.length > MAX_URI_LENGTH) violations.push(`uri is over ${MAX_URI_LENGTH} characters`);
   if (uri.startsWith(UI_RESOURCE_SCHEME)) {
     violations.push(`uri may not use "${UI_RESOURCE_SCHEME}", which uiResources owns`);
+  }
+  if (uri.startsWith(SKILL_URI_SCHEME)) {
+    violations.push(`uri may not use "${SKILL_URI_SCHEME}", which skills owns`);
   }
   if (seen.has(uri)) violations.push("uri is a duplicate");
   return violations;

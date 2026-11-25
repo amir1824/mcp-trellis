@@ -1,6 +1,7 @@
 import type { ClientName } from "./clients.js";
 import type { ToolDef } from "./mcp/registry.js";
 import type { ResourceDef } from "./mcp/resources/types.js";
+import type { SkillDef } from "./mcp/skills/types.js";
 import type { AuditEntry, Principal, ServerInfo } from "./mcp/types.js";
 import type { UiResource } from "./mcp/ui/types.js";
 import type { CimdPorts } from "./oauth/cimd/types.js";
@@ -147,4 +148,6 @@ export type McpAppOptions<TCtx> = {
    * `McpHandlerOptions.resources` and `docs/resources.md`.
    */
   resources?: ResourceDef<TCtx>[];
+  /** @experimental Skills over MCP, off unless set: see `McpHandlerOptions.skills` and `docs/skills.md`. */
+  skills?: SkillDef[];
 } & CimdPorts;
