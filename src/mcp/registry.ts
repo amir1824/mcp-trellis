@@ -1,9 +1,14 @@
-import { clipText } from "../util/clip.js";
-import { isToolResult, type ToolResult } from "./tools/content.js";
+import { pickDefined } from "../util/defined.js";
+import { argsRejection } from "./schema/custom/run.js";
+import type { JsonSchema, SchemaValidator } from "./schema/types.js";
+import type { ToolResult } from "./tools/content.js";
+import { annotationViolations, type ToolAnnotations } from "./tools/wire/annotations.js";
+import { assertToolSchemasValid } from "./tools/wire/args-schema.js";
+import { asToolResult, errorResult, resolveToolError } from "./tools/wire/outcome.js";
+import { checkedOutput, outputSchemaViolations } from "./tools/wire/output.js";
+import { paramHeaderViolations } from "./tools/wire/param-schema.js";
 import { toolListMeta, toolUiViolations } from "./ui/registry.js";
 import type { ToolUi } from "./ui/types.js";
-import type { JsonSchema } from "./validate.js";
-import { missingObjectType, unsupportedKeywords, validateAgainstSchema } from "./validate.js";
 
 export type ToolHandler<TCtx> = (
   ctx: TCtx,
@@ -25,6 +30,18 @@ export type ToolDef<TCtx> = {
    */
   scope?: string | null | undefined;
   /**
+   * JSON Schema (2020-12) of the tool's `structuredContent`, listed in `tools/list`. The root may
+   * be any type, not only `"object"`; a client on a protocol version before 2026-07-28 is only
+   * shown an `"object"` root. While `validateOutput` is on, a result that is not `isError` must
+   * carry a `structuredContent` that conforms, or the client gets "Tool returned an invalid result".
+   */
+  outputSchema?: JsonSchema | undefined;
+  /**
+   * Hints listed in `tools/list`. Untrusted by clients, and never used by this library to
+   * authorize a call or pick a scope: see `ToolAnnotations`.
+   */
+  annotations?: ToolAnnotations | undefined;
+  /**
    * MCP Apps: the UI a host renders for this tool's result. The resource
    * must be registered in `uiResources`. A host without MCP Apps ignores it
    * and shows the result's `content` text.
@@ -37,6 +54,8 @@ export type ToolListEntry = {
   name: string;
   description: string;
   inputSchema: JsonSchema;
+  outputSchema?: JsonSchema;
+  annotations?: ToolAnnotations;
   _meta?: { ui: ToolUi };
 };
 
@@ -49,7 +68,11 @@ export type ToolRegistry<TCtx> = {
    * "principal" or "scope check" is — it only ever sees the raw `scope`
    * value already on each `ToolDef`.
    */
-  list: (allowScope?: (scope: string | null | undefined) => boolean) => ToolListEntry[];
+  /** `withUi: false` omits `_meta.ui` (a client that did not declare MCP Apps); default `true`. */
+  list: (
+    allowScope?: (scope: string | null | undefined) => boolean,
+    withUi?: boolean,
+  ) => ToolListEntry[];
   get: (name: string) => ToolDef<TCtx> | undefined;
   call: (name: string, ctx: TCtx, args: Record<string, unknown>) => Promise<ToolResult>;
 };
@@ -66,76 +89,41 @@ export type RegistryOptions = {
    * Default: `"Tool execution failed"` (no exception leakage).
    */
   onToolError?: ((error: unknown) => string) | undefined;
+  /**
+   * Check a successful result against the tool's `outputSchema`. Default: the value of
+   * `validateArgs` (**true**). A result without a conforming `structuredContent` is replaced by
+   * the generic error "Tool returned an invalid result": neither the violations nor the data
+   * reach the client, since they may hold another tenant's data. An `isError` result is not checked.
+   */
+  validateOutput?: boolean | undefined;
+  /**
+   * Called with the tool name and why its result was rejected, so the developer can log it.
+   * The violations can contain the result's data: keep them out of client-visible output.
+   * A hook that throws, or returns a promise that rejects, never fails the call.
+   */
+  onOutputViolation?: ((tool: string, violations: string[]) => void) | undefined;
+  /**
+   * Replaces the built-in JSON Schema evaluator for every `inputSchema` and `outputSchema`, for
+   * a schema it does not cover (`unevaluatedProperties`, `format`, a risky `pattern`): wrap Ajv
+   * or similar. The construction-time keyword, `pattern` and object-type checks are skipped, so
+   * the schemas are yours to vet. It runs only while `validateArgs` / `validateOutput` are on.
+   * One that throws, or returns anything but an array of strings, fails closed: the client gets
+   * "Invalid arguments" or "Tool returned an invalid result", never the thrown message.
+   */
+  schemaValidator?: SchemaValidator | undefined;
 };
 
-const DEFAULT_TOOL_ERROR = "Tool execution failed";
+/** The `RegistryOptions` that `createMcpApp` takes under the same name. */
+export const REGISTRY_OPTION_KEYS = [
+  "validateArgs",
+  "validateOutput",
+  "onToolError",
+  "onOutputViolation",
+  "schemaValidator",
+] as const satisfies readonly (keyof RegistryOptions)[];
 
-/**
- * Map a tool exception to client-visible text.
- * A throwing or non-string `onToolError` falls back to the redacted default —
- * a mapper must never turn a tool failure into a transport failure.
- */
-const resolveToolError = (caught: unknown, onToolError: RegistryOptions["onToolError"]): string => {
-  if (!onToolError) return DEFAULT_TOOL_ERROR;
-  try {
-    const mapped = onToolError(caught);
-    return typeof mapped === "string" && mapped.length > 0 ? mapped : DEFAULT_TOOL_ERROR;
-  } catch {
-    return DEFAULT_TOOL_ERROR;
-  }
-};
-
-/** Longest validation message returned — a path in it can carry an attacker-chosen key. */
-const MAX_VALIDATION_MESSAGE_LENGTH = 2000;
-
-const INVALID_TOOL_RESULT = "Tool returned an invalid result";
-
-/**
- * A handler is typed to return `ToolResult | string`, but a JS tool (or a
- * lookup that came back `undefined`) can return anything. Anything else is a
- * tool failure the caller sees as `isError`, never a malformed `result`.
- */
-const asToolResult = (out: ToolResult | string): ToolResult => {
-  if (typeof out === "string") {
-    return { content: [{ type: "text", text: out }], isError: false };
-  }
-  return isToolResult(out) ? out : errorResult(INVALID_TOOL_RESULT);
-};
-
-const errorResult = (message: string): ToolResult => ({
-  content: [{ type: "text", text: message }],
-  isError: true,
-});
-
-/** Throws with every violation listed at once, rather than failing on the first tool found. */
-const assertToolSchemasValid = <TCtx>(tools: ToolDef<TCtx>[]): void => {
-  const keywordViolations = tools.flatMap((tool) =>
-    unsupportedKeywords(tool.inputSchema).map(
-      (path) => `${tool.name}: unsupported JSON Schema keyword at ${path}`,
-    ),
-  );
-  if (keywordViolations.length > 0) {
-    throw new Error(
-      `validateArgs: true but inputSchema uses unsupported keywords:\n` +
-        keywordViolations.join("\n") +
-        "\nRemove the keyword, enforce it in the handler, or set validateArgs: false",
-    );
-  }
-
-  // `properties`/`required` without `type: "object"` validates nothing at
-  // that node, and passes the keyword check above. See `missingObjectType`.
-  const typeViolations = tools.flatMap((tool) =>
-    missingObjectType(tool.inputSchema).map(
-      (path) => `${tool.name}: ${path} uses properties/required without type: "object"`,
-    ),
-  );
-  if (typeViolations.length > 0) {
-    throw new Error(
-      `validateArgs: true but inputSchema implies an object shape without declaring it:\n` +
-        typeViolations.join("\n") +
-        '\nAdd type: "object" (or include it in a union), or set validateArgs: false',
-    );
-  }
+const throwIfAny = (violations: string[], heading: string, fix: string): void => {
+  if (violations.length > 0) throw new Error(`${heading}\n${violations.join("\n")}\n${fix}`);
 };
 
 export const createToolRegistry = <TCtx>(
@@ -149,19 +137,30 @@ export const createToolRegistry = <TCtx>(
 
   const uiViolations = toolUiViolations(tools);
   if (uiViolations.length > 0) throw new Error(`invalid tool ui:\n${uiViolations.join("\n")}`);
+  throwIfAny(annotationViolations(tools), "invalid tool annotations:", "Fix the annotation.");
+  throwIfAny(paramHeaderViolations(tools), "invalid x-mcp-header:", "Fix the annotation.");
 
   const validateArgs = options.validateArgs !== false;
-  if (validateArgs) assertToolSchemasValid(tools);
+  if (validateArgs && !options.schemaValidator) assertToolSchemasValid(tools);
+  const validateOutput = options.validateOutput ?? validateArgs;
+  if (validateOutput) {
+    throwIfAny(
+      outputSchemaViolations(tools, options.schemaValidator === undefined),
+      "validateOutput: true but outputSchema is not usable:",
+      "Fix the outputSchema, or set validateOutput: false",
+    );
+  }
 
   return {
-    list: (allowScope) =>
+    list: (allowScope, withUi = true) =>
       tools
         .filter((tool) => !allowScope || allowScope(tool.scope))
-        .map(({ name, description, inputSchema, ui }) => ({
-          name,
-          description,
-          inputSchema,
-          ...(ui !== undefined ? { _meta: toolListMeta(ui) } : {}),
+        .map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          inputSchema: tool.inputSchema,
+          ...pickDefined(tool, ["outputSchema", "annotations"]),
+          ...(withUi && tool.ui !== undefined ? { _meta: toolListMeta(tool.ui) } : {}),
         })),
 
     get: (name) => byName.get(name),
@@ -171,15 +170,15 @@ export const createToolRegistry = <TCtx>(
       if (!tool) return errorResult(`Unknown tool: ${name}`);
 
       if (validateArgs) {
-        const errors = validateAgainstSchema(args, tool.inputSchema);
-        if (errors.length > 0) {
-          const message = errors.join("; ");
-          return errorResult(clipText(message, MAX_VALIDATION_MESSAGE_LENGTH, "…"));
-        }
+        const rejection = argsRejection(args, tool.inputSchema, options.schemaValidator);
+        if (rejection !== undefined) return errorResult(rejection);
       }
 
       try {
-        return asToolResult(await tool.handler(ctx, args));
+        const result = asToolResult(await tool.handler(ctx, args));
+        return validateOutput
+          ? checkedOutput(tool, result, options.onOutputViolation, options.schemaValidator)
+          : result;
       } catch (caught) {
         return errorResult(resolveToolError(caught, options.onToolError));
       }

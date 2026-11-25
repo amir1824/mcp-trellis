@@ -186,6 +186,7 @@ describe("M6 servers without UI stay as they were", () => {
     assert.deepEqual((init.body.result as { capabilities: unknown }).capabilities, {
       tools: {},
       resources: {},
+      extensions: { "io.modelcontextprotocol/ui": {} },
     });
     assert.equal(list.status, 200);
     assert.equal((list.body.result as { resources: unknown[] }).resources.length, 3);
@@ -226,21 +227,12 @@ describe("M8 tool results are checked before they reach the client", () => {
   });
   const text = [{ type: "text", text: "ok" }];
 
-  it("M8 a non-object structuredContent never reaches the client", async () => {
+  it("M8 a non-object _meta never reaches the client", async () => {
     const env = makeEnv({
       resources: null,
-      tools: [
-        returning("as_string", { content: text, structuredContent: "x" }),
-        returning("as_array", { content: text, structuredContent: [1] }),
-        returning("as_null", { content: text, structuredContent: null }),
-        returning("bad_meta", { content: text, _meta: "x" }),
-      ],
+      tools: [returning("bad_meta", { content: text, _meta: "x" })],
     });
-    const token = TOKENS.alice;
-    assert.deepEqual((await callTool(env, "as_string", token)).body.result, INVALID);
-    assert.deepEqual((await callTool(env, "as_array", token)).body.result, INVALID);
-    assert.deepEqual((await callTool(env, "as_null", token)).body.result, INVALID);
-    assert.deepEqual((await callTool(env, "bad_meta", token)).body.result, INVALID);
+    assert.deepEqual((await callTool(env, "bad_meta", TOKENS.alice)).body.result, INVALID);
   });
 
   it("M8 an error result whose text is not a string is returned as the tool's result, not a 500", async () => {

@@ -8,14 +8,14 @@
 export { matchesAny, timingSafeEqual } from "./auth/bearer.js";
 export { corsHeaders, emptyResponse, methodNotAllowed, optionsResponse } from "./http/http.js";
 export { ASSUMED_HEADER_PROTOCOL_VERSION, pickProtocolVersion } from "./mcp/protocol.js";
+export { missingObjectType, unsupportedKeywords } from "./mcp/schema/check.js";
 export {
   IGNORED_SCHEMA_KEYWORDS,
   JSON_SCHEMA_TYPES,
-  missingObjectType,
   SUPPORTED_SCHEMA_KEYWORDS,
-  unsupportedKeywords,
-  validateAgainstSchema,
-} from "./mcp/validate.js";
+} from "./mcp/schema/keywords.js";
+export type { SchemaValidator } from "./mcp/schema/types.js";
+export { validateAgainstSchema } from "./mcp/schema/validate.js";
 export {
   advertisedScopes,
   defaultScopes,

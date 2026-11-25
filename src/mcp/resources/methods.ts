@@ -5,10 +5,12 @@
  */
 
 import { isJsonObject } from "../../util/json.js";
+import { clientSupports } from "../modern/extensions.js";
 import { DENIAL_REASONS } from "../request-policy.js";
 import { shownName } from "../tools/call-args.js";
 import type { RpcMethodHandler } from "../types.js";
-import { UI_MIME_TYPE } from "../ui/types.js";
+import { uiReadMeta } from "../ui/meta.js";
+import { UI_EXTENSION_ID, UI_MIME_TYPE } from "../ui/types.js";
 import { accessFor, requestAccess } from "./access.js";
 import {
   anonymousResponse,
@@ -23,6 +25,11 @@ import { DEFAULT_RESOURCE_MIME_TYPE, type ResourceEntry } from "./types.js";
 
 const NO_RESOURCES: ReadonlyMap<string, never> = new Map<string, never>();
 
+/**
+ * UI documents are listed, for the principals allowed to read them. The spec only says servers "MAY omit
+ * UI-only resources from `resources/list`" and its discovery sequence shows `ui://` resources in the list,
+ * so nothing in it asks to hide them; the list stays access-filtered and carries no csp or permissions.
+ */
 const listEntry = <TCtx>(entry: ResourceEntry<TCtx>) => {
   if (entry.kind === "ui") {
     const { uri, name, description } = entry.resource;
@@ -42,34 +49,36 @@ const listEntry = <TCtx>(entry: ResourceEntry<TCtx>) => {
   };
 };
 
+/** Built only after `accessFor` allowed the read: the document and every `_meta.ui` field leave here. */
 const uiBody = (entry: Extract<ResourceEntry<unknown>, { kind: "ui" }>, uri: string) => {
-  const { html, csp } = entry.resource;
+  const { resource } = entry;
   return {
     contents: [
       {
         uri,
         mimeType: UI_MIME_TYPE,
-        text: html,
-        ...(csp !== undefined ? { _meta: { ui: { csp } } } : {}),
+        ...(resource.blob !== undefined ? { blob: resource.blob } : { text: resource.html }),
+        ...uiReadMeta(resource),
       },
     ],
   };
 };
 
 export const RESOURCE_METHODS = {
-  "resources/list": async ({ req, id, principal, options, startedAt, respond }) => {
+  "resources/list": async ({ req, id, principal, options, startedAt, respond, client }) => {
     const call = { method: "resources/list", req, id, principal, options, startedAt } as const;
     if (!principal) return anonymousResponse(call);
 
     const accessOf = requestAccess<unknown>(principal);
     const resources = [...(options.resourceCatalog ?? NO_RESOURCES).values()]
+      .filter((entry) => entry.kind !== "ui" || clientSupports(client, UI_EXTENSION_ID))
       .filter((entry) => accessOf(entry).allowed)
       .map(listEntry);
     await auditResource(call);
     return respond(id, { resources });
   },
 
-  "resources/read": async ({ req, body, id, principal, options, startedAt, respond }) => {
+  "resources/read": async ({ req, body, id, principal, options, startedAt, respond, client }) => {
     const call: ResourceCall<unknown> = {
       method: "resources/read",
       req,
@@ -84,7 +93,10 @@ export const RESOURCE_METHODS = {
     if (typeof uri !== "string") return invalidParamsResponse(call);
 
     const entry = (options.resourceCatalog ?? NO_RESOURCES).get(uri);
-    if (!entry) return unknownResponse(call, { uri, reason: DENIAL_REASONS.unknownResource });
+    // A `ui://` document is core-protocol invisible to a client that did not declare MCP Apps.
+    const hidden = entry?.kind === "ui" && !clientSupports(client, UI_EXTENSION_ID);
+    if (!entry || hidden)
+      return unknownResponse(call, { uri, reason: DENIAL_REASONS.unknownResource });
 
     const access = accessFor(entry, principal);
     if (!access.allowed) return deniedResponse(call, { uri, access });

@@ -23,6 +23,7 @@ export const DENIAL_REASONS = {
   resourceFailed: "resource_failed",
   ruleDenied: "rule_denied",
   ruleFailed: "rule_failed",
+  paramHeaderMismatch: "param_header_mismatch",
 } as const;
 
 export const DEFAULT_PUBLIC_METHODS = new Set([

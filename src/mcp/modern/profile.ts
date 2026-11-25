@@ -11,8 +11,14 @@ import {
 } from "../jsonrpc.js";
 import type { ResolvedMcpHandlerOptions, ResultWriter } from "../types.js";
 import { methodNotFound, payloadTooLarge } from "./errors.js";
-import { isModernRequest, modernRequestError, unsupportedModernVersionError } from "./request.js";
-import { legacyWriter, modernWriter } from "./result.js";
+import type { ClientContext } from "./extensions.js";
+import {
+  isModernRequest,
+  modernClientOf,
+  modernRequestError,
+  unsupportedModernVersionError,
+} from "./request.js";
+import { legacyWriterFor, modernWriter } from "./result.js";
 
 type PublicMethodOptions = Pick<
   ResolvedMcpHandlerOptions<unknown>,
@@ -30,6 +36,8 @@ export type VersionProfile = {
   versionError: RequestCheck;
   /** Checks what the version requires of every request, after the notification check. */
   requestError: RequestCheck;
+  /** What the request declared per call; `undefined` for a version without per-request capabilities. */
+  client: (envelope: JsonRpcRequest) => ClientContext | undefined;
   /** What may be called without authentication. */
   publicMethods: (options: PublicMethodOptions) => Set<string>;
   /** The answer to a method the version does not have. */
@@ -52,12 +60,13 @@ export const legacyProfile: VersionProfile = {
     unsupportedModernVersionError(request, envelope) ??
     protocolVersionHeaderError(request, envelope),
   requestError: noError,
+  client: () => undefined,
   publicMethods: (options) => options.publicMethods,
   notFound: (id, method) =>
     jsonResponse({
       data: rpcError(id, JSONRPC_METHOD_NOT_FOUND, `Method not found: ${method}`),
     }),
-  writer: () => legacyWriter,
+  writer: legacyWriterFor,
 };
 
 export const modernProfile: VersionProfile = {
@@ -66,6 +75,7 @@ export const modernProfile: VersionProfile = {
   // The older header check does not know 2026-07-28 and would refuse its header.
   versionError: noError,
   requestError: modernRequestError,
+  client: modernClientOf,
   publicMethods: (options) => options.modernPublicMethods,
   notFound: methodNotFound,
   writer: modernWriter,

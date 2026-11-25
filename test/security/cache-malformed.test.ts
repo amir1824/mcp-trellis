@@ -89,12 +89,15 @@ describe("R12 M4 R17 cache hints under 2026-07-28 are private for anything behin
     ["resources/list", {}, INGEST_TOKEN],
     ["resources/read", { uri: "ui://test/view" }, INGEST_TOKEN],
   ] as const;
+  const APPS = { "io.modelcontextprotocol/ui": { mimeTypes: ["text/html;profile=mcp-app"] } };
 
   it("R12 M4 no authenticated result is public, for either of two principals", async () => {
     const { handler } = buildHandler({}, true);
     const scopes = await Promise.all(
       AUTHENTICATED.map(async ([method, params, token]) => {
-        const body = await json<Hints>(await send(handler, modern(method, { ...params }, token)));
+        const body = await json<Hints>(
+          await send(handler, modern(method, { ...params }, token, APPS)),
+        );
         return [body.result?.cacheScope, body.result?.ttlMs];
       }),
     );

@@ -22,6 +22,8 @@ type ErrorBody = { error: { code: number } };
 
 const names = (body: ListResult): string[] => body.result.tools.map((tool) => tool.name);
 
+const APPS = { "io.modelcontextprotocol/ui": { mimeTypes: ["text/html;profile=mcp-app"] } };
+
 describe("2026-07-28 tools and resources", () => {
   it("R2 R3 tools/list carries resultType, ttlMs and a private cacheScope", async () => {
     const body = await json<ListResult>(
@@ -60,16 +62,16 @@ describe("2026-07-28 tools and resources", () => {
     const { handler } = buildHandler({ hideToolsOutsideScope: true }, true);
     const list = await json<{
       result: { resources: unknown[]; cacheScope: string; resultType: string };
-    }>(await send(handler, modern("resources/list", {}, INGEST_TOKEN)));
+    }>(await send(handler, modern("resources/list", {}, INGEST_TOKEN, APPS)));
     const read = await json<{ result: { contents: unknown[]; cacheScope: string } }>(
-      await send(handler, modern("resources/read", { uri: "ui://test/view" }, INGEST_TOKEN)),
+      await send(handler, modern("resources/read", { uri: "ui://test/view" }, INGEST_TOKEN, APPS)),
     );
     const readerList = await json<{ result: { resources: unknown[] } }>(
-      await send(handler, modern("resources/list", {}, READ_TOKEN)),
+      await send(handler, modern("resources/list", {}, READ_TOKEN, APPS)),
     );
     const denied = await send(
       handler,
-      modern("resources/read", { uri: "ui://test/view" }, READ_TOKEN),
+      modern("resources/read", { uri: "ui://test/view" }, READ_TOKEN, APPS),
     );
     assert.equal(list.result.cacheScope, "private");
     assert.equal(list.result.resultType, "complete");

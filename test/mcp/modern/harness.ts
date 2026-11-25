@@ -113,9 +113,9 @@ export const rpc = (method: string, params?: Record<string, unknown>) => ({
 });
 
 /** The request `_meta` 2026-07-28 requires. */
-export const modernMeta = () => ({
+export const modernMeta = (extensions?: Record<string, object>) => ({
   "io.modelcontextprotocol/protocolVersion": MODERN_VERSION,
-  "io.modelcontextprotocol/clientCapabilities": {},
+  "io.modelcontextprotocol/clientCapabilities": extensions ? { extensions } : {},
 });
 
 /** A complete 2026-07-28 request: required `_meta`, and the standard headers copied from the body. */
@@ -123,10 +123,11 @@ export const modern = (
   method: string,
   params: Record<string, unknown> = {},
   token?: string,
+  extensions?: Record<string, object>,
 ): Call => {
   const named = params.name ?? params.uri;
   return {
-    body: rpc(method, { ...params, _meta: modernMeta() }),
+    body: rpc(method, { ...params, _meta: modernMeta(extensions) }),
     headers: {
       "MCP-Protocol-Version": MODERN_VERSION,
       "Mcp-Method": method,

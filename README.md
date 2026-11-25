@@ -62,7 +62,8 @@ Open `http://127.0.0.1:8787` and sign in as Alice or Bob with `$DEMO_PASSWORD`. 
 
 ## Tool UIs, resources and skills
 
-- **MCP Apps.** A tool can point at an HTML view that a host with [MCP Apps](https://github.com/modelcontextprotocol/ext-apps) renders next to the result. The view calls back through your `/mcp` endpoint, so scopes, validation, `context` and `audit` still apply.
+- **MCP Apps.** A tool can point at an HTML view that a host with [MCP Apps](https://github.com/modelcontextprotocol/ext-apps) renders next to the result. The view calls back through your `/mcp` endpoint, so scopes, validation, `context` and `audit` still apply. Documents are `html` or `blob`, with CSP, permissions, `domain` and `prefersBorder`. For 2026-07-28 requests the server sends the UI only to a client that declared the Apps extension.
+- **Typed results.** A tool can declare an `outputSchema` (checked against each result) and `annotations`; `structuredContent` may be any JSON value for 2026-07-28 clients. Schemas are evaluated natively as JSON Schema 2020-12; `x-mcp-header` mirrors an argument into a request header. See [docs/reference.md](docs/reference.md#tool-results-and-annotations).
 - **Resources.** `resources` serves read-only text to the principals allowed to see it. See [docs/resources.md](docs/resources.md).
 - **Skills (experimental).** `skills` serves Agent Skills over MCP, opt-in. See [docs/skills.md](docs/skills.md).
 
@@ -88,7 +89,7 @@ export const mcp = createMcpApp({
 });
 ```
 
-No MCP Apps host is verified by this project's tests. Setup, CSP and limits: [docs/mcp-apps.md](docs/mcp-apps.md).
+No MCP Apps host and no 2026-07-28 client is verified by this project's tests. Setup, CSP and limits: [docs/mcp-apps.md](docs/mcp-apps.md).
 
 ## How it fits together
 
@@ -156,12 +157,12 @@ The OAuth flows above run in automated tests and in the local demo. The Claude a
 | Doc | Contents |
 |-----|----------|
 | [docs/guide.md](docs/guide.md) | Clients, ports, consent, tools, multi-tenant |
-| [docs/mcp-apps.md](docs/mcp-apps.md) | Attach a UI to a tool: setup, CSP, limits |
+| [docs/mcp-apps.md](docs/mcp-apps.md) | Attach a UI to a tool: setup, document fields, CSP, negotiation, limits |
 | [docs/resources.md](docs/resources.md) | Serve read-only data as resources |
 | [docs/skills.md](docs/skills.md) | Experimental: Agent Skills over MCP |
 | [docs/reference.md](docs/reference.md) | Routes, methods, status codes, options, exports |
 | [docs/security.md](docs/security.md) | Protocol promises, threat model, sessions, not in scope |
-| [docs/troubleshooting.md](docs/troubleshooting.md) | Connection and token errors |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | Connection, token, schema and header errors |
 
 Examples: [project-desk](examples/project-desk/README.md) (reference remote server), [saas-demo](examples/saas-demo/README.md), [nextjs-saas](examples/nextjs-saas/README.md). All in [`examples/`](examples/README.md).
 

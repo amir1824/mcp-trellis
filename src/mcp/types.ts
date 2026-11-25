@@ -1,5 +1,6 @@
 import type { WwwAuthenticateOptions } from "../auth/bearer.js";
 import type { JsonRpcId, JsonRpcRequest } from "./jsonrpc.js";
+import type { ClientContext } from "./modern/extensions.js";
 import type { ToolRegistry } from "./registry.js";
 import type { ResourceCatalog, ResourceDef } from "./resources/types.js";
 import type { SkillDef, SkillIndex } from "./skills/types.js";
@@ -142,4 +143,6 @@ export type RpcMethodHandler<TCtx> = (input: {
   startedAt: number;
   /** Writes a success result: plain for older protocol versions, with 2026-07-28 fields otherwise. */
   respond: ResultWriter;
+  /** The extensions the client declared on this request; `undefined` on a request that is not 2026-07-28. */
+  client?: ClientContext | undefined;
 }) => Promise<Response>;

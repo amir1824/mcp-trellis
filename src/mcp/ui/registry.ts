@@ -5,6 +5,8 @@ import { isJsonObject } from "../../util/json.js";
 import type { ToolRegistry } from "../registry.js";
 import { uriShapeViolations } from "../resources/uri.js";
 import { parseCsp } from "./csp.js";
+import { parseDocument } from "./document.js";
+import { parseDomain, parsePermissions, parsePrefersBorder } from "./meta.js";
 import { type ToolUi, UI_RESOURCE_SCHEME, type UiResource } from "./types.js";
 
 /** A registered resource and the `scope` of every tool that references it, in registration order. */
@@ -50,16 +52,13 @@ export const toolUiViolations = (
   });
 
 const parseResource = (resource: UiResource): UiResource => {
-  const { uri, name, description, html, csp } = resource;
+  const { uri, name, description, csp, permissions, domain, prefersBorder } = resource;
   if (!isUiUri(uri)) throw new Error(`uiResources uri must be a "${UI_RESOURCE_SCHEME}" URI`);
   const shapeProblems = uriShapeViolations(uri);
   if (shapeProblems.length > 0) {
     throw new Error(
       `uiResources ${clipText(uri, MAX_SHOWN_URI, "…")}: ${shapeProblems.join("; ")}`,
     );
-  }
-  if (typeof html !== "string" || html.trim() === "") {
-    throw new Error(`uiResources ${uri}: html must be a non-empty string`);
   }
   if (name !== undefined && typeof name !== "string") {
     throw new Error(`uiResources ${uri}: name must be a string`);
@@ -68,16 +67,27 @@ const parseResource = (resource: UiResource): UiResource => {
     throw new Error(`uiResources ${uri}: description must be a string`);
   }
   try {
-    return { uri, name, description, html, ...(csp !== undefined ? { csp: parseCsp(csp) } : {}) };
+    return {
+      uri,
+      name,
+      description,
+      ...parseDocument(resource),
+      ...(csp !== undefined ? { csp: parseCsp(csp) } : {}),
+      ...(permissions !== undefined ? { permissions: parsePermissions(permissions) } : {}),
+      ...(domain !== undefined ? { domain: parseDomain(domain) } : {}),
+      ...(prefersBorder !== undefined ? { prefersBorder: parsePrefersBorder(prefersBorder) } : {}),
+    };
   } catch (caught) {
-    throw new Error(`uiResources ${uri}: ${caught instanceof Error ? caught.message : "bad csp"}`);
+    throw new Error(
+      `uiResources ${uri}: ${caught instanceof Error ? caught.message : "bad resource"}`,
+    );
   }
 };
 
 /**
  * `undefined` when the server has no UI at all (the whole feature stays off).
- * Fails closed with every problem listed: a bad or duplicate URI, empty html, a bad
- * CSP, a tool pointing at an unregistered URI, a resource no tool points at.
+ * Fails closed with every problem listed: a bad or duplicate URI, an empty or doubled document, a bad
+ * CSP, permissions, domain or prefersBorder, a tool pointing at an unregistered URI, a resource no tool points at.
  */
 export const buildUiRegistry = <TCtx>(
   registry: ToolRegistry<TCtx>,
