@@ -99,9 +99,9 @@ describe("sealed auth codes (v2)", () => {
     const used = new Set<string>();
     const codeStore = {
       consume: (jti: string, _expMs: number) => {
-        if (used.has(jti)) return false;
+        const fresh = !used.has(jti);
         used.add(jti);
-        return true;
+        return fresh;
       },
     };
     const code = await issueAuthCode(secret, baseRecord);

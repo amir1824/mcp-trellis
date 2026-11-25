@@ -63,12 +63,12 @@ describe("resources isolation R12 M2", () => {
     assert.deepEqual([readText(first), readText(second)], ["acme report", "globex report"]);
   });
 
-  for (const [label, method, params, token] of EVERY_ANSWER) {
+  EVERY_ANSWER.forEach(([label, method, params, token]) => {
     it(`R12 ${label} is Cache-Control: no-store`, async () => {
       const response = await capturePost(makeResourceEnv(), method, params, token);
       assert.equal(response.headers["cache-control"], CACHE_CONTROL);
     });
-  }
+  });
 
   it("R12 a failed provider answer is Cache-Control: no-store", async () => {
     const env = makeResourceEnv({ resources: [FAILING] });

@@ -141,9 +141,9 @@ describe("resources app R1 R6 a malformed resources option through createMcpApp"
     ["a non-array", "docs://a", /not an array/],
   ];
 
-  for (const [label, resources, expected] of MALFORMED) {
+  MALFORMED.forEach(([label, resources, expected]) => {
     it(`R6 ${label} is reported by the construction check, not as a raw TypeError`, () => {
       assert.throws(() => makeMultiScopeApp(resources as ResourceDef<Ctx>[]), expected);
     });
-  }
+  });
 });

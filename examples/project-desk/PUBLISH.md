@@ -1,6 +1,6 @@
 # Publish Project desk (operator)
 
-In-repo artifacts are ready. These steps need Cloudflare, npm, and GitHub login.
+These steps need Cloudflare, npm and GitHub logins.
 
 ## 1. Deploy the Worker
 
@@ -26,8 +26,7 @@ Confirm:
 - `https://mcp-trellis-project-desk.<subdomain>.workers.dev/mcp`
 - `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource`
 
-If the workers.dev subdomain is not `amir1824`, edit
-[`server.json`](server.json) `remotes[0].url` to match before Registry publish.
+If your workers.dev subdomain is not `amir1824`, set `remotes[0].url` in [`server.json`](server.json) to match before you publish to the Registry.
 
 ## 2. Publish the npm companion
 

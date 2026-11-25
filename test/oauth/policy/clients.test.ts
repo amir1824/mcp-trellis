@@ -9,13 +9,25 @@ import {
 import { sha256Base64Url } from "../../../src/oauth/crypto/pkce.js";
 import { CHATGPT_CALLBACK, CLAUDE_CALLBACK } from "../../../src/oauth/policy/redirect.js";
 import { hashClientSecret } from "../../../src/oauth/router.js";
-import type { ClientStore } from "../../../src/oauth/types.js";
+import type { ClientStore, RegisteredClient } from "../../../src/oauth/types.js";
 import { createOAuthRouter } from "../../helpers/router.js";
 
 const ORIGIN = "https://app.test";
 const RESOURCE = `${ORIGIN}/mcp`;
 const REDIRECT = "https://gemini.test/callback";
 const SECRET = "s3cr3t-value";
+
+// A lookup table instead of an inline id check: unknown ids resolve to null like a real store.
+const geminiClient = async (
+  clientId: string,
+  tokenEndpointAuthMethod: RegisteredClient["tokenEndpointAuthMethod"] = "client_secret_basic",
+): Promise<RegisteredClient | null> =>
+  new Map([
+    [
+      "gemini-client",
+      { clientId: "gemini-client", redirectUris: [REDIRECT], tokenEndpointAuthMethod },
+    ],
+  ]).get(clientId) ?? null;
 
 describe("client profiles", () => {
   it("composes redirect URIs from the named clients", () => {
@@ -91,14 +103,7 @@ const authorizeForCode = async (
 
 describe("confidential clients", () => {
   const clientStore: ClientStore = {
-    get: async (clientId) =>
-      clientId === "gemini-client"
-        ? {
-            clientId,
-            redirectUris: [REDIRECT],
-            tokenEndpointAuthMethod: "client_secret_basic",
-          }
-        : null,
+    get: geminiClient,
     verifySecret: async (_clientId, presented) => presented === SECRET,
   };
 
@@ -116,10 +121,7 @@ describe("confidential clients", () => {
         }),
         clientStore: {
           ...clientStore,
-          get: async (clientId) => {
-            const found = await clientStore.get(clientId);
-            return found ? { ...found, tokenEndpointAuthMethod: authMethod } : null;
-          },
+          get: (clientId) => geminiClient(clientId, authMethod),
         },
       },
     });
@@ -264,14 +266,7 @@ describe("confidential clients", () => {
         loginUrl: () => `${ORIGIN}/login`,
         mintAccessToken: async () => ({ accessToken: "t", expiresIn: 60 }),
         clientStore: {
-          get: async (clientId) =>
-            clientId === "gemini-client"
-              ? {
-                  clientId,
-                  redirectUris: [REDIRECT],
-                  tokenEndpointAuthMethod: "client_secret_basic",
-                }
-              : null,
+          get: geminiClient,
           // Neither verifySecret nor secretHash configured.
         },
       },
@@ -313,15 +308,9 @@ describe("client_secret_basic via secretHash (preferred over verifySecret)", () 
           scope,
         }),
         clientStore: {
-          get: async (clientId) =>
-            clientId === "gemini-client"
-              ? {
-                  clientId,
-                  redirectUris: [REDIRECT],
-                  tokenEndpointAuthMethod: "client_secret_basic",
-                }
-              : null,
-          secretHash: async (clientId) => (clientId === "gemini-client" ? storedHash : null),
+          get: geminiClient,
+          secretHash: async (clientId) =>
+            new Map([["gemini-client", storedHash]]).get(clientId) ?? null,
           // Present but must never be reached when secretHash is configured —
           // if this fires the "wrong secret" case below would pass for the
           // wrong reason.
@@ -451,14 +440,7 @@ describe("locked to pre-registered clients (allowUnregisteredClients: false)", (
   });
 
   const clientStore: ClientStore = {
-    get: async (clientId) =>
-      clientId === "gemini-client"
-        ? {
-            clientId,
-            redirectUris: [REDIRECT],
-            tokenEndpointAuthMethod: "client_secret_basic",
-          }
-        : null,
+    get: geminiClient,
     verifySecret: async (_clientId, presented) => presented === SECRET,
   };
 

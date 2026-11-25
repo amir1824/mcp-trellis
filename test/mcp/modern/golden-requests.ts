@@ -87,7 +87,6 @@ const calls = (version: string): Array<[string, Call]> =>
         headers: { "MCP-Protocol-Version": "1999-01-01" },
       },
     ],
-    ["query-string token", { body: rpc("tools/list"), headers: { "x-test": "q" } }],
     ["get anonymous", { body: "", method: "GET" }],
     ["get authenticated", { body: "", method: "GET", token: READ_TOKEN }],
   ].map(([name, call]) => [name as string, withVersion(version, call as Call)]);
@@ -123,28 +122,28 @@ const queryTokenRequest = (handler: ReturnType<typeof buildHandler>["handler"]) 
     }),
   );
 
+const answer = async (name: string, response: Promise<Response>) =>
+  [name, await capture(await response)] as const;
+
 /** Every answer for one older version, keyed by request name. */
 export const runGolden = async (version: string): Promise<Record<string, Captured>> => {
-  const answers: Record<string, Captured> = {};
   const plain = buildHandler().handler;
   const hidden = buildHandler({ hideToolsOutsideScope: true }, true).handler;
   const custom = buildHandler({
     publicMethods: new Set(["initialize", "ping", "tools/list"]),
   }).handler;
-  for (const [name, call] of calls(version)) {
-    answers[name] =
-      name === "query-string token"
-        ? await capture(await queryTokenRequest(plain))
-        : await capture(await send(plain, call));
-  }
-  for (const [name, call] of uiCalls(version)) {
-    answers[`hide+ui ${name}`] = await capture(await send(hidden, call));
-  }
-  answers["custom publicMethods tools/list anonymous"] = await capture(
-    await send(custom, withVersion(version, { body: rpc("tools/list") })),
-  );
-  answers["custom publicMethods discover anonymous"] = await capture(
-    await send(custom, withVersion(version, { body: rpc("server/discover") })),
-  );
-  return answers;
+  const answers = await Promise.all([
+    ...calls(version).map(([name, call]) => answer(name, send(plain, call))),
+    answer("query-string token", queryTokenRequest(plain)),
+    ...uiCalls(version).map(([name, call]) => answer(`hide+ui ${name}`, send(hidden, call))),
+    answer(
+      "custom publicMethods tools/list anonymous",
+      send(custom, withVersion(version, { body: rpc("tools/list") })),
+    ),
+    answer(
+      "custom publicMethods discover anonymous",
+      send(custom, withVersion(version, { body: rpc("server/discover") })),
+    ),
+  ]);
+  return Object.fromEntries(answers);
 };

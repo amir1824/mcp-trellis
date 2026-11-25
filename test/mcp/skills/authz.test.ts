@@ -53,6 +53,11 @@ const ADMIN_ADDRESSES = [
   "SKILL://admin-ops/SKILL.md",
 ] as const;
 
+const HIDDEN_SKILLS = [
+  ["admin-ops", SKILL_URIS.admin],
+  ["acme-only", SKILL_URIS.acme],
+] as const;
+
 /** A server that registers `name` and one that registers every other skill: a request for it is unknown on the second. */
 const withAndWithout = (name: string, hideToolsOutsideScope: boolean | "strict") => {
   const options = { hideToolsOutsideScope };
@@ -67,23 +72,23 @@ const withAndWithout = (name: string, hideToolsOutsideScope: boolean | "strict")
 
 describe("skills authz R4 R11 M1 M3", () => {
   describe("R4 listing is filtered per skill by scope and allow", () => {
-    for (const [who, token, expected] of SKILL_ROWS) {
+    SKILL_ROWS.forEach(([who, token, expected]) => {
       it(`R4 M1 skills/list shows ${who} only what it may read`, async () => {
         assert.deepEqual(await listedSkillUris(makeSkillEnv(), token), expected);
       });
-    }
+    });
 
     it("R4 M1 resources/list shows the files of exactly the skills that skills/list shows", async () => {
       const uris = await listedResourceUris(makeSkillEnv(), TOKENS.bob);
       assert.deepEqual(uris, [SKILL_URIS.refunds, SKILL_URIS.refundsPolicy, SKILL_URIS.open]);
     });
 
-    for (const mode of HIDING_MODES) {
+    HIDING_MODES.forEach((mode) => {
       it(`R11 skills/list is the same under hideToolsOutsideScope ${String(mode)}`, async () => {
         const env = makeSkillEnv({ options: { hideToolsOutsideScope: mode } });
         assert.deepEqual(await listedSkillUris(env, TOKENS.alice), SKILL_ROWS[0][2]);
       });
-    }
+    });
   });
 
   describe("M1 a principal without the scope receives nothing of the skill", () => {
@@ -143,7 +148,7 @@ describe("skills authz R4 R11 M1 M3", () => {
       assert.equal(reply.text.includes("SECRET-ALLOW-DETAIL"), false);
     });
 
-    for (const address of ADMIN_ADDRESSES.slice(2)) {
+    ADMIN_ADDRESSES.slice(2).forEach((address) => {
       it(`M3 M1 ${JSON.stringify(address)} is unknown on read and get, even to the * principal`, async () => {
         const env = makeSkillEnv();
         const read = await rpc(env, "resources/read", { uri: address }, TOKENS.root);
@@ -154,7 +159,7 @@ describe("skills authz R4 R11 M1 M3", () => {
         );
         assert.equal(`${read.text}${get.text}`.includes(ADMIN_SECRET), false);
       });
-    }
+    });
 
     it("M3 an address that names a declared file under another skill's prefix is unknown", async () => {
       const reply = await rpc(
@@ -168,11 +173,8 @@ describe("skills authz R4 R11 M1 M3", () => {
   });
 
   describe("R11 a skill the caller may not see answers like an unknown skill", () => {
-    for (const mode of HIDING_MODES) {
-      for (const [name, uri] of [
-        ["admin-ops", SKILL_URIS.admin],
-        ["acme-only", SKILL_URIS.acme],
-      ] as const) {
+    HIDING_MODES.forEach((mode) => {
+      HIDDEN_SKILLS.forEach(([name, uri]) => {
         it(`R11 ${String(mode)}: skills/get of ${name} answers the bytes of a server that lacks it`, async () => {
           const { registered, unregistered } = withAndWithout(name, mode);
           const hidden = await capturePost(registered, "skills/get", { uri }, TOKENS.eve);
@@ -187,7 +189,7 @@ describe("skills authz R4 R11 M1 M3", () => {
           const unknown = await capturePost(unregistered, "resources/read", { uri }, TOKENS.eve);
           assert.deepEqual(hidden, unknown);
         });
-      }
+      });
 
       it(`R11 ${String(mode)}: an unauthorized tool, resource and skill are all hidden in the same run`, async () => {
         const resources = [
@@ -202,7 +204,7 @@ describe("skills authz R4 R11 M1 M3", () => {
         assert.equal(resourceUris.includes("docs://admin"), false);
         assert.equal(skillUris.includes(SKILL_URIS.admin), false);
       });
-    }
+    });
 
     it("R11 strict: a call of the unauthorized tool, and a read of the unauthorized skill, both answer as unknown", async () => {
       const env = makeSkillEnv({ options: { hideToolsOutsideScope: "strict" } });

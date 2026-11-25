@@ -33,6 +33,21 @@ describe("resolveCimdClient", () => {
     token_endpoint_auth_method: "none",
   };
 
+  // Resolves `address` for the client and reports whether the fetch ran; a blocked address must never reach fetch.
+  const probeAddress = async (address: string, clientId = doc.client_id) => {
+    let fetched = false;
+    const resolved = await resolveCimdClient(clientId, {
+      fetch: async () => {
+        fetched = true;
+        return new Response(JSON.stringify(doc));
+      },
+      lookup: async () => [address],
+    });
+    return { address, resolved, fetched };
+  };
+  const expectBlocked = (addresses: string[]) =>
+    addresses.map((address) => ({ address, resolved: null, fetched: false }));
+
   it("validates client_id match and redirect_uris", async () => {
     const resolved = await resolveCimdClient(doc.client_id, {
       fetch: async () =>
@@ -139,7 +154,7 @@ describe("resolveCimdClient", () => {
 
   it("rejects non-canonical IPv4 lookup results without fetching", async () => {
     // Zero-padded octets read as decimal or octal depending on the parser; out-of-range is not an address.
-    for (const address of [
+    const addresses = [
       "127.1",
       "127.0.1",
       "10.1",
@@ -147,18 +162,11 @@ describe("resolveCimdClient", () => {
       "010.0.0.1",
       "172.016.0.1",
       "300.1.1.1",
-    ]) {
-      let fetched = false;
-      const resolved = await resolveCimdClient("https://evil.example/client.json", {
-        fetch: async () => {
-          fetched = true;
-          return new Response("{}");
-        },
-        lookup: async () => [address],
-      });
-      assert.equal(resolved, null, address);
-      assert.equal(fetched, false, address);
-    }
+    ];
+    const outcomes = await Promise.all(
+      addresses.map((address) => probeAddress(address, "https://evil.example/client.json")),
+    );
+    assert.deepEqual(outcomes, expectBlocked(addresses));
   });
 
   it("rejects non-http(s) redirect_uris", async () => {
@@ -256,7 +264,8 @@ describe("resolveCimdClient", () => {
           });
           const stalled = new ReadableStream<Uint8Array>({
             pull: () => {
-              if (aborted || cancelled) pullAfterAbort += 1;
+              // Counts a pull that happens after the abort or cancel signal.
+              pullAfterAbort += Number(aborted || cancelled);
               return new Promise(() => {});
             },
             cancel: () => {
@@ -372,18 +381,8 @@ describe("resolveCimdClient", () => {
       // Garbage IPv6 from a sloppy lookup — fail closed
       "not:a:valid:ipv6::::::",
     ];
-    for (const address of blocked) {
-      let fetched = false;
-      const resolved = await resolveCimdClient(doc.client_id, {
-        fetch: async () => {
-          fetched = true;
-          return new Response(JSON.stringify(doc));
-        },
-        lookup: async () => [address],
-      });
-      assert.equal(resolved, null, address);
-      assert.equal(fetched, false, address);
-    }
+    const outcomes = await Promise.all(blocked.map((address) => probeAddress(address)));
+    assert.deepEqual(outcomes, expectBlocked(blocked));
   });
 
   it("still allows a public IPv4-compatible resolution (deprecated form, non-private embed)", async () => {

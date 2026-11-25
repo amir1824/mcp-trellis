@@ -116,11 +116,11 @@ const BAD_PATHS = [
 
 describe("skills config R2 R6 R14 M3 M5", () => {
   describe("M5 R6 names", () => {
-    for (const [label, name] of BAD_NAMES) {
+    BAD_NAMES.forEach(([label, name]) => {
       it(`M5 R6 construction rejects ${label}`, () => {
         assert.throws(() => build(valid({ name })), /name must be 1 to 64 lowercase/);
       });
-    }
+    });
 
     it("R6 accepts a 64-character name", () => {
       assert.doesNotThrow(() => build(valid({ name: "a".repeat(MAX_NAME) })));
@@ -128,11 +128,11 @@ describe("skills config R2 R6 R14 M3 M5", () => {
   });
 
   describe("M5 construction rejects the rest", () => {
-    for (const [label, skills, expected] of REJECTED) {
+    REJECTED.forEach(([label, skills, expected]) => {
       it(`M5 construction rejects ${label}`, () => {
         assert.throws(() => build(...skills), expected);
       });
-    }
+    });
 
     it("M5 lists every violation of every skill in one error and serves nothing", () => {
       assert.throws(
@@ -172,11 +172,11 @@ describe("skills config R2 R6 R14 M3 M5", () => {
   });
 
   describe("M3 R6 file paths", () => {
-    for (const [label, path] of BAD_PATHS) {
+    BAD_PATHS.forEach(([label, path]) => {
       it(`M3 R6 construction rejects ${label}`, () => {
         assert.throws(() => build(withFile(path)), /file path|collides with SKILL\.md/);
       });
-    }
+    });
 
     it("M3 a duplicate path, also in another case, is refused", () => {
       const skill = valid({

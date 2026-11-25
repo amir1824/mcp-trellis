@@ -71,7 +71,7 @@ const readFailing = (read: () => unknown) => {
 };
 
 describe("resources failure M4 M6", () => {
-  for (const [label, read] of THROWS) {
+  THROWS.forEach(([label, read]) => {
     it(`M4 ${label} answers a fixed -32603 and nothing of the exception reaches the caller or the audit`, async () => {
       const { env, reply } = readFailing(read);
       const answered = await reply;
@@ -83,9 +83,9 @@ describe("resources failure M4 M6", () => {
       assert.equal(JSON.stringify([answered.text, env.audits]).includes(SECRET_FRAGMENT), false);
       assert.equal(JSON.stringify(env.audits).includes("globex"), false);
     });
-  }
+  });
 
-  for (const [label, read] of BAD_SHAPES) {
+  BAD_SHAPES.forEach(([label, read]) => {
     it(`M4 M6 a provider answering ${label} fails the same fixed way`, async () => {
       const { env, reply } = readFailing(read);
       const answered = await reply;
@@ -95,7 +95,7 @@ describe("resources failure M4 M6", () => {
         [{ method: "resources/read", ok: false, error: "resource_failed" }],
       );
     });
-  }
+  });
 
   it("M4 a retry repeats the same bytes", async () => {
     const env = makeResourceEnv({ resources: [failing(throwsLeaky)] });
@@ -127,9 +127,9 @@ describe("resources failure M4 M6", () => {
     );
   });
 
-  for (const [label, attempt] of RESERVED_ATTEMPTS) {
+  RESERVED_ATTEMPTS.forEach(([label, attempt]) => {
     it(`M6 a general resource may not take ${label}`, () => {
       assert.throws(() => makeResourceEnv({ resources: [attempt] }), /uiResources owns/);
     });
-  }
+  });
 });

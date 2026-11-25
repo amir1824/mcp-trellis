@@ -164,19 +164,19 @@ describe("apiTool", () => {
           })) as typeof fetch,
       });
 
-    for (const [label, reason] of [
+    const ABORT_REASONS = [
       ["a string", "user left"],
       ["an Error", new Error("boom")],
       ["nothing (default AbortError)", undefined],
-    ] as const) {
+    ] as const;
+    ABORT_REASONS.forEach(([label, reason]) => {
       it(`reports an abort with ${label} as the reason as a cancellation`, async () => {
         const controller = new AbortController();
         const tool = slowTool(controller, { abort: () => controller.abort(reason) });
-        const result = await createToolRegistry<Ctx>([tool]).call("slow", {}, {});
-        assert.equal(result.content[0]?.text, "Request was cancelled");
-        assert.equal(result.isError, true);
+        const { content, isError } = await createToolRegistry<Ctx>([tool]).call("slow", {}, {});
+        assert.deepEqual([content[0]?.text, isError], ["Request was cancelled", true]);
       });
-    }
+    });
 
     it("reports a caller abort even with timeoutMs: false", async () => {
       const controller = new AbortController();
@@ -252,7 +252,7 @@ describe("apiTool", () => {
         fetch: (async () => new Response("fine")) as typeof fetch,
       });
       const registry = createToolRegistry<Ctx>([tool]);
-      for (let i = 0; i < 5; i += 1) await registry.call("ok", {}, {});
+      await Promise.all(Array.from({ length: 5 }, () => registry.call("ok", {}, {})));
       assert.equal(added, 5);
       assert.equal(removed, added);
     });

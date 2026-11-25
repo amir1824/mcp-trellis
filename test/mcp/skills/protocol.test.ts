@@ -145,7 +145,7 @@ describe("skills protocol R3 R9 R12 R13", () => {
       ["skills/get", { uri: SKILL_URIS.open }],
     ] as const;
 
-    for (const [method, params] of CASES) {
+    CASES.forEach(([method, params]) => {
       it(`R3 ${method} on 2026-07-28 carries resultType complete, ttlMs 0 and cacheScope private`, async () => {
         const { res, body } = await modernResult(method, params, TOKENS.alice);
         assert.equal(body.result?.resultType, "complete");
@@ -157,16 +157,16 @@ describe("skills protocol R3 R9 R12 R13", () => {
       it(`R3 ${method} on a legacy request carries no resultType and no hints`, async () => {
         const reply = await rpc(makeSkillEnv(), method, params, TOKENS.alice);
         const keys = Object.keys(reply.body.result as object);
-        assert.equal(
-          keys.includes("resultType") || keys.includes("ttlMs") || keys.includes("cacheScope"),
-          false,
+        assert.deepEqual(
+          keys.filter((key) => ["resultType", "ttlMs", "cacheScope"].includes(key)),
+          [],
         );
       });
-    }
+    });
   });
 
   describe("R9 R12 without the option every answer is as before", () => {
-    for (const [label, method, params] of BYTE_IDENTICAL_REQUESTS) {
+    BYTE_IDENTICAL_REQUESTS.forEach(([label, method, params]) => {
       it(`R9 R12 ${label} answers the same with skills omitted and skills: []`, async () => {
         const omitted = makeSkillEnv({ skills: null });
         const empty = makeSkillEnv({ skills: [] });
@@ -175,7 +175,7 @@ describe("skills protocol R3 R9 R12 R13", () => {
           await capturePost(omitted, method, params, TOKENS.alice),
         );
       });
-    }
+    });
 
     it("R9 R12 a server without skills declares no extension and answers skills/* as unknown methods", async () => {
       const env = makeSkillEnv({ skills: [] });
@@ -217,7 +217,7 @@ describe("skills protocol R3 R9 R12 R13", () => {
     const SKILLS_UNKNOWN =
       '{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"Method not found: skills/list"}}';
 
-    for (const method of ["initialize", "resources/list"] as const) {
+    (["initialize", "resources/list"] as const).forEach((method) => {
       it(`R9 R12 ${method} equals the T4 server's bytes whether skills is omitted or empty`, async () => {
         const t4Only = await captureResourcePost(
           makeResourceEnv(),
@@ -233,7 +233,7 @@ describe("skills protocol R3 R9 R12 R13", () => {
         );
         assert.deepEqual(emptySkills, t4Only);
       });
-    }
+    });
 
     it("R9 R12 the T4 server answers skills/list with exactly the unknown-method bytes", async () => {
       const t4Only = await captureResourcePost(

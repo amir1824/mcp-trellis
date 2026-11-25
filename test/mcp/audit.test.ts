@@ -9,6 +9,8 @@ import type { AuditEntry } from "../../src/mcp/types.js";
 describe("audit port", () => {
   type Ctx = Record<string, never>;
 
+  const PRINCIPALS = new Map([["Bearer read-tok", { id: "u1", scopes: ["read"] }]]);
+
   const makeHandler = (audit?: (entry: AuditEntry) => void) => {
     const registry = createToolRegistry<Ctx>([
       {
@@ -35,13 +37,7 @@ describe("audit port", () => {
         resourceMetadataUrl: "https://example.test/.well-known/oauth-protected-resource/mcp",
       },
       ports: {
-        authenticate: async (req) => {
-          const auth = req.headers.get("authorization");
-          if (auth === "Bearer read-tok") {
-            return { id: "u1", scopes: ["read"] };
-          }
-          return null;
-        },
+        authenticate: async (req) => PRINCIPALS.get(req.headers.get("authorization") ?? "") ?? null,
         context: async () => ({}),
         ...(audit !== undefined ? { audit } : {}),
       },
@@ -233,7 +229,7 @@ describe("audit port", () => {
     assert.equal(res.status, 200);
   });
 
-  it("a slow audit port that resolves after the timeout never becomes an unhandled rejection", async () => {
+  it("a slow audit port that resolves after the timeout never becomes an unhandled rejection", async (t) => {
     let auditFinished = false;
     const registry = createToolRegistry<Ctx>([
       {
@@ -269,19 +265,16 @@ describe("audit port", () => {
       unhandled = reason;
     };
     process.once("unhandledRejection", onUnhandled);
-    try {
-      const res = await post(
-        handler,
-        { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "echo", arguments: {} } },
-        "irrelevant",
-      );
-      assert.equal(res.status, 200);
-      // Wait well past the audit's 60ms delay so a loaded event loop still settles.
-      await new Promise((resolve) => setTimeout(resolve, 150));
-      assert.equal(auditFinished, true, "the slow audit call should still run to completion");
-    } finally {
-      process.removeListener("unhandledRejection", onUnhandled);
-    }
+    t.after(() => process.removeListener("unhandledRejection", onUnhandled));
+    const res = await post(
+      handler,
+      { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "echo", arguments: {} } },
+      "irrelevant",
+    );
+    assert.equal(res.status, 200);
+    // Wait well past the audit's 60ms delay so a loaded event loop still settles.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(auditFinished, true, "the slow audit call should still run to completion");
     assert.equal(unhandled, undefined, "a late audit rejection must never surface as unhandled");
   });
 

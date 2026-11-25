@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve mcp-trellis. This guide covers local setup, PR expectations, and how maintainers release. Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+Local setup, pull request rules and the release steps. Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Prerequisites
 
@@ -18,6 +18,7 @@ npm ci
 Verify:
 
 ```bash
+npm run lint
 npm run typecheck
 npm test
 npm run test:e2e
@@ -27,9 +28,10 @@ npm run build
 ## Pull requests
 
 1. Branch from `main`.
-2. Keep the change focused — one concern per PR.
-3. Add or update tests under `test/oauth/`, `test/mcp/`, `test/adapters/`, `test/auth/`, or `test/util/` (unit) or `test/e2e/` (real-socket) when behavior changes.
-4. Ensure CI is green: typecheck, test, test:e2e, and build must pass.
+2. Keep the change focused: one concern per PR.
+3. When behavior changes, add or update a test: unit tests under `test/` (grouped by area), real-socket tests under `test/e2e/`.
+4. Update the docs and `CHANGELOG.md` for user-visible changes. A doc code block must match the real API; `npm run check:quickstart` runs the README example.
+5. CI must be green: lint, typecheck, `check:limits`, `check:quickstart`, tests, `test:e2e` and build.
 
 ## Scope rules
 
@@ -44,102 +46,34 @@ npm run build
 ## Code comments
 
 - Comment the **why**: a security invariant, an RFC requirement, a non-obvious trade-off. Do not restate what the code already says.
-- Do not narrate history ("previously…", "since 1.x we…"). That belongs in `CHANGELOG.md` and commit messages. Public JSDoc may still say when a default changed (`Default **true** since 2.0`), because users need it.
+- Do not narrate history ("previously…"). That belongs in `CHANGELOG.md` and commit messages.
 - `ponytail:` marks a known, deliberate limitation together with its upgrade path, e.g. `ponytail: single-process only; multi-instance → pass ports.codeStore`. Keep the marker when you touch that code; remove it once the limitation is gone.
 
 ## Tests
 
-Unit tests are grouped by topic:
+Tests live under `test/`, grouped by area: `oauth/`, `mcp/` (with `modern/`, `ui/`, `resources/`, `skills/`), `security/`, `adapters/`, `auth/`, `util/`. `test/helpers/` and `test/fixtures/` are shared harness. `npm test` runs them all.
 
-| Path | Area |
-|------|------|
-| `mcp/app.test.ts` | `createMcpApp` end-to-end, incl. audience enforcement |
-| `mcp/audit.test.ts` | Audit port, tool-error redaction |
-| `mcp/dispatch.test.ts` | MCP HTTP dispatch |
-| `mcp/protocol.test.ts` | Protocol version negotiation |
-| `mcp/validate.test.ts` | JSON Schema subset |
-| `mcp/tools.test.ts` | `defineTool` / `apiTool` |
-| `mcp/body.test.ts` | Request body size limits |
-| `mcp/readme-quickstart.test.ts` | README 30-second example runs as written |
-| `auth/bearer.test.ts` | Bearer / timing-safe compare |
-| `adapters/node.test.ts` | Node adapter |
-| `adapters/origins.test.ts` | Origin allowlist (multi-tenant Host checks) |
-| `oauth/*.test.ts` | OAuth AS pieces (`clients`, `consent`, `token`, …) |
-| `util/*.test.ts` | Internal helpers |
+`test/e2e/` is a separate tier, run by `npm run test:e2e`. It spawns [`examples/http-server.ts`](examples/http-server.ts) and calls it with `fetch` over loopback (header casing, streamed bodies, real redirects).
 
-`test/helpers/` and `test/fixtures/` are shared harness (not matched by the test glob). `test/e2e/` is a separate tier: it spawns [`examples/http-server.ts`](examples/http-server.ts) (`http.createServer` + `asNodeHandler`) and `fetch`es over loopback (header casing, streamed bodies, real redirects). It is not part of `npm test`.
-
-Run with:
-
-```bash
-npm test
-npm run test:e2e
-```
+Some tests read the docs and fail when a doc and the code disagree (for example `test/mcp/readme-quickstart.test.ts` runs the README's 30-second example).
 
 ## Releasing (maintainers)
 
-Publishes to npm from GitHub Actions via **trusted publishing (OIDC)** —
-no long-lived `NPM_TOKEN`. `package.json` sets `publishConfig.provenance`
-and the workflow also passes `--provenance`. From **2.0.0** onward this is
-the only supported release path.
+npm publishes from GitHub Actions with trusted publishing (OIDC) and provenance. There is no long-lived `NPM_TOKEN`; do not add one.
 
-> **Historical note:** `1.0.0` was published manually without provenance
-> while OIDC was being debugged. Do **not** repeat that for 2.x — if Actions
-> fails with `ENEEDAUTH`, fix the trusted-publisher row on npmjs.com and
-> re-run. Local `npm publish` with a classic token is an emergency escape
-> hatch only; it will not attach provenance and must not be used for a
-> marketed release.
+One-time setup:
 
-### One-time setup (required — publish fails with ENEEDAUTH until this exists)
+1. Log in to npm as the package owner and open the package's Trusted Publisher settings.
+2. Choose **GitHub Actions** and enter: organization or user `amir1824`, repository `mcp-trellis`, workflow filename `publish.yml` (filename only), environment name `release`.
+3. In GitHub, create the environment `release`: deployment branches and tags `main` and `v*`, required reviewers set.
 
-1. Log in to npm as the package owner (`amir-b`).
-2. Open [mcp-trellis → Settings → Trusted Publisher](https://www.npmjs.com/package/mcp-trellis/access)
-   (or Package Settings → Trusted publishing).
-3. Choose **GitHub Actions** and save exactly:
+npm does not validate that form on save. A typo shows up as `ENEEDAUTH` or a 404 on `PUT …/mcp-trellis` when the workflow runs; fix the form and re-run.
 
-   | Field | Value |
-   |-------|-------|
-   | Organization or user | `amir1824` |
-   | Repository | `mcp-trellis` |
-   | Workflow filename | `publish.yml` (filename only — not `Release`, not a path) |
-   | Environment name | leave **blank** |
-   | Allowed actions | `npm publish` (check the box) |
-
-   npm does **not** validate this form on save. Typos only show up as
-   `ENEEDAUTH` / 404 when Actions runs.
-
-4. Optional: GitHub → Settings → Tags → restrict who can create `v*` tags.
-
-### Each release
+Each release:
 
 1. Bump `"version"` in `package.json` and commit (`chore: release vX.Y.Z`).
-2. Push `main`, then either:
+2. Push `main`. Optionally tag it (`git tag vX.Y.Z && git push origin vX.Y.Z`).
+3. Actions → **Release** → **Run workflow** (manual only; a tag push does not start it). Pick `main` or the tag. For a tag, the workflow checks that it matches `package.json`.
+4. Approve the `release` environment when the run asks.
 
-   **A — tag (recommended)**
-   ```bash
-   git tag vX.Y.Z
-   git push origin vX.Y.Z
-   ```
-
-   **B — button**
-   Actions → **Release** → **Run workflow**.
-
-If publish fails with `ENEEDAUTH` or a 404 on `PUT …/mcp-trellis`, the
-trusted-publisher row above is missing or mistyped — fix it on npmjs.com and
-re-run. Do not add a long-lived `NPM_TOKEN`.
-
-`prepublishOnly` still runs build + test inside `npm publish` as a last guard.
-
-### 2.0.0 note
-
-`validateArgs` defaults to **on**. Unsupported JSON Schema keywords throw at
-`createToolRegistry` construction. Pure metadata (`description`, `title`,
-`$schema`, `$id`, `$comment`, `default`, `examples`, `deprecated`,
-`readOnly`, `writeOnly`, `format`) is allowed. Semantically-enforcing
-keywords that generators often emit — especially `additionalProperties`,
-plus `pattern`, `minLength` / `maxLength`, `anyOf`, `$ref`, … — will break
-upgrades until you remove them, enforce them in the handler, or set
-`validateArgs: false`.
-
-`codeStore` is required at construction unless you set
-`allowInMemoryCodeStore: true` (single-process / tests only).
+The `verify` job runs lint, typecheck, tests, e2e, build and `npm run smoke:pack` before `publish`.

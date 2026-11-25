@@ -24,6 +24,77 @@ const formRequest = (path: string, data: Record<string, string>, cookie = "") =>
     body: new URLSearchParams(data),
   });
 
+const PROJECT_COUNT = { alice: 2, bob: 1 };
+
+const walkAsUser = async (
+  app: ReturnType<typeof makeApp>,
+  client_id: string,
+  user: keyof typeof PROJECT_COUNT,
+): Promise<void> => {
+  const auth = new URL(`${origin}/mcp/oauth/authorize`);
+  auth.search = new URLSearchParams({
+    response_type: "code",
+    client_id,
+    redirect_uri: callback,
+    resource: `${origin}/mcp`,
+    code_challenge_method: "S256",
+    code_challenge: createHash("sha256").update(verifier).digest("base64url"),
+    state: `state-${user}`,
+  }).toString();
+  const anonymous = await app.fetch(new Request(auth));
+  assert.equal(anonymous.status, 302);
+  assert.match(required(anonymous.headers.get("location")), /\/login\?/);
+  const loggedIn = await app.fetch(formRequest("/login", { user, password }));
+  assert.equal(loggedIn.status, 303);
+  const cookie = required(required(loggedIn.headers.get("set-cookie")).split(";")[0]);
+  const page = await app.fetch(new Request(`${origin}/`, { headers: { Cookie: cookie } }));
+  assert.match(await page.text(), new RegExp(`${user}'s projects`));
+  const consent = await app.fetch(new Request(auth, { headers: { Cookie: cookie } }));
+  assert.equal(consent.status, 200);
+  const ticket = (await consent.text()).match(/name="consent_ticket"\s+value="([^"]+)"/)?.[1];
+  assert.ok(ticket);
+  const approved = await app.fetch(
+    formRequest("/mcp/oauth/consent", { consent_ticket: ticket, approved: "true" }, cookie),
+  );
+  assert.equal(approved.status, 302);
+  const redirect = new URL(required(approved.headers.get("location")));
+  assert.equal(redirect.searchParams.get("state"), `state-${user}`);
+  const code = required(redirect.searchParams.get("code"));
+  const exchange = await app.fetch(
+    formRequest("/mcp/oauth/token", {
+      grant_type: "authorization_code",
+      code,
+      client_id,
+      redirect_uri: callback,
+      resource: `${origin}/mcp`,
+      code_verifier: verifier,
+    }),
+  );
+  assert.equal(exchange.status, 200);
+  const { access_token } = (await exchange.json()) as { access_token: string };
+  const call = (token: string) =>
+    app.fetch(
+      new Request(`${origin}/mcp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "list_my_projects", arguments: {} },
+        }),
+      }),
+    );
+  const response = await call(access_token);
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as { result: { content: { text: string }[] } };
+  const records = JSON.parse(required(body.result.content[0]).text) as { owner: string }[];
+  assert.equal(records.length, PROJECT_COUNT[user]);
+  assert.ok(records.every((p) => p.owner === user));
+  assert.equal((await call(`${access_token}tampered`)).status, 401);
+  assert.equal((await call("unknown")).status, 401);
+};
+
 it("existing login → consent + PKCE → tool uses only token owner's projects", async () => {
   const app = makeApp();
   const registered = await app.fetch(
@@ -35,70 +106,8 @@ it("existing login → consent + PKCE → tool uses only token owner's projects"
   );
   assert.equal(registered.status, 201);
   const { client_id } = (await registered.json()) as { client_id: string };
-  for (const user of ["alice", "bob"]) {
-    const auth = new URL(`${origin}/mcp/oauth/authorize`);
-    auth.search = new URLSearchParams({
-      response_type: "code",
-      client_id,
-      redirect_uri: callback,
-      resource: `${origin}/mcp`,
-      code_challenge_method: "S256",
-      code_challenge: createHash("sha256").update(verifier).digest("base64url"),
-      state: `state-${user}`,
-    }).toString();
-    const anonymous = await app.fetch(new Request(auth));
-    assert.equal(anonymous.status, 302);
-    assert.match(required(anonymous.headers.get("location")), /\/login\?/);
-    const loggedIn = await app.fetch(formRequest("/login", { user, password }));
-    assert.equal(loggedIn.status, 303);
-    const cookie = required(required(loggedIn.headers.get("set-cookie")).split(";")[0]);
-    const page = await app.fetch(new Request(`${origin}/`, { headers: { Cookie: cookie } }));
-    assert.match(await page.text(), new RegExp(`${user}'s projects`));
-    const consent = await app.fetch(new Request(auth, { headers: { Cookie: cookie } }));
-    assert.equal(consent.status, 200);
-    const ticket = (await consent.text()).match(/name="consent_ticket"\s+value="([^"]+)"/)?.[1];
-    assert.ok(ticket);
-    const approved = await app.fetch(
-      formRequest("/mcp/oauth/consent", { consent_ticket: ticket, approved: "true" }, cookie),
-    );
-    assert.equal(approved.status, 302);
-    const redirect = new URL(required(approved.headers.get("location")));
-    assert.equal(redirect.searchParams.get("state"), `state-${user}`);
-    const code = required(redirect.searchParams.get("code"));
-    const exchange = await app.fetch(
-      formRequest("/mcp/oauth/token", {
-        grant_type: "authorization_code",
-        code,
-        client_id,
-        redirect_uri: callback,
-        resource: `${origin}/mcp`,
-        code_verifier: verifier,
-      }),
-    );
-    assert.equal(exchange.status, 200);
-    const { access_token } = (await exchange.json()) as { access_token: string };
-    const call = (token: string) =>
-      app.fetch(
-        new Request(`${origin}/mcp`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            id: 1,
-            method: "tools/call",
-            params: { name: "list_my_projects", arguments: {} },
-          }),
-        }),
-      );
-    const response = await call(access_token);
-    assert.equal(response.status, 200);
-    const body = (await response.json()) as { result: { content: { text: string }[] } };
-    const records = JSON.parse(required(body.result.content[0]).text) as { owner: string }[];
-    assert.equal(records.length, user === "alice" ? 2 : 1);
-    assert.ok(records.every((p) => p.owner === user));
-    assert.equal((await call(`${access_token}tampered`)).status, 401);
-    assert.equal((await call("unknown")).status, 401);
-  }
+  await walkAsUser(app, client_id, "alice");
+  await walkAsUser(app, client_id, "bob");
 });
 
 it("refresh keeps original grant and rejects scope escalation", async () => {

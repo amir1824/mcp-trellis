@@ -148,28 +148,27 @@ describe("consent interstitial hardening", () => {
     );
   });
 
-  for (const [label, redirect] of [
+  const UNSAFE_FORM_ACTION_REDIRECTS = [
     ["a host carrying a CSP directive separator", "https://a.example;sandbox/cb"],
     ["a host carrying a comma", "https://a.example,b.example/cb"],
     ["a javascript: URI", "javascript:alert(1)"],
     ["a data: URI", "data:text/html,x"],
     ["a file: URI", "file:///etc/passwd"],
-  ] as const) {
+  ] as const;
+  UNSAFE_FORM_ACTION_REDIRECTS.forEach(([label, redirect]) => {
     it(`never turns ${label} into a form-action source (falls back to 'self' alone)`, async () => {
       const router = createOAuthRouter({
         allowUnregisteredClients: true,
         redirect: { extra: [redirect] },
         ports: stubPorts(),
       });
-      const res = await router.tryHandle(
-        new Request(authorizeUrl({ redirect_uri: redirect }), { method: "GET" }),
-      );
+      const res = await router.tryHandle(new Request(authorizeUrl({ redirect_uri: redirect })));
       assert.ok(res);
       assert.equal(res.status, 200);
       const csp = res.headers.get("Content-Security-Policy") ?? "";
       assert.match(csp, /; form-action 'self'; frame-ancestors 'none'$/);
     });
-  }
+  });
 
   it("HTML-escapes an attacker-controlled client_id — no raw markup reflected", async () => {
     const router = makeRouter();

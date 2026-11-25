@@ -107,7 +107,7 @@ describe("resources protocol R2 R5 R7 R13 R20", () => {
   });
 
   describe("R7 methods that stay unimplemented", () => {
-    for (const method of UNIMPLEMENTED_METHODS) {
+    UNIMPLEMENTED_METHODS.forEach((method) => {
       it(`R7 ${method} answers -32601 on a server with general resources`, async () => {
         const reply = await rpc(makeResourceEnv(), method, {}, TOKENS.root);
         assert.equal(reply.body.error?.code, METHOD_NOT_FOUND);
@@ -122,7 +122,7 @@ describe("resources protocol R2 R5 R7 R13 R20", () => {
         );
         assert.equal(reply.body.error?.code, METHOD_NOT_FOUND);
       });
-    }
+    });
   });
 
   describe("R13 an integration that registers no general resource", () => {

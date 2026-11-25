@@ -19,6 +19,7 @@
 | Connector asks to reconnect about every hour | The access token expired and there is no refresh token (`signedTokenAuth` default) | Set `refreshTtlSeconds` with `codeStore` and `isUserActive`, or raise `ttlSeconds`. See [Sessions and expiry](security.md#sessions-and-expiry) |
 | `401` with `error="invalid_token"` | A bearer was sent and rejected, whatever the reason ([Sessions and expiry](security.md#sessions-and-expiry)) | Reconnect. Check expiry and audience, then your `isUserActive` |
 | Approve shows "This approval request expired" / "Your sign-in changed or expired" / "already submitted" | Ticket older than 5 minutes, the app session ended before Approve, or the form was posted twice | Start the connection again from the connector |
-| Client requests an unsupported protocol | Package supports the revisions in `src/mcp/protocol.ts` | Record negotiation; do not claim a live pass from a successful HTTP status alone. |
+| `400` on `/mcp` about the protocol version | The `MCP-Protocol-Version` header names a version the server does not serve | Send 2024-11-05, 2025-03-26, 2025-06-18 or 2026-07-28 (see [reference](reference.md#2026-07-28-requests)). An unknown version in `initialize` is answered with the default, 2025-06-18. |
+| A tool is missing from `tools/list`, or `tools/call` says unknown tool | `hideToolsOutsideScope` hides tools outside the caller's scopes | Grant the scope, or turn the option off. With `"strict"` a hidden tool answers as unknown (`-32602`), not `403`. |
 
-See [security responsibilities](security.md) before replacing production token verification with example code. Share sanitized errors in an issue, never access tokens or session cookies.
+Read [security.md](security.md) before replacing production token verification with example code. When you open an issue, share sanitized errors only, never access tokens or session cookies.

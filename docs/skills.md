@@ -1,89 +1,86 @@
 # Skills: serve instructions to the model (experimental)
 
-A skill is a folder of text that tells a model how to do a job: a `SKILL.md` plus supporting files. mcp-trellis serves skills with the Skills extension (`io.modelcontextprotocol/skills`). A skill is served text and nothing more: Trellis never runs it, never calls a tool because of it, and it never changes what a caller may do.
+A skill is a folder of text that tells a model how to do a job: a `SKILL.md` plus supporting files. mcp-trellis serves skills through the Skills extension (`io.modelcontextprotocol/skills`). A skill is served text and nothing more. The library never runs it, never calls a tool because of it, and it never changes what a caller may do.
 
 ## Status
 
-**Experimental, opt-in and off by default.** The `skills` option is `@experimental` and may change in a minor release. An integration that registers no skill answers byte for byte as before: no `skills/*` method, no extension in the capabilities. The code lives in `src/mcp/skills/` and adds no required field to a stable type.
+**Experimental and opt-in.** The `skills` option is `@experimental` and may change in a minor release. A server that registers no skill has no `skills/*` method and no extension in its capabilities.
 
-## Pinned specification
-
-| | |
-|---|---|
-| Extension | `io.modelcontextprotocol/skills`, SEP-2640 |
-| Normative text | `specification/beta/skills.mdx` in `modelcontextprotocol/ext-skills` |
-| Commit read | `c0705f9071caa539eeb2c9f5f2f77ac16b048ca6` |
-| sha256 of `skills.mdx` | `6e33a33762783a02dc4c13c889dda5b8d7c525649012cf77da12d80c04ce6851` |
-| Base protocol | `2026-07-28`, and the legacy path too (see below) |
-| Skill format | [Agent Skills specification](https://agentskills.io/specification), read 2026-11-25 |
-
-Read on 2026-11-25 from the SEP page, `https://modelcontextprotocol.io/extensions/skills`, the extensions listing and the file above. Where they disagree:
-
-- **Status.** The SEP page says "Final"; the extensions listing says "Beta, destination not yet stated". Trellis pins the text of the commit above and treats the extension as experimental either way.
-- **Cache fields on `skills/get`.** The SEP page leaves `ttlMs` and `cacheScope` open; the extension page and `skills.mdx` require them. Trellis follows the stricter text.
-
-Naming (agentskills.io): `name` is 1 to 64 characters, lowercase letters, digits and hyphens, none leading, trailing or doubled; `description` 1 to 1024 characters; `metadata` maps strings to strings. Trellis is stricter in one point: ASCII letters only.
+The code follows `specification/beta/skills.mdx` of `modelcontextprotocol/ext-skills` (SEP-2640, commit `c0705f9071caa539eeb2c9f5f2f77ac16b048ca6`) and the [Agent Skills specification](https://agentskills.io/specification). It works on 2026-07-28 requests and on the older protocol versions.
 
 ## Setup
 
 ```ts
-import { createMcpApp, type SkillDef } from "mcp-trellis";
+import { createMcpApp, signedTokenAuth, type SkillDef } from "mcp-trellis";
 
 const refunds: SkillDef = {
   name: "refunds",
   description: "Process customer refund requests per company policy",
   instructions: "# Refunds\n\nRead references/policy.md first.\n",
   scope: "mcp",
-  allow: (principal) => principal.claims?.team === "billing", // sync, no I/O
-  files: [{ path: "references/policy.md", text: "…" }],
+  allow: (principal) => principal.id === "alice", // synchronous, no I/O
+  files: [{ path: "references/policy.md", text: "Refunds within 30 days." }],
 };
 
-createMcpApp({ /* serverInfo, auth, … */ tools: [], skills: [refunds] });
+const auth = signedTokenAuth({
+  secret: process.env.OAUTH_CODE_SECRET as string, // 32+ characters
+  resolveUser: async () => ({ id: "alice" }), // placeholder: use your session lookup
+  loginUrl: (_req, next) => `/login?next=${encodeURIComponent(next)}`,
+});
+
+export const app = createMcpApp({
+  serverInfo: { name: "skills-server", version: "1.0.0" },
+  auth,
+  allowInMemoryCodeStore: true, // single process only; pass a shared codeStore in production
+  tools: [],
+  skills: [refunds],
+});
 ```
 
-`createMcpHandler` takes the same `skills` option. On a `createMcpApp` with more than one scope every skill needs an explicit `scope` (or `null`), as a tool does. On a 2026-07-28 request `skills/get` needs an `Mcp-Name` equal to the `uri`, as `resources/read` does.
+`createMcpHandler` takes the same `skills` option. With more than one scope, every skill needs an explicit `scope` (or `null`), as a tool does.
 
 | Field | Meaning |
 |-------|---------|
-| `name` | The URI is `skill://<name>/SKILL.md`. Unique. |
-| `description`, `instructions` | The frontmatter `description`, and the body of `SKILL.md`. |
-| `metadata` | Optional string map. `allowed-tools` and `io.modelcontextprotocol/` keys are refused. |
-| `files` | `{ path, text, mimeType? }`, served at `skill://<name>/<path>`. Text only. |
+| `name` | 1 to 64 characters: lowercase letters, digits and single hyphens, none at either end. Unique. The URI is `skill://<name>/SKILL.md`. |
+| `description` | 1 to 1024 characters, no control characters. |
+| `instructions` | The body of `SKILL.md`. |
+| `metadata` | Optional string map. Keys `allowed-tools` and `io.modelcontextprotocol/...` are refused. |
+| `files` | `{ path, text, mimeType? }`, served at `skill://<name>/<path>`. Text only. `mimeType` defaults to `text/markdown` for `.md`, else `text/plain`. |
 | `scope`, `allow` | As on a [resource](resources.md#a-resource), for the whole skill. |
 
-Trellis writes `SKILL.md`: `name`, `description` and `metadata` as one `key: <JSON value>` line each between `---` lines (valid YAML), a blank line, then `instructions`. The listed `frontmatter` is the object that was written.
+The library writes `SKILL.md` itself: `name`, `description` and `metadata` as one `key: <JSON value>` line each between `---` lines, a blank line, then `instructions`.
 
-Construction throws once, listing every problem, for: a bad or repeated name; a description outside 1 to 1024 characters; control characters in the frontmatter; a file path that is not relative segments of `A-Z a-z 0-9 _ . -` (so no `..`, `.`, empty segment, `%`, backslash, NUL or space), over 200 characters, repeated (any case) or named `SKILL.md`; over 512 files or 16 MiB; a `skill://` URI in `resources`. Nothing partial is served.
+Construction throws once, listing every problem, for: a bad or repeated name; a bad description or metadata; a file path that is not relative segments of `A-Z a-z 0-9 _ . -` (none starting with `.` or `-`), is over 200 characters, repeats another path in any case, or is `SKILL.md`; more than 512 files or 16 MiB in one skill; a `skill://` URI in `resources`. Nothing partial is served.
 
 ## What a client gets
 
 | Method | Answer |
 |--------|--------|
-| `initialize`, `server/discover` | `extensions["io.modelcontextprotocol/skills"]: {}` next to `resources: {}`, only when a skill exists. No `directoryRead`. |
-| `skills/list` | `{ skills }`: per visible skill, `uri`, `frontmatter` and `resources` (every file, `SKILL.md` first, with `uri`, `digest` `sha256:<hex>` and byte `size`). One page. |
-| `skills/get` | `{ skill }` for a `SKILL.md` URI; anything else is `-32602 Unknown skill: <uri>`. |
-| `resources/list`, `resources/read` | Every file of every visible skill. |
+| `initialize`, `server/discover` | `extensions["io.modelcontextprotocol/skills"]: {}` next to `resources: {}`, only when a skill exists |
+| `skills/list` | `{ skills }`: per visible skill, `uri`, `frontmatter` and `resources` (every file, `SKILL.md` first, each with `uri`, `digest` `sha256:<hex>` and byte `size`). One page |
+| `skills/get` | `{ skill }` for a `SKILL.md` URI. Any other URI is `-32602 Unknown skill: <uri>` |
+| `resources/list`, `resources/read` | Every file of every visible skill |
 
-On a 2026-07-28 request results carry `resultType: "complete"`, `ttlMs: 0` and `cacheScope: "private"`; a legacy request gets none of them. Responses are `Cache-Control: no-store`. Digests are hashed once from the static text and kept, the same for every caller.
+On a 2026-07-28 request, `skills/get` needs an `Mcp-Name` header equal to the `uri`, and results carry `resultType: "complete"`, `ttlMs: 0` and `cacheScope: "private"`. Older requests get none of these. Responses are `Cache-Control: no-store`. Digests are computed once from the static text and are the same for every caller.
 
 ## Who sees what
 
-Per skill and per request, by the rule of resources, with the same ports.
+Same rules as [resources](resources.md#who-sees-what), decided once per skill and request for all its files.
 
 | Case | Answer |
 |------|--------|
 | No principal | 401 |
-| `skills/list`, `resources/list` | Only skills the principal may read; never 403 |
+| `skills/list`, `resources/list` | Only skills the principal may read. Never 403 |
 | `skills/get` or a file read without the scope | 403 `insufficient_scope` naming it |
-| The same under `hideToolsOutsideScope: true` or `"strict"` | The unknown answer (`Unknown skill: <uri>` or `Unknown resource: <uri>`), byte for byte |
+| Same, with `hideToolsOutsideScope: true` or `"strict"` | `Unknown skill: <uri>` or `Unknown resource: <uri>` |
 | Refused by `allow` | Always the unknown answer |
-| A URI that is not a declared `skill://<name>/<path>` | The unknown answer (`..`, `.`, `%`, backslash, NUL, case variants, another skill's prefix) |
+| A URI that is not a declared `skill://<name>/<path>` | The unknown answer |
 
-A skill's `allow` runs once per request for all its files. Calls are audited under their own method, with the denial reasons of resources. A file read builds `context` once.
+Calls are audited under their own method with the same `error` values as resources.
 
 ## Skills and tools
 
-Skill text is untrusted model input. A tool keeps its own `scope` check, Trellis never reads `allowed-tools`, and nothing in a skill causes a tool call: a model told to call `purge_data` is still answered 403 without the tool's scope. What a host does with a loaded skill (approval, execution, name collisions) is the host's duty under the specification.
+Skill text is untrusted model input. A tool keeps its own `scope` check, the library never reads `allowed-tools`, and nothing in a skill causes a tool call: a model told to call `purge_data` still gets 403 without that tool's scope. What a host does with a loaded skill (approval, execution, name collisions) is the host's job.
 
 ## Limits
 
@@ -92,18 +89,14 @@ Skill text is untrusted model input. A tool keeps its own `scope` check, Trellis
 | Files per skill, `SKILL.md` included | 512 |
 | Bytes per skill | 16 MiB (16,777,216) |
 
-Both are the specification's limits, refused at construction.
-
-## Hosts tested
-
-No Skills host was tested. The tests stub the host: they prove the wiring and the answers, not how a client behaves.
+Both are refused at construction. No Skills host has been tested; the tests stub the host, so they prove the answers, not how a client behaves.
 
 ## What is not included
 
-- `"resources": "dynamic"`, binary files, per-request content and nested skills (a path prefix such as `acme/billing/refunds`).
-- `resources/directory/read` (`-32601`), and pagination of `skills/list`.
-- Running, generating, orchestrating or scheduling skills.
+- `"resources": "dynamic"`, binary files, per-request content, and nested skills (a name such as `acme/billing/refunds`).
+- `resources/directory/read` (`-32601`) and pagination of `skills/list`.
+- Running, generating or scheduling skills.
 
 ## Migration and rollback
 
-No change is required for an existing integration. To roll back, remove the `skills` option or revert the release: nothing is stored.
+No change is required for an existing integration. To roll back, remove the `skills` option. Nothing is stored.

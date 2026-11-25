@@ -38,9 +38,9 @@ const register = async (): Promise<string> => {
 };
 
 describe("attacker-chosen keys never resolve through Object.prototype", () => {
-  it("/token answers a prototype-named grant_type with unsupported_grant_type", async () => {
-    const clientId = await register();
-    for (const grant of PROTOTYPE_KEYS) {
+  PROTOTYPE_KEYS.forEach((grant) => {
+    it(`/token answers the grant_type "${grant}" with unsupported_grant_type`, async () => {
+      const clientId = await register();
       const res = await app.fetch(
         new Request(`${ORIGIN}/mcp/oauth/token`, {
           method: "POST",
@@ -51,17 +51,17 @@ describe("attacker-chosen keys never resolve through Object.prototype", () => {
       assert.ok(res instanceof Response, `${grant}: not a Response`);
       assert.equal(res.status, 400, grant);
       assert.equal(((await res.json()) as { error: string }).error, "unsupported_grant_type");
-    }
+    });
   });
 
-  it("an authenticated JSON-RPC method named after a prototype member is 'not found'", async () => {
-    const minted = await auth.mintAccessToken({
-      userId: "u1",
-      clientId: "c",
-      scope: "mcp",
-      resource: `${ORIGIN}/mcp`,
-    });
-    for (const method of PROTOTYPE_KEYS) {
+  PROTOTYPE_KEYS.forEach((method) => {
+    it(`an authenticated JSON-RPC method "${method}" is 'not found'`, async () => {
+      const minted = await auth.mintAccessToken({
+        userId: "u1",
+        clientId: "c",
+        scope: "mcp",
+        resource: `${ORIGIN}/mcp`,
+      });
       const res = await app.fetch(
         new Request(`${ORIGIN}/mcp`, {
           method: "POST",
@@ -75,14 +75,14 @@ describe("attacker-chosen keys never resolve through Object.prototype", () => {
       assert.ok(res instanceof Response, `${method}: not a Response`);
       const body = (await res.json()) as { error?: { code: number } };
       assert.equal(body.error?.code, -32601, method);
-    }
+    });
   });
 
-  it("an HTTP method named after a prototype member is 405", async () => {
-    for (const method of ["constructor", "toString", "hasOwnProperty"]) {
+  ["constructor", "toString", "hasOwnProperty"].forEach((method) => {
+    it(`the HTTP method "${method}" is 405`, async () => {
       const res = await app.fetch(new Request(`${ORIGIN}/mcp`, { method }));
       assert.ok(res instanceof Response, `${method}: not a Response`);
       assert.equal(res.status, 405, method);
-    }
+    });
   });
 });

@@ -146,9 +146,10 @@ describe("skills manifest R5", () => {
   it("R5 the digest changes with one byte of the file: two skills that differ in one file differ in one digest", async () => {
     const edited: SkillDef = {
       ...PDF,
-      files: PDF.files?.map((file, index) =>
-        index === 0 ? { ...file, text: `${file.text}x` } : file,
-      ),
+      files: [
+        { path: "templates/invoice.md", text: `${SPEC_VECTORS[0][1]}x` },
+        ...(PDF.files?.slice(1) ?? []),
+      ],
     };
     const [before] = await listedSkills(makeSkillEnv({ skills: [PDF] }), TOKENS.alice);
     const [after] = await listedSkills(makeSkillEnv({ skills: [edited] }), TOKENS.alice);

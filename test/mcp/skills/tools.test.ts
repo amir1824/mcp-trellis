@@ -29,7 +29,7 @@ const attempt = (env: ReturnType<typeof makeSkillEnv>, token: string) =>
   capturePost(env, "tools/call", { name: ADMIN_TOOL, arguments: {} }, token);
 
 describe("skills tools R7 R13 M2", () => {
-  for (const mode of HIDING) {
+  HIDING.forEach((mode) => {
     it(`M2 R7 hideToolsOutsideScope ${String(mode)}: reading the skill that names an admin tool leaves tools/call refused, before and after`, async () => {
       const env = makeSkillEnv({ skills: [GUIDE], options: { hideToolsOutsideScope: mode } });
       const before = await attempt(env, TOKENS.alice);
@@ -47,7 +47,7 @@ describe("skills tools R7 R13 M2", () => {
       assert.deepEqual(after, before);
       assert.equal(env.adminCalls.count, 0);
     });
-  }
+  });
 
   it("M2 by default the refusal is 403 insufficient_scope, again on a retry", async () => {
     const env = makeSkillEnv({ skills: [GUIDE] });

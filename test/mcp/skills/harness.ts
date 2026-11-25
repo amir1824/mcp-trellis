@@ -139,8 +139,8 @@ export const parseFrontmatter = (skillMd: string): Record<string, unknown> => {
 };
 
 /** Lists for each token in turn, one request after the other, and returns what each saw. */
-export const listInTurn = async (env: Env, tokens: readonly string[]): Promise<Entry[][]> => {
-  const seen: Entry[][] = [];
-  for (const token of tokens) seen.push(await listedSkills(env, token));
-  return seen;
-};
+export const listInTurn = (env: Env, tokens: readonly string[]): Promise<Entry[][]> =>
+  tokens.reduce<Promise<Entry[][]>>(
+    async (seen, token) => [...(await seen), await listedSkills(env, token)],
+    Promise.resolve([]),
+  );

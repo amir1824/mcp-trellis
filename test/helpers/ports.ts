@@ -27,16 +27,13 @@ export type RegisteredClientSeed = RegisteredClient & { secret?: string };
 
 /** In-memory `ClientStore` seeded from a plain array — no test hand-rolls `get`/`verifySecret`. */
 export const memoryClientStore = (clients: RegisteredClientSeed[]): ClientStore => {
-  const byId = new Map(clients.map((c) => [c.clientId, c]));
+  const registered = new Map(
+    clients.map(({ secret: _secret, ...client }) => [client.clientId, client]),
+  );
+  const secrets = new Map(clients.map((c) => [c.clientId, c.secret]));
   return {
-    get: async (clientId) => {
-      const found = byId.get(clientId);
-      if (!found) return null;
-      const { secret, ...registered } = found;
-      void secret;
-      return registered;
-    },
-    verifySecret: async (clientId, presented) => byId.get(clientId)?.secret === presented,
+    get: async (clientId) => registered.get(clientId) ?? null,
+    verifySecret: async (clientId, presented) => secrets.get(clientId) === presented,
   };
 };
 

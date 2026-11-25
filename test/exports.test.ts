@@ -101,8 +101,7 @@ describe("public exports", () => {
   it("every deprecated alias is the same value as its advanced export", () => {
     const all = { ...deprecatedRoot, ...deprecatedOAuth } as Record<string, unknown>;
     const target = advanced as Record<string, unknown>;
-    for (const [name, value] of Object.entries(all)) {
-      assert.equal(value, target[name], `${name} diverged from mcp-trellis/advanced`);
-    }
+    const viaAdvanced = Object.fromEntries(Object.keys(all).map((name) => [name, target[name]]));
+    assert.deepEqual(viaAdvanced, all, "an alias diverged from mcp-trellis/advanced");
   });
 });

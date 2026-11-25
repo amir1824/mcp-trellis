@@ -12,6 +12,8 @@ type RpcBody = {
   result?: { isError?: boolean; content: Array<{ text: string }> };
 };
 
+const PRINCIPALS = new Map([["Bearer ok", { id: "u1", scopes: ["*"] }]]);
+
 const build = (tools: ToolDef<Ctx>[]) => {
   const audit: AuditEntry[] = [];
   const handler = createMcpHandler<Ctx>({
@@ -19,8 +21,7 @@ const build = (tools: ToolDef<Ctx>[]) => {
     serverInfo: { name: "t", version: "0" },
     wwwAuthenticate: { realm: "t", resourceMetadataUrl: "https://example.test/.well-known/x" },
     ports: {
-      authenticate: async (req) =>
-        req.headers.get("authorization") === "Bearer ok" ? { id: "u1", scopes: ["*"] } : null,
+      authenticate: async (req) => PRINCIPALS.get(req.headers.get("authorization") ?? "") ?? null,
       context: async () => ({}) as Ctx,
       audit: (entry) => {
         audit.push(entry);
@@ -71,12 +72,14 @@ describe("tools/call params handling", () => {
     assert.equal(body.error?.code, -32602);
   });
 
-  for (const [label, args] of [
-    ["a string", "filter=prod"],
-    ["an array", ["prod"]],
-    ["null", null],
-    ["a number", 7],
-  ] as const) {
+  (
+    [
+      ["a string", "filter=prod"],
+      ["an array", ["prod"]],
+      ["null", null],
+      ["a number", 7],
+    ] as const
+  ).forEach(([label, args]) => {
     it(`rejects arguments that are ${label} instead of running the tool with none`, async () => {
       const { call, audit } = build([purge]);
       const { res, body } = await call({ name: "purge", arguments: args });
@@ -85,7 +88,7 @@ describe("tools/call params handling", () => {
       assert.equal(body.result, undefined);
       assert.equal(audit.at(-1)?.error, "invalid_params");
     });
-  }
+  });
 
   it("still runs with arguments omitted or an empty object", async () => {
     const { call } = build([purge]);
@@ -151,12 +154,14 @@ describe("tool handler results", () => {
     handler: (() => value) as ToolDef<Ctx>["handler"],
   });
 
-  for (const [label, value] of [
-    ["undefined", undefined],
-    ["null", null],
-    ["a number", 42],
-    ["an object without content", { ok: true }],
-  ] as const) {
+  (
+    [
+      ["undefined", undefined],
+      ["null", null],
+      ["a number", 42],
+      ["an object without content", { ok: true }],
+    ] as const
+  ).forEach(([label, value]) => {
     it(`a handler returning ${label} is a tool error, not a 500 or a malformed result`, async () => {
       const { call } = build([returning(value)]);
       const { res, body } = await call({ name: "ret", arguments: {} });
@@ -164,7 +169,7 @@ describe("tool handler results", () => {
       assert.equal(body.result?.isError, true);
       assert.equal(body.result?.content[0]?.text, "Tool returned an invalid result");
     });
-  }
+  });
 
   it("truncates a very long tool failure text in the audit entry", async () => {
     const { call, audit } = build([

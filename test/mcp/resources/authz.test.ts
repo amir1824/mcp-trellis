@@ -52,6 +52,10 @@ const URI_VARIANTS = [
 
 const HIDING_MODES = [true, "strict"] as const;
 
+const HIDDEN_ROWS = HIDING_MODES.flatMap((mode) =>
+  [URIS.admin, URIS.acmeOnly, URIS.broken].map((uri) => ({ mode, uri })),
+);
+
 /** One server holds the resource, the other registers only a different one: a read of `uri` is unknown on it. */
 const withAndWithout = (uri: string, hideToolsOutsideScope: boolean | "strict") => {
   const { resources } = makeFixture();
@@ -67,18 +71,18 @@ const withAndWithout = (uri: string, hideToolsOutsideScope: boolean | "strict") 
 
 describe("resources authz R3 R11 M1 M3 M7 M8", () => {
   describe("R3 listing is filtered by scope and allow", () => {
-    for (const [who, token, expected] of VISIBLE_TO) {
+    VISIBLE_TO.forEach(([who, token, expected]) => {
       it(`R3 M1 lists to ${who} only what it may read`, async () => {
         assert.deepEqual(await listedUris(makeResourceEnv(), token), expected);
       });
-    }
+    });
 
-    for (const mode of HIDING_MODES) {
+    HIDING_MODES.forEach((mode) => {
       it(`R11 lists the same under hideToolsOutsideScope ${String(mode)}`, async () => {
         const env = makeResourceEnv({ options: { hideToolsOutsideScope: mode } });
         assert.deepEqual(await listedUris(env, TOKENS.alice), VISIBLE_TO[0][2]);
       });
-    }
+    });
   });
 
   describe("R3 a denied read by default", () => {
@@ -163,7 +167,7 @@ describe("resources authz R3 R11 M1 M3 M7 M8", () => {
   });
 
   describe("M1 uri variants never match", () => {
-    for (const variant of URI_VARIANTS) {
+    URI_VARIANTS.forEach((variant) => {
       it(`M1 ${JSON.stringify(variant)} is unknown to a principal without the scope`, async () => {
         const reply = await rpc(
           makeResourceEnv(),
@@ -174,7 +178,7 @@ describe("resources authz R3 R11 M1 M3 M7 M8", () => {
         assert.equal(reply.body.error?.code, INVALID_PARAMS);
         assert.equal(reply.text.includes(ADMIN_TEXT), false);
       });
-    }
+    });
 
     it("M1 alice's listing never holds the admin resource", async () => {
       assert.equal((await listedUris(makeResourceEnv(), TOKENS.alice)).includes(URIS.admin), false);
@@ -182,17 +186,15 @@ describe("resources authz R3 R11 M1 M3 M7 M8", () => {
   });
 
   describe("M3 a hidden resource is indistinguishable from an unknown one", () => {
-    for (const mode of HIDING_MODES) {
-      for (const uri of [URIS.admin, URIS.acmeOnly, URIS.broken]) {
-        it(`M3 ${String(mode)}: ${uri} answers the same bytes as an unregistered uri`, async () => {
-          const { registered, unregistered } = withAndWithout(uri, mode);
-          const hidden = await capturePost(registered, "resources/read", { uri }, TOKENS.eve);
-          const unknown = await capturePost(unregistered, "resources/read", { uri }, TOKENS.eve);
-          assert.deepEqual(hidden, unknown);
-          assert.equal(JSON.parse(hidden.body).error.code, INVALID_PARAMS);
-        });
-      }
-    }
+    HIDDEN_ROWS.forEach(({ mode, uri }) => {
+      it(`M3 ${String(mode)}: ${uri} answers the same bytes as an unregistered uri`, async () => {
+        const { registered, unregistered } = withAndWithout(uri, mode);
+        const hidden = await capturePost(registered, "resources/read", { uri }, TOKENS.eve);
+        const unknown = await capturePost(unregistered, "resources/read", { uri }, TOKENS.eve);
+        assert.deepEqual(hidden, unknown);
+        assert.equal(JSON.parse(hidden.body).error.code, INVALID_PARAMS);
+      });
+    });
 
     it("M3 a false allow equals an unknown uri by default, with no hide option at all", async () => {
       const { registered, unregistered } = withAndWithout(URIS.acmeOnly, false);
@@ -215,17 +217,19 @@ describe("resources authz R3 R11 M1 M3 M7 M8", () => {
   describe("M7 a public method still needs a principal", () => {
     const publicOptions = { publicMethods: new Set(["resources/list", "resources/read"]) };
 
-    for (const [method, params] of [
-      ["resources/list", undefined],
-      ["resources/read", { uri: URIS.open }],
-    ] as const) {
+    (
+      [
+        ["resources/list", undefined],
+        ["resources/read", { uri: URIS.open }],
+      ] as const
+    ).forEach(([method, params]) => {
       it(`M7 ${method} answers 401 to a request with no token, though listed in publicMethods`, async () => {
         const reply = await rpc(makeResourceEnv({ options: publicOptions }), method, params);
         assert.equal(reply.status, 401);
         assert.equal(reply.body.error?.code, UNAUTHORIZED);
         assert.notEqual(reply.challenge, null);
       });
-    }
+    });
   });
 
   describe("M8 nothing about a resource reaches a principal that may not see it", () => {

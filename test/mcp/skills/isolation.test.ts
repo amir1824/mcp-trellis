@@ -19,21 +19,25 @@ const ALICE_FILE_COUNT = 4;
 /** Every file of every skill: alice's four and admin-ops' two. */
 const ALL_FILE_COUNT = 6;
 
-const ALTERNATION_TOKENS = Array.from({ length: ALTERNATIONS }, (_, index) =>
-  index % 2 === 0 ? TOKENS.alice : TOKENS.bob,
-);
+/** Alice, bob, alice, bob...: who asks, and the skills only that principal may see. */
+const alternating = (rounds: number) =>
+  Array.from({ length: rounds }).flatMap(() => [
+    { token: TOKENS.alice, expected: ALICE_SKILLS },
+    { token: TOKENS.bob, expected: BOB_SKILLS },
+  ]);
 
-const ALTERNATING = Array.from({ length: CONCURRENT_LISTS / 2 }).flatMap(() => [
-  { token: TOKENS.alice, expected: ALICE_SKILLS },
-  { token: TOKENS.bob, expected: BOB_SKILLS },
-]);
+const ALTERNATION_ROWS = alternating(ALTERNATIONS / 2);
+const ALTERNATING = alternating(CONCURRENT_LISTS / 2);
 
 describe("skills isolation M4", () => {
   it("M4 two principals alternating on skills/list each see only their own skills", async () => {
-    const seen = await listInTurn(makeSkillEnv(), ALTERNATION_TOKENS);
+    const seen = await listInTurn(
+      makeSkillEnv(),
+      ALTERNATION_ROWS.map(({ token }) => token),
+    );
     assert.deepEqual(
       seen.map((skills) => skills.map(({ uri }) => uri)),
-      ALTERNATION_TOKENS.map((_, index) => (index % 2 === 0 ? ALICE_SKILLS : BOB_SKILLS)),
+      ALTERNATION_ROWS.map(({ expected }) => expected),
     );
   });
 

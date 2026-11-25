@@ -96,7 +96,7 @@ const ROWS: Row[] = [
 ];
 
 describe("resources audit R4", () => {
-  for (const { label, run, expected } of ROWS) {
+  ROWS.forEach(({ label, run, expected }) => {
     it(`R4 ${label} leaves exactly one audit entry`, async () => {
       const env = makeResourceEnv();
       await run(env);
@@ -111,7 +111,7 @@ describe("resources audit R4", () => {
         [{ resource: undefined, principalId: undefined, error: undefined, ...expected }],
       );
     });
-  }
+  });
 
   it("R4 an audit entry carries a numeric duration", async () => {
     const env = makeResourceEnv();

@@ -16,6 +16,7 @@ import { createOAuthRouter } from "../../src/oauth/router.js";
 type MockRes = NodeResponseLike & {
   headers: Record<string, string | readonly string[]>;
   chunk: Uint8Array | string | undefined;
+  text: string;
 };
 
 const mockRes = (): MockRes => {
@@ -23,6 +24,7 @@ const mockRes = (): MockRes => {
   let chunk: Uint8Array | string | undefined;
   const res: MockRes = {
     statusCode: 0,
+    text: "",
     headers,
     get chunk() {
       return chunk;
@@ -36,6 +38,7 @@ const mockRes = (): MockRes => {
     },
     end(body, callback) {
       chunk = body;
+      res.text = Buffer.from(body ?? "").toString("utf8");
       callback?.();
     },
   };
@@ -204,8 +207,7 @@ describe("asNodeHandler", () => {
     );
     assert.equal(res.statusCode, 200);
     assert.ok(res.chunk);
-    const text = typeof res.chunk === "string" ? res.chunk : new TextDecoder().decode(res.chunk);
-    const json = JSON.parse(text) as {
+    const json = JSON.parse(res.text) as {
       result: { protocolVersion: string; serverInfo: { name: string } };
     };
     assert.equal(json.result.protocolVersion, "2024-11-05");
@@ -235,8 +237,7 @@ describe("asNodeHandler", () => {
     await handler(streamed, res);
 
     assert.equal(res.statusCode, 200);
-    const text = typeof res.chunk === "string" ? res.chunk : new TextDecoder().decode(res.chunk);
-    const json = JSON.parse(text) as {
+    const json = JSON.parse(res.text) as {
       result: { protocolVersion: string };
     };
     assert.equal(json.result.protocolVersion, "2025-06-18");
@@ -406,8 +407,7 @@ describe("asNodeHandler", () => {
       },
       res,
     );
-    const text = typeof res.chunk === "string" ? res.chunk : new TextDecoder().decode(res.chunk);
-    const body = JSON.parse(text) as { error: string; error_description?: string };
+    const body = JSON.parse(res.text) as { error: string; error_description?: string };
     // Reaching "invalid_grant" (not "invalid_request: client_id required") proves the
     // pre-parsed object body was actually understood as a form body, not double-JSON-encoded.
     assert.equal(body.error, "invalid_grant");
@@ -601,9 +601,9 @@ describe("asNodeHandler Host check (DNS rebinding)", () => {
   });
 
   it("accepts the loopback names a local client uses", async () => {
-    for (const host of ["127.0.0.1:8123", "localhost:8123", "LOCALHOST:8123", "[::1]:8123"]) {
-      assert.equal(await ping(LOOPBACK, { host }), 200, host);
-    }
+    const hosts = ["127.0.0.1:8123", "localhost:8123", "LOCALHOST:8123", "[::1]:8123"];
+    const statuses = await Promise.all(hosts.map((host) => ping(LOOPBACK, { host })));
+    assert.deepEqual(statuses, [200, 200, 200, 200]);
   });
 
   it("lets a request with no Host header through (a browser always sends one)", async () => {

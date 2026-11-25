@@ -36,11 +36,11 @@ const REJECTED: ReadonlyArray<[string, ResourceDef<Ctx>[], RegExp]> = [
 ];
 
 describe("resources config R1 R6", () => {
-  for (const [label, resources, expected] of REJECTED) {
+  REJECTED.forEach(([label, resources, expected]) => {
     it(`R6 construction rejects ${label}`, () => {
       assert.throws(() => build(...resources), expected);
     });
-  }
+  });
 
   it("R6 lists every violation of every entry in one error", () => {
     assert.throws(

@@ -31,21 +31,21 @@ const ANONYMOUS_PUBLIC_CALLS = [
 ] as const;
 
 describe("resources context R4 M5", () => {
-  for (const [label, action] of NEVER_BUILDS_CONTEXT) {
+  NEVER_BUILDS_CONTEXT.forEach(([label, action]) => {
     it(`M5 ${label} never builds the context`, async () => {
       const env = makeResourceEnv({ withUi: true });
       await action(env);
       assert.deepEqual(env.contexts, []);
     });
-  }
+  });
 
-  for (const [method, params] of ANONYMOUS_PUBLIC_CALLS) {
+  ANONYMOUS_PUBLIC_CALLS.forEach(([method, params]) => {
     it(`M5 an anonymous ${method} listed in publicMethods never builds the context`, async () => {
       const env = makeResourceEnv({ options: PUBLIC_RESOURCE_METHODS });
       await rpc(env, method, params);
       assert.deepEqual(env.contexts, []);
     });
-  }
+  });
 
   it("R4 M5 an authorized general read builds the context once, for that principal, and runs the provider", async () => {
     const env = makeResourceEnv();
