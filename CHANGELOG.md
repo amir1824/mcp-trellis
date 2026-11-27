@@ -5,6 +5,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `/register` answers 400 instead of 500 when a `redirect_uris` entry is an object that cannot be turned into text. Entries that are not strings are now ignored, so a nested array holding an allowed URI no longer registers.
+
 ## [3.5.0] - 2026-11-25
 
 ### Added

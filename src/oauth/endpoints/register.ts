@@ -70,7 +70,10 @@ const resolveRegisterRedirectUris = (
       `redirect_uris must have at most ${MAX_CLIENT_REDIRECT_URIS} entries`,
     );
   }
-  const allowed = raw.map(String).filter((uri) => isAllowedRedirectUri(uri, options.redirect));
+  // Never `String(entry)`: it throws on some objects, and turns a nested array into a URI.
+  const allowed = raw.filter(
+    (uri): uri is string => typeof uri === "string" && isAllowedRedirectUri(uri, options.redirect),
+  );
   return allowed.length > 0
     ? allowed
     : oauthError(
