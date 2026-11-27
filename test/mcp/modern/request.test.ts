@@ -142,7 +142,7 @@ describe("2026-07-28 request validation", () => {
     assert.equal(res.status, 400);
     assert.equal(body.error.code, -32022);
     assert.deepEqual(body.error.data, {
-      supported: ["2026-07-28", "2025-06-18", "2025-03-26", "2024-11-05"],
+      supported: ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"],
       requested: "2027-01-01",
     });
   });

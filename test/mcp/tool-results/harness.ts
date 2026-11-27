@@ -11,7 +11,7 @@ import { modern, rpc, send } from "../modern/harness.js";
 type Ctx = Record<string, never>;
 
 export const MODERN_VERSION = "2026-07-28";
-export const LEGACY_VERSIONS = ["2024-11-05", "2025-03-26", "2025-06-18"] as const;
+export const LEGACY_VERSIONS = ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"] as const;
 
 const TOKEN = "t";
 

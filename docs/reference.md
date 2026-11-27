@@ -171,7 +171,7 @@ export const registry = createToolRegistry([], { schemaValidator });
 | `annotations` | `title` (string) and `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` (booleans), listed in `tools/list`. An unknown field or a wrong type throws at construction. |
 
 - **Hints only.** A client must treat annotations as untrusted, and the library never reads them to authorize a call. Use `scope` for that.
-- **`structuredContent`** may be any JSON value for a 2026-07-28 client. A client on 2024-11-05, 2025-03-26 or 2025-06-18 never receives a `structuredContent` that is not an object, and `tools/list` leaves out an `outputSchema` whose root `type` is not `"object"`. Always put the answer in `content` as text too: it is all such a client gets.
+- **`structuredContent`** may be any JSON value for a 2026-07-28 client. A client on 2024-11-05, 2025-03-26, 2025-06-18 or 2025-11-25 never receives a `structuredContent` that is not an object, and `tools/list` leaves out an `outputSchema` whose root `type` is not `"object"`. Always put the answer in `content` as text too: it is all such a client gets.
 - **Output check.** While `validateOutput` is on, a result without `isError` from a tool with an `outputSchema` must carry a `structuredContent` that conforms to it. Otherwise the client gets the error result "Tool returned an invalid result", with no violation text and no data. An `isError` result is not checked.
 
 | Option (`createMcpApp`, `createToolRegistry`) | Default | Description |

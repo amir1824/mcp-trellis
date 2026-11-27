@@ -21,8 +21,11 @@ describe("older protocol versions answer exactly as before the 2026-07-28 change
     assert.deepEqual(await runGolden("2025-06-18"), golden["2025-06-18"]);
   });
 
-  it("R8 the supported older versions and the exported API are unchanged", () => {
-    assert.deepEqual([...PROTOCOL_VERSIONS], ["2024-11-05", "2025-03-26", "2025-06-18"]);
+  it("R8 the supported older versions and the default version are pinned", () => {
+    assert.deepEqual(
+      [...PROTOCOL_VERSIONS],
+      ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"],
+    );
     assert.equal(publicApi.DEFAULT_PROTOCOL_VERSION, "2025-06-18");
     assert.equal("MODERN_PROTOCOL_VERSION" in publicApi, false);
   });

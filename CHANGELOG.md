@@ -5,6 +5,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **MCP 2025-11-25 is served (additive).** `initialize` answers it when a client asks for it, the `MCP-Protocol-Version` header accepts it, and `server/discover` lists it. Answers are shaped as for 2025-06-18; invalid tool arguments were already an `isError` result, as the revision describes. Its optional additions (icons, tasks, URL elicitation, sampling with tools, SSE polling) are not implemented. `DEFAULT_PROTOCOL_VERSION` is unchanged (2025-06-18). `PROTOCOL_VERSIONS` has one more entry, so code that lists it, or relied on this header answering 400, sees a difference.
+
 ### Fixed
 
 - `/register` answers 400 instead of 500 when a `redirect_uris` entry is an object that cannot be turned into text. Entries that are not strings are now ignored, so a nested array holding an allowed URI no longer registers.

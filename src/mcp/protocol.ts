@@ -1,8 +1,9 @@
-export const PROTOCOL_VERSIONS = new Set(["2024-11-05", "2025-03-26", "2025-06-18"]);
+export const PROTOCOL_VERSIONS = new Set(["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"]);
 
 /**
- * Answered on `initialize` when the client's requested version is missing
- * or unrecognized: per the spec, the latest version this server supports.
+ * Answered on `initialize` when the client's requested version is missing or unrecognized.
+ * ponytail: the spec says this SHOULD be the latest supported version; it stays one behind so
+ * those answers do not change for existing hosts. Move it to 2025-11-25 in a release that says so.
  */
 export const DEFAULT_PROTOCOL_VERSION = "2025-06-18";
 

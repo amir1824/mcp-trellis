@@ -23,6 +23,7 @@ describe("server/discover", () => {
     assert.equal(body.result.resultType, "complete");
     assert.deepEqual(body.result.supportedVersions, [
       "2026-07-28",
+      "2025-11-25",
       "2025-06-18",
       "2025-03-26",
       "2024-11-05",

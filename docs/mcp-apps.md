@@ -136,7 +136,7 @@ A 2026-07-28 client declares the extensions it supports on each request. The ser
 ## Host compatibility and limits
 
 - MCP Apps support varies by host. No real host (Claude, ChatGPT, the reference `basic-host`, VS Code, MCP Inspector) and no real 2026-07-28 client is run by this project's tests; `test/mcp/ui/host.test.ts` is a harness, not a host. Smoke-test your server in the host you target.
-- Protocol versions `2024-11-05`, `2025-03-26` and `2025-06-18`, plus `2026-07-28` behind its own header (see [reference.md](reference.md#2026-07-28-requests)). Any other `MCP-Protocol-Version` gets a 400. The 2026-07-28 path serves the same UI resources.
+- Protocol versions `2024-11-05`, `2025-03-26`, `2025-06-18` and `2025-11-25`, plus `2026-07-28` behind its own header (see [reference.md](reference.md#2026-07-28-requests)). Any other `MCP-Protocol-Version` gets a 400. The 2026-07-28 path serves the same UI resources.
 - Negotiation applies to 2026-07-28 requests only (see [Extension negotiation](#extension-negotiation)). For older versions the server cannot tell, so every client sees `_meta.ui`; a host without MCP Apps ignores it and shows the text result.
 - `visibility` is metadata the host enforces. The server cannot tell a model call from a call made by the view, so it never uses `visibility` for authorization.
 - The library builds `context` per call from the authenticated principal and keeps no per-user state. Tenant isolation in your data layer is yours.

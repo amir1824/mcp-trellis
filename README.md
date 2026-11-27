@@ -41,7 +41,7 @@ You bring two things: your session lookup, and a shared store where a one-time l
 - OAuth tells your server who is calling. It does not say which tenant or record that user may touch: check that in your data layer on every operation.
 - Client ID Metadata Documents (CIMD) are off by default: set `cimd: true` and pass `cimdCache`, or every refresh and revoke fetches the client document again. Dynamic Client Registration works too.
 
-**Protocol versions.** MCP 2024-11-05, 2025-03-26 and 2025-06-18 (default 2025-06-18) are negotiated in `initialize`. MCP 2026-07-28 is served per request when the client sends `MCP-Protocol-Version: 2026-07-28` with the `_meta` and `Mcp-Method` fields that revision requires. An unknown `MCP-Protocol-Version` header gets a 400. Details: [reference](docs/reference.md#2026-07-28-requests).
+**Protocol versions.** MCP 2024-11-05, 2025-03-26, 2025-06-18 and 2025-11-25 (default 2025-06-18) are negotiated in `initialize`; for 2025-11-25 the optional additions (icons, tasks, URL elicitation, sampling with tools, SSE polling) are not implemented. MCP 2026-07-28 is served per request when the client sends `MCP-Protocol-Version: 2026-07-28` with the `_meta` and `Mcp-Method` fields that revision requires. An unknown `MCP-Protocol-Version` header gets a 400. Details: [reference](docs/reference.md#2026-07-28-requests).
 
 ## Quick start
 
