@@ -139,7 +139,7 @@ Before you ship:
 - Users always see an OAuth consent screen, even when signed in to your app.
 - A request with an `Origin` header is rejected unless it matches `allowedRequestOrigins`. Native connectors send none.
 - CIMD fetches client metadata over HTTPS, for public clients only. By default the connection is not pinned to the looked-up IP, so DNS rebinding is possible; see `cimdFetch` in the [reference](docs/reference.md) and [security.md](docs/security.md).
-- There is no built-in rate limiting. Put quotas on `/register` and `/token` at your edge or reverse proxy, and on `/authorize` too when `cimd: true`.
+- There is no built-in rate limiting. Put quotas on `/register` and `/token` at your edge or reverse proxy, and on `/authorize` too when `cimd: true`. With an `audit` sink that stores entries, limit `/mcp` too.
 - No third-party security audit has been done. The threat model is in [security.md](docs/security.md).
 
 ## Clients and compatibility

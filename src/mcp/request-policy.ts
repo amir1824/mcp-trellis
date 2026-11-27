@@ -10,6 +10,7 @@ import {
   type JsonRpcRequest,
   rpcError,
 } from "./jsonrpc.js";
+import { PROTOCOL_VERSION_HEADER } from "./protocol.js";
 import type { AuditEntry, McpHandlerOptions, Principal } from "./types.js";
 
 /** `AuditEntry.error` values for requests the handler itself denied. */
@@ -139,21 +140,22 @@ const MAX_AUDIT_VERSION_LENGTH = 32;
 const MAX_AUDIT_METHOD_LENGTH = 128;
 
 /** Both texts are caller-chosen and unauthenticated, so they are clipped before a sink sees them. */
-export const auditRefusedVersion = <TCtx>(
+export const auditRefusedVersion = async <TCtx>(
   options: McpHandlerOptions<TCtx>,
   call: { request: Request; method: string | undefined },
   startedAt: number,
-): Promise<void> =>
-  safeAudit(options, {
+): Promise<void> => {
+  // No sink, no work: the caller picks the size of both texts.
+  if (!options.ports.audit) return;
+  const version = call.request.headers.get(PROTOCOL_VERSION_HEADER) ?? "";
+  await safeAudit(options, {
     method: clipLine(call.method ?? "", MAX_AUDIT_METHOD_LENGTH),
     ok: false,
     error: DENIAL_REASONS.unsupportedProtocolVersion,
-    protocolVersion: clipLine(
-      call.request.headers.get("MCP-Protocol-Version") ?? "",
-      MAX_AUDIT_VERSION_LENGTH,
-    ),
+    protocolVersion: clipLine(version, MAX_AUDIT_VERSION_LENGTH),
     durationMs: Date.now() - startedAt,
   });
+};
 
 /** True when `scope` is unset, granted, or covered by the `"*"` wildcard scope. */
 export const hasScope = (principal: Principal, scope: string | undefined): boolean => {

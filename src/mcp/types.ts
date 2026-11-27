@@ -46,9 +46,9 @@ export type McpPorts<TCtx> = {
   /**
    * Opt-in metrics hook. Pass any function to receive tool results and auth
    * denials (bad token, missing scope, query-string token), a refused protocol
-   * version header, plus the 500 path when a host port throws. Other protocol
-   * errors (malformed JSON, bad `jsonrpc`, oversized body, batch) are not
-   * audited. Omit it and the library stays silent — no stdout, no store.
+   * version header, plus the 500 path when a host port throws. Other protocol errors
+   * (malformed JSON, bad `jsonrpc`, oversized body, batch, a 2026-07-28 `_meta` or header
+   * fault) are not audited. Omit it and the library stays silent — no stdout, no store.
    * Do what you want with `entry` (DB, APM, admin UI). Throwing never fails
    * the request, and neither does hanging — see
    * `McpHandlerOptions.auditTimeoutMs`.

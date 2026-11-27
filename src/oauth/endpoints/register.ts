@@ -13,6 +13,7 @@ import { safeOAuthAudit } from "../audit.js";
 import { grantTypesOf, oauthError, resolveSecrets } from "../config.js";
 import { HTTP_STATUS, MAX_CLIENT_REDIRECT_URIS, OAUTH_ERRORS } from "../constants.js";
 import { seal } from "../crypto/sealed.js";
+import { redirectUrisForAudit } from "../policy/redact.js";
 import { CLAUDE_CALLBACK, isAllowedRedirectUri } from "../policy/redirect.js";
 import { readBodyOrError } from "../policy/reqbody.js";
 import type { ClientAssertion, OAuthRouterOptions } from "../types.js";
@@ -134,26 +135,19 @@ const validateRegistration = async (
   return { result: resolveRegisterRedirectUris(body, options), requested: body.redirect_uris };
 };
 
-/** Scheme, host and path only: userinfo, query and fragment can carry a caller's secrets. */
-const withoutSecrets = (uri: string): string =>
-  uri.replace(/[?#].*$/su, "").replace(/\/\/[^/]*@/u, "//");
-
-/** Strings only: a refused body is unvalidated, and converting an object to text can throw. */
-const listForAudit = (requested: unknown): string => {
-  const uris = Array.isArray(requested) ? requested.filter((uri) => typeof uri === "string") : [];
-  return uris.length > 0 ? `: ${uris.map(withoutSecrets).join(" ")}` : "";
-};
-
 /** The caller's answer is unchanged; the operator also learns which callbacks were asked for. */
 const auditRefusal = async (
   options: OAuthRouterOptions,
   refusal: Response,
   requested: unknown,
 ): Promise<void> => {
+  if (!options.ports.audit) return;
   const { error_description: why } = (await refusal.clone().json()) as {
-    error_description: string;
+    error_description?: string;
   };
-  const reason = `${why}${listForAudit(requested)}`;
+  const uris = redirectUrisForAudit(requested);
+  const list = uris.length > 0 ? `: ${uris.join(" ")}` : "";
+  const reason = `${why ?? "registration refused"}${list}`;
   await safeOAuthAudit(options, { event: "register_rejected", reason });
 };
 

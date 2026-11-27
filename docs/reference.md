@@ -65,7 +65,7 @@ A request whose header and `_meta` protocol version both name the same version t
 
 ### Migrating to 2026-07-28
 
-Nothing is required. Clients on the three older protocol versions behave as before. A host that set its own `publicMethods` and wants `server/discover` anonymous must add it. Browser preflight now also allows the `Mcp-Method` and `Mcp-Name` headers.
+Nothing is required. Clients on older protocol versions behave as before. A host that set its own `publicMethods` and wants `server/discover` anonymous must add it. Browser preflight now also allows the `Mcp-Method` and `Mcp-Name` headers.
 
 ### Migrating to the CIMD hardening options
 
@@ -291,7 +291,9 @@ A server with `uiResources` declares `extensions["io.modelcontextprotocol/ui"]: 
 | `resources` | no | [General resources](resources.md) |
 | `skills` | no | [Skills](skills.md), experimental |
 
-`ports.audit` fires on tool results, on resource and skill calls, and on auth denials (bad token, missing scope, query-string token, a rejected `Origin` as `origin_not_allowed`), plus the 500 path when a host port throws. A refused `MCP-Protocol-Version` is audited as `unsupported_protocol_version` with `protocolVersion` (clipped). Other protocol errors (malformed JSON, bad `jsonrpc`, oversized body, batch) are not audited. On the OAuth side a refused `/register` is the event `register_rejected`; its `reason` holds the error description and the requested redirect URIs without userinfo, query or fragment.
+`ports.audit` fires on tool results, on resource and skill calls, and on auth denials (bad token, missing scope, query-string token, a rejected `Origin` as `origin_not_allowed`), plus the 500 path when a host port throws. A refused `MCP-Protocol-Version` is audited as `unsupported_protocol_version` with `protocolVersion` (clipped). Other protocol errors (malformed JSON, bad `jsonrpc`, oversized body, batch, a 2026-07-28 `_meta`, `Mcp-Method` or `Mcp-Name` fault) are not audited.
+
+On the OAuth side a `/register` POST refused for its body is the event `register_rejected` (a body the Node adapter itself refuses as too large is not). Its `reason` holds the error description and the string entries among the first 10 requested redirect URIs, without userinfo, query or fragment. A URI in plain ASCII with none of `?`, `#` or `@` is not rewritten apart from spaces. Any other is listed as the URL parser writes it, so a non-ASCII host shows as punycode, and one that holds a line break, a tab or a control or invisible character, or cannot be split safely, is `[unreadable URI]`. A space is shown as `%20`. Each URI is cut at 200 characters and the whole `reason` at 512 (ending `…`); `consoleAudit` cuts it again at 200, without a mark.
 
 ## `createOAuthRouter` options
 

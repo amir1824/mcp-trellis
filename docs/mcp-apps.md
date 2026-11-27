@@ -127,7 +127,7 @@ Four lists are checked at construction: `connectDomains` (fetch, XHR, WebSocket)
 
 ### Extension negotiation
 
-A 2026-07-28 client declares the extensions it supports on each request. The server serves UI only when `io.modelcontextprotocol/ui` is declared with `mimeTypes` that include `text/html;profile=mcp-app`. Otherwise the server omits `_meta.ui` from `tools/list`, leaves the `ui://` documents out of `resources/list`, and answers a `resources/read` of a `ui://` URI as an unknown resource (`-32602`), and the tool behaves as a plain text tool. Clients on 2024-11-05, 2025-03-26 and 2025-06-18 declare nothing per request and see everything. Details: [reference.md](reference.md#client-extensions).
+A 2026-07-28 client declares the extensions it supports on each request. The server serves UI only when `io.modelcontextprotocol/ui` is declared with `mimeTypes` that include `text/html;profile=mcp-app`. Otherwise the server omits `_meta.ui` from `tools/list`, leaves the `ui://` documents out of `resources/list`, and answers a `resources/read` of a `ui://` URI as an unknown resource (`-32602`), and the tool behaves as a plain text tool. Clients on 2024-11-05, 2025-03-26, 2025-06-18 and 2025-11-25 declare nothing per request and see everything. Details: [reference.md](reference.md#client-extensions).
 
 ## Tool results
 

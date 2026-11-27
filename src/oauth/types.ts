@@ -121,7 +121,7 @@ export type MintAccessTokenInput = {
   scope: string;
   /** RFC 8707 resource — mint with aud bound to this URI. */
   resource: string;
-  /** The auth code's callback, always set by `/token`. A label, not proof of who is connecting. */
+  /** The auth code's callback, set by `/token`. A label, not proof: never match it by substring. */
   redirectUri?: string;
 };
 
@@ -158,7 +158,7 @@ export type RevokeTokenInput = {
  * handing it to an unauthenticated caller.
  */
 export type OAuthAuditEntry = {
-  /** Machine-stable event name, e.g. "client_auth_failed", "server_error", "access_denied". */
+  /** Machine-stable event name, e.g. "client_auth_failed", "register_rejected", "access_denied". */
   event: string;
   clientId?: string | undefined;
   reason: string;

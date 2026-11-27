@@ -13,7 +13,7 @@ import {
 } from "../config.js";
 import { HTTP_STATUS, OAUTH_ERRORS, UNREGISTERED_CLIENT_MESSAGE } from "../constants.js";
 import { issueAuthCode } from "../crypto/codes.js";
-import { isAllowedRedirectUri, type RedirectAllowlistOptions } from "../policy/redirect.js";
+import { redirectAllowed } from "../policy/redirect.js";
 import { canonicalResource, resourceErrorInfo } from "../policy/resource.js";
 import { formatScope, requestedScopes, scopeErrorInfo } from "../policy/scope.js";
 import type {
@@ -35,22 +35,6 @@ const UNAUTHORIZED_CLIENT_DENIAL = {
   code: OAUTH_ERRORS.unauthorizedClient,
   status: HTTP_STATUS.badRequest,
 } as const;
-
-/**
- * A client bound to a known redirect-URI list — either pre-registered via
- * `clientStore`, or a sealed assertion this server itself issued via
- * `/register` (see `sealed.ts`). Unbound clients fall back to the global
- * allowlist, unless `requireRegisteredClients` forbids that entirely.
- */
-const redirectAllowed = (
-  redirectUri: string,
-  boundRedirectUris: string[] | null,
-  allowlist: RedirectAllowlistOptions | undefined,
-): boolean => {
-  if (!redirectUri) return false;
-  if (boundRedirectUris) return boundRedirectUris.includes(redirectUri);
-  return isAllowedRedirectUri(redirectUri, allowlist);
-};
 
 const redirectToLogin = (request: Request, url: URL, options: OAuthRouterOptions): Response => {
   const next = `${url.pathname}${url.search}`;

@@ -3,11 +3,14 @@
 import { isJsonObject } from "../../util/json.js";
 import { ownValue } from "../../util/own.js";
 import type { JsonRpcId, JsonRpcRequest } from "../jsonrpc.js";
-import { MODERN_PROTOCOL_VERSION, PROTOCOL_VERSIONS } from "../protocol.js";
+import {
+  MODERN_PROTOCOL_VERSION,
+  PROTOCOL_VERSION_HEADER,
+  PROTOCOL_VERSIONS,
+} from "../protocol.js";
 import { headerMismatch, invalidMeta, unsupportedVersion } from "./errors.js";
 import { type ClientContext, clientContextOf } from "./extensions.js";
 
-const PROTOCOL_VERSION_HEADER = "MCP-Protocol-Version";
 const METHOD_HEADER = "Mcp-Method";
 const NAME_HEADER = "Mcp-Name";
 const META_PROTOCOL_VERSION = "io.modelcontextprotocol/protocolVersion";

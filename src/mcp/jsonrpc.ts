@@ -1,5 +1,5 @@
 import { jsonResponse } from "../http/http.js";
-import { PROTOCOL_VERSIONS } from "./protocol.js";
+import { PROTOCOL_VERSION_HEADER, PROTOCOL_VERSIONS } from "./protocol.js";
 
 export type JsonRpcId = string | number | null;
 
@@ -116,7 +116,7 @@ export const protocolVersionHeaderError = (
   jsonRpcRequest: JsonRpcRequest,
 ): Response | null => {
   if (jsonRpcRequest.method === "initialize") return null;
-  const header = request.headers.get("MCP-Protocol-Version");
+  const header = request.headers.get(PROTOCOL_VERSION_HEADER);
   if (!header || PROTOCOL_VERSIONS.has(header)) return null;
   return jsonResponse({
     data: rpcError(

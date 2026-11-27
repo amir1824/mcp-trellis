@@ -72,10 +72,32 @@ const carriesFragmentOrCredentials = (uri: string): boolean => {
   }
 };
 
+/**
+ * Line breaks, tabs, bidi overrides and other characters nobody sees. The URL parser drops some, so
+ * such a URI would pass an allowlist and then forge a log line or reorder what a person reads.
+ * A plain space is left alone: the parser encodes it, and a client may send it unencoded.
+ */
+export const hasHiddenCharacter = (uri: string): boolean => /[^\S ]|\p{C}/u.test(uri);
+
 export const isAllowedRedirectUri = (
   uri: string,
   options: RedirectAllowlistOptions = {},
 ): boolean => {
-  if (carriesFragmentOrCredentials(uri)) return false;
+  if (hasHiddenCharacter(uri) || carriesFragmentOrCredentials(uri)) return false;
   return REDIRECT_PREDICATES.some((predicate) => predicate(uri, options));
+};
+
+/**
+ * A client bound to a known redirect-URI list — either pre-registered via `clientStore`, or a sealed
+ * assertion this server itself issued via `/register` (see `sealed.ts`). Unbound clients fall back to
+ * the global allowlist, unless `requireRegisteredClients` forbids that entirely.
+ */
+export const redirectAllowed = (
+  redirectUri: string,
+  boundRedirectUris: string[] | null,
+  allowlist: RedirectAllowlistOptions | undefined,
+): boolean => {
+  if (!redirectUri || hasHiddenCharacter(redirectUri)) return false;
+  if (boundRedirectUris) return boundRedirectUris.includes(redirectUri);
+  return isAllowedRedirectUri(redirectUri, allowlist);
 };

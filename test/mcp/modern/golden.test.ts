@@ -21,6 +21,15 @@ describe("older protocol versions answer exactly as before the 2026-07-28 change
     assert.deepEqual(await runGolden("2025-06-18"), golden["2025-06-18"]);
   });
 
+  it("2025-11-25 is answered like 2025-06-18, but initialize names its own version", async () => {
+    const base = golden["2025-06-18"];
+    const initialize = JSON.parse(
+      JSON.stringify(base.initialize).replace("2025-06-18", "2025-11-25"),
+    );
+
+    assert.deepEqual(await runGolden("2025-11-25"), { ...base, initialize });
+  });
+
   it("R8 the supported older versions and the default version are pinned", () => {
     assert.deepEqual(
       [...PROTOCOL_VERSIONS],

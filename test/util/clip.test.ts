@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { clipText } from "../../src/util/clip.js";
+import { clipLine, clipText } from "../../src/util/clip.js";
+
+describe("clipLine", () => {
+  it("puts a value on one line and drops invisible characters", () => {
+    assert.equal(clipLine("a\r\n\tb​c", 10), "a bc");
+  });
+
+  it("cleans only the head of a huge value, and marks that it was cut", () => {
+    assert.equal(clipLine(`${" ".repeat(10_000)}tail`, 8), " …");
+  });
+});
 
 describe("clipText", () => {
   it("returns a short value untouched, with no suffix", () => {

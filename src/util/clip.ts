@@ -10,6 +10,13 @@ export const clipText = (value: string, max: number, suffix = ""): string => {
   return `${value.slice(0, cut)}${suffix}`;
 };
 
+/** Cleaning reads this many times `max`: a caller can send a megabyte. */
+const SCAN_FACTOR = 4;
+
 /** One line, clipped: for caller-chosen text on its way to a log or audit sink. */
-export const clipLine = (value: string, max: number): string =>
-  clipText(value.replace(/\s+/gu, " ").replace(/\p{C}/gu, ""), max, "…");
+export const clipLine = (value: string, max: number): string => {
+  const head = value.slice(0, max * SCAN_FACTOR);
+  const line = head.replace(/\s+/gu, " ").replace(/\p{C}/gu, "");
+  const unmarkedCut = head.length < value.length && line.length <= max;
+  return unmarkedCut ? `${line}…` : clipText(line, max, "…");
+};

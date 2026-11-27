@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { consoleAudit } from "../../src/audit.js";
 import { createMcpHandler } from "../../src/mcp/dispatch.js";
 import { createToolRegistry } from "../../src/mcp/registry.js";
 import type { AuditEntry } from "../../src/mcp/types.js";
@@ -38,6 +39,18 @@ const refused = (protocolVersion: string) => ({
   protocolVersion,
 });
 
+describe("consoleAudit on a refused protocol version", () => {
+  it("prints the version that was refused", (t) => {
+    const error = t.mock.method(console, "error", () => {});
+
+    consoleAudit({ source: "mcp", ...refused("2099-01-01"), durationMs: 1 });
+
+    assert.deepEqual(error.mock.calls[0]?.arguments, [
+      "[mcp-trellis] mcp tools/list fail 1ms error=unsupported_protocol_version protocol=2099-01-01",
+    ]);
+  });
+});
+
 describe("auditing a refused protocol version", () => {
   it("records the version the caller asked for", async () => {
     const { response, entries } = await listWith("2025-11-26");
@@ -52,6 +65,20 @@ describe("auditing a refused protocol version", () => {
     const { entries } = await listWith("2099-01-01", { _meta: meta });
 
     assert.deepEqual(entries, [refused("2099-01-01")]);
+  });
+
+  it("clips a method of the caller's choosing", async () => {
+    const entries: AuditEntry[] = [];
+
+    await makeHandler(entries).fetch(
+      new Request("https://example.test/mcp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "MCP-Protocol-Version": "2099-01-01" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "m".repeat(5000) }),
+      }),
+    );
+
+    assert.equal(entries[0]?.method, `${"m".repeat(128)}…`);
   });
 
   it("clips a version of the caller's choosing", async () => {

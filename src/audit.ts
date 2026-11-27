@@ -100,6 +100,7 @@ export const consoleAudit = (entry: UnifiedAuditEntry): void => {
     `${entry.durationMs}ms`,
     entry.principalId ? `user=${logField(entry.principalId)}` : undefined,
     entry.error ? `error=${logField(entry.error)}` : undefined,
+    entry.protocolVersion ? `protocol=${logField(entry.protocolVersion)}` : undefined,
   ]
     .filter(Boolean)
     .join(" ");

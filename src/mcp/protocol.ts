@@ -29,3 +29,5 @@ export const pickProtocolVersion = (params?: Record<string, unknown>): string =>
  * `initialize`, so it stays out of `PROTOCOL_VERSIONS` (exported, and what `initialize` negotiates).
  */
 export const MODERN_PROTOCOL_VERSION = "2026-07-28";
+
+export const PROTOCOL_VERSION_HEADER = "MCP-Protocol-Version";
