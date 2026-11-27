@@ -4,7 +4,7 @@ import { clipLine, clipText } from "../../src/util/clip.js";
 
 describe("clipLine", () => {
   it("puts a value on one line and drops invisible characters", () => {
-    assert.equal(clipLine("a\r\n\tb​c", 10), "a bc");
+    assert.equal(clipLine("a\r\n\tb\u200bc", 10), "a bc");
   });
 
   it("cleans only the head of a huge value, and marks that it was cut", () => {

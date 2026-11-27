@@ -84,7 +84,7 @@ describe("redirect URIs holding control or invisible characters", () => {
   });
 
   it("does not register one with a bidi override", async () => {
-    const response = await register(["http://127.0.0.1:9111/cb‮"]);
+    const response = await register(["http://127.0.0.1:9111/cb\u202e"]);
 
     await expectOAuthError(response, 400, "invalid_redirect_uri");
   });

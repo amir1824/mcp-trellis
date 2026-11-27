@@ -1,4 +1,4 @@
-/** Caller-chosen redirect URIs on their way to an audit entry, with nothing secret or misleading. */
+/** Caller-chosen redirect URIs on their way to an audit entry, without userinfo, query or fragment. */
 
 import { clipText } from "../../util/clip.js";
 import { MAX_CLIENT_REDIRECT_URIS } from "../constants.js";
@@ -6,7 +6,8 @@ import { hasHiddenCharacter } from "./redirect.js";
 
 /**
  * Userinfo needs an "@", a query a "?" and a fragment a "#". Anything outside printable ASCII can
- * spell a host that reads as another one; parsed, it shows as punycode or percent-encoded.
+ * spell a host that reads as another one; parsed, a look-alike letter shows as punycode or
+ * percent-encoded, while fullwidth forms fold to plain ASCII.
  */
 const NEEDS_PARSING = /[?#@]|[^\x20-\x7e]/u;
 const SCHEME_AND_SLASHES = /^(?:[a-z][a-z0-9+.-]*:)?[/\\]*/iu;

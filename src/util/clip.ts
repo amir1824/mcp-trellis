@@ -13,7 +13,11 @@ export const clipText = (value: string, max: number, suffix = ""): string => {
 /** Cleaning reads this many times `max`: a caller can send a megabyte. */
 const SCAN_FACTOR = 4;
 
-/** One line, clipped: for caller-chosen text on its way to a log or audit sink. */
+/**
+ * One line, clipped: for caller-chosen text on its way to a log or audit sink.
+ * ponytail: only the head is cleaned, so text behind a long run of whitespace or control characters
+ * is lost. Clean in a bounded loop if a sink ever needs it.
+ */
 export const clipLine = (value: string, max: number): string => {
   const head = value.slice(0, max * SCAN_FACTOR);
   const line = head.replace(/\s+/gu, " ").replace(/\p{C}/gu, "");
