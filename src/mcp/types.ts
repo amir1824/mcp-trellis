@@ -28,6 +28,8 @@ export type AuditEntry = {
   principalId?: string | undefined;
   ok: boolean;
   error?: string | undefined;
+  /** The `MCP-Protocol-Version` of a request refused for it, clipped. */
+  protocolVersion?: string | undefined;
   durationMs: number;
 };
 
@@ -43,9 +45,9 @@ export type McpPorts<TCtx> = {
   context: (req: Request, principal: Principal | null) => TCtx | Promise<TCtx>;
   /**
    * Opt-in metrics hook. Pass any function to receive tool results and auth
-   * denials (bad token, missing scope, query-string token), plus the 500
-   * path when a host port throws. Protocol errors (malformed JSON, bad
-   * `jsonrpc`, unsupported protocol version, oversized body, batch) are not
+   * denials (bad token, missing scope, query-string token), a refused protocol
+   * version header, plus the 500 path when a host port throws. Other protocol
+   * errors (malformed JSON, bad `jsonrpc`, oversized body, batch) are not
    * audited. Omit it and the library stays silent — no stdout, no store.
    * Do what you want with `entry` (DB, APM, admin UI). Throwing never fails
    * the request, and neither does hanging — see

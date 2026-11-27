@@ -9,3 +9,7 @@ export const clipText = (value: string, max: number, suffix = ""): string => {
   const cut = last >= 0xd800 && last <= 0xdbff ? max - 1 : max;
   return `${value.slice(0, cut)}${suffix}`;
 };
+
+/** One line, clipped: for caller-chosen text on its way to a log or audit sink. */
+export const clipLine = (value: string, max: number): string =>
+  clipText(value.replace(/\s+/gu, " ").replace(/\p{C}/gu, ""), max, "…");

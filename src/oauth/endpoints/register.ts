@@ -9,6 +9,7 @@
 import { DEFAULT_OAUTH_BODY_LIMIT, readBoundedText } from "../../http/body.js";
 import { jsonResponse, POST_ONLY, requireHttpMethod } from "../../http/http.js";
 import { isJsonObject } from "../../util/json.js";
+import { safeOAuthAudit } from "../audit.js";
 import { grantTypesOf, oauthError, resolveSecrets } from "../config.js";
 import { HTTP_STATUS, MAX_CLIENT_REDIRECT_URIS, OAUTH_ERRORS } from "../constants.js";
 import { seal } from "../crypto/sealed.js";
@@ -115,6 +116,47 @@ const issueRegistration = async (
   });
 };
 
+type Validated = { result: string[] | Response; requested?: unknown };
+
+const validateRegistration = async (
+  request: Request,
+  options: OAuthRouterOptions,
+): Promise<Validated> => {
+  const text = await readBodyOrError(
+    () => readBoundedText(request, DEFAULT_OAUTH_BODY_LIMIT),
+    OAUTH_ERRORS.invalidClientMetadata,
+  );
+  if (text instanceof Response) return { result: text };
+
+  const body = parseRegisterBody(text);
+  if (body instanceof Response) return { result: body };
+
+  return { result: resolveRegisterRedirectUris(body, options), requested: body.redirect_uris };
+};
+
+/** Scheme, host and path only: userinfo, query and fragment can carry a caller's secrets. */
+const withoutSecrets = (uri: string): string =>
+  uri.replace(/[?#].*$/su, "").replace(/\/\/[^/]*@/u, "//");
+
+/** Strings only: a refused body is unvalidated, and converting an object to text can throw. */
+const listForAudit = (requested: unknown): string => {
+  const uris = Array.isArray(requested) ? requested.filter((uri) => typeof uri === "string") : [];
+  return uris.length > 0 ? `: ${uris.map(withoutSecrets).join(" ")}` : "";
+};
+
+/** The caller's answer is unchanged; the operator also learns which callbacks were asked for. */
+const auditRefusal = async (
+  options: OAuthRouterOptions,
+  refusal: Response,
+  requested: unknown,
+): Promise<void> => {
+  const { error_description: why } = (await refusal.clone().json()) as {
+    error_description: string;
+  };
+  const reason = `${why}${listForAudit(requested)}`;
+  await safeOAuthAudit(options, { event: "register_rejected", reason });
+};
+
 export const handleRegister = async (
   request: Request,
   options: OAuthRouterOptions,
@@ -122,16 +164,9 @@ export const handleRegister = async (
   const methodError = requireHttpMethod(request, POST_ONLY);
   if (methodError) return methodError;
 
-  const text = await readBodyOrError(
-    () => readBoundedText(request, DEFAULT_OAUTH_BODY_LIMIT),
-    OAUTH_ERRORS.invalidClientMetadata,
-  );
-  if (text instanceof Response) return text;
+  const { result, requested } = await validateRegistration(request, options);
+  if (!(result instanceof Response)) return issueRegistration(request, options, result);
 
-  const body = parseRegisterBody(text);
-  if (body instanceof Response) return body;
-
-  const redirectUris = resolveRegisterRedirectUris(body, options);
-  if (redirectUris instanceof Response) return redirectUris;
-  return issueRegistration(request, options, redirectUris);
+  await auditRefusal(options, result, requested);
+  return result;
 };

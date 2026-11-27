@@ -19,6 +19,7 @@ import {
 import { profileFor, type VersionProfile } from "./modern/profile.js";
 import { resolveModernPublicMethods } from "./modern/request.js";
 import {
+  auditRefusedVersion,
   DEFAULT_PUBLIC_METHODS,
   DENIAL_REASONS,
   isNotification,
@@ -116,7 +117,10 @@ const handlePost = async <TCtx>(
   if (envelope instanceof Response) return envelope;
 
   const versionError = profile.versionError(request, envelope);
-  if (versionError) return versionError;
+  if (versionError) {
+    await auditRefusedVersion(options, { request, method: envelope.method }, startedAt);
+    return versionError;
+  }
 
   if (isNotification(envelope)) return emptyResponse(202);
   const requestError = profile.requestError(request, envelope);

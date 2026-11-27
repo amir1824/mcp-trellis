@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - **MCP 2025-11-25 is served (additive).** `initialize` answers it when a client asks for it, the `MCP-Protocol-Version` header accepts it, and `server/discover` lists it. Answers are shaped as for 2025-06-18; invalid tool arguments were already an `isError` result, as the revision describes. Its optional additions (icons, tasks, URL elicitation, sampling with tools, SSE polling) are not implemented. `DEFAULT_PROTOCOL_VERSION` is unchanged (2025-06-18). `PROTOCOL_VERSIONS` has one more entry, so code that lists it, or relied on this header answering 400, sees a difference.
+- **Refusals that were silent now reach `audit` (additive).** A refused `MCP-Protocol-Version` header is an MCP entry with `error: "unsupported_protocol_version"` and the new `protocolVersion` field. A refused `/register` is the OAuth event `register_rejected`, whose `reason` lists the requested redirect URIs without userinfo, query or fragment. Responses are unchanged. Both can be caused without authentication: rate-limit at the edge if your sink stores entries. A host that switches exhaustively on `error` or `event` should handle the new values.
 
 ### Fixed
 

@@ -5,7 +5,7 @@
  */
 
 import { DEFAULT_AUDIT_TIMEOUT_MS, runAuditBounded } from "../http/http.js";
-import { clipText } from "../util/clip.js";
+import { clipLine } from "../util/clip.js";
 import { type CimdFailure, formatCimdFailure } from "./cimd/failure.js";
 import { unsealAny } from "./crypto/sealed.js";
 import type { ClientAssertion, OAuthAuditEntry, OAuthRouterOptions } from "./types.js";
@@ -18,13 +18,6 @@ import type { ClientAssertion, OAuthAuditEntry, OAuthRouterOptions } from "./typ
  */
 const MAX_AUDIT_FIELD_LENGTH = 512;
 
-/**
- * Control characters and line breaks are dropped too, so a caller-chosen `client_id` cannot
- * forge a line in a sink that writes plain text.
- */
-const clip = (value: string): string =>
-  clipText(value.replace(/\s+/gu, " ").replace(/\p{C}/gu, ""), MAX_AUDIT_FIELD_LENGTH, "…");
-
 export const safeOAuthAudit = async (
   options: OAuthRouterOptions,
   entry: OAuthAuditEntry,
@@ -34,8 +27,10 @@ export const safeOAuthAudit = async (
 
   const bounded: OAuthAuditEntry = {
     ...entry,
-    ...(entry.clientId !== undefined ? { clientId: clip(entry.clientId) } : {}),
-    reason: clip(entry.reason),
+    ...(entry.clientId !== undefined
+      ? { clientId: clipLine(entry.clientId, MAX_AUDIT_FIELD_LENGTH) }
+      : {}),
+    reason: clipLine(entry.reason, MAX_AUDIT_FIELD_LENGTH),
   };
   await runAuditBounded(() => audit(bounded), options.auditTimeoutMs ?? DEFAULT_AUDIT_TIMEOUT_MS);
 };

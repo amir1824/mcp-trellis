@@ -2,6 +2,7 @@
 
 import { parseBearer, type WwwAuthenticateOptions, wwwAuthenticateHeader } from "../auth/bearer.js";
 import { DEFAULT_AUDIT_TIMEOUT_MS, jsonResponse, runAuditBounded } from "../http/http.js";
+import { clipLine } from "../util/clip.js";
 import {
   JSONRPC_INSUFFICIENT_SCOPE,
   JSONRPC_UNAUTHORIZED,
@@ -24,6 +25,7 @@ export const DENIAL_REASONS = {
   ruleDenied: "rule_denied",
   ruleFailed: "rule_failed",
   paramHeaderMismatch: "param_header_mismatch",
+  unsupportedProtocolVersion: "unsupported_protocol_version",
 } as const;
 
 export const DEFAULT_PUBLIC_METHODS = new Set([
@@ -132,6 +134,26 @@ export const safeAudit = async <TCtx>(
 
   await runAuditBounded(() => audit(entry), options.auditTimeoutMs ?? DEFAULT_AUDIT_TIMEOUT_MS);
 };
+
+const MAX_AUDIT_VERSION_LENGTH = 32;
+const MAX_AUDIT_METHOD_LENGTH = 128;
+
+/** Both texts are caller-chosen and unauthenticated, so they are clipped before a sink sees them. */
+export const auditRefusedVersion = <TCtx>(
+  options: McpHandlerOptions<TCtx>,
+  call: { request: Request; method: string | undefined },
+  startedAt: number,
+): Promise<void> =>
+  safeAudit(options, {
+    method: clipLine(call.method ?? "", MAX_AUDIT_METHOD_LENGTH),
+    ok: false,
+    error: DENIAL_REASONS.unsupportedProtocolVersion,
+    protocolVersion: clipLine(
+      call.request.headers.get("MCP-Protocol-Version") ?? "",
+      MAX_AUDIT_VERSION_LENGTH,
+    ),
+    durationMs: Date.now() - startedAt,
+  });
 
 /** True when `scope` is unset, granted, or covered by the `"*"` wildcard scope. */
 export const hasScope = (principal: Principal, scope: string | undefined): boolean => {

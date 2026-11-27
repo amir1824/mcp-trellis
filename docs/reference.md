@@ -291,7 +291,7 @@ A server with `uiResources` declares `extensions["io.modelcontextprotocol/ui"]: 
 | `resources` | no | [General resources](resources.md) |
 | `skills` | no | [Skills](skills.md), experimental |
 
-`ports.audit` fires on tool results, on resource and skill calls, and on auth denials (bad token, missing scope, query-string token, a rejected `Origin` as `origin_not_allowed`), plus the 500 path when a host port throws. Protocol errors (malformed JSON, bad `jsonrpc`, unsupported version, oversized body, batch) are not audited.
+`ports.audit` fires on tool results, on resource and skill calls, and on auth denials (bad token, missing scope, query-string token, a rejected `Origin` as `origin_not_allowed`), plus the 500 path when a host port throws. A refused `MCP-Protocol-Version` is audited as `unsupported_protocol_version` with `protocolVersion` (clipped). Other protocol errors (malformed JSON, bad `jsonrpc`, oversized body, batch) are not audited. On the OAuth side a refused `/register` is the event `register_rejected`; its `reason` holds the error description and the requested redirect URIs without userinfo, query or fragment.
 
 ## `createOAuthRouter` options
 
