@@ -49,13 +49,11 @@ export type ConsentOptions = {
    * Render the approval page yourself. Return any `Response` — HTML, or a
    * redirect to your own route. Omit for the built-in hardened interstitial.
    *
-   * If your page sets its own `Content-Security-Policy` with `form-action`,
-   * include the redirect target's origin in it (`new URL(input.redirectUri).origin`;
-   * for a custom-scheme URI such as `myapp://cb` that origin is the opaque
-   * `"null"`, so use the scheme `myapp:` instead) — Chromium enforces
-   * `form-action` across the redirect your approval POST triggers, not just
-   * the immediate submission target, so `'self'` alone blocks the eventual
-   * redirect back to the client's own callback.
+   * If your page sets its own `Content-Security-Policy` with `form-action`, include the redirect
+   * target's origin in it (`new URL(input.redirectUri).origin`; for a custom-scheme URI such as
+   * `myapp://cb` that origin is the opaque `"null"`, so use the scheme `myapp:` instead) —
+   * Chromium enforces `form-action` across the redirect your approval POST triggers, not just the
+   * immediate submission target, so `'self'` alone blocks the redirect back to the client.
    */
   render?: (input: ConsentRequest) => Response | Promise<Response>;
   /** Built-in screen only: what the app is asking to reach. Default `"your account"`. */
@@ -123,6 +121,8 @@ export type MintAccessTokenInput = {
   scope: string;
   /** RFC 8707 resource — mint with aud bound to this URI. */
   resource: string;
+  /** The auth code's callback, always set by `/token`. A label, not proof of who is connecting. */
+  redirectUri?: string;
 };
 
 export type RefreshAccessTokenInput = {

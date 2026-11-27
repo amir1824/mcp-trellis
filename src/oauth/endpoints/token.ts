@@ -141,6 +141,7 @@ const handleAuthCode: GrantHandler = async ({
         clientId,
         scope: record.scope,
         resource: record.resource,
+        redirectUri: record.redirectUri,
       }),
       record.scope,
     ),
